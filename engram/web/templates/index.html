@@ -128,6 +128,34 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
 .context-layer .cl-tokens { color: var(--text2); font-size: 10px; }
 .context-layer .cl-text { font-size: 11px; line-height: 1.5; max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
 
+/* toast notifications */
+#toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 6px; }
+.toast { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; font-size: 12px; animation: toast-in 0.2s ease, toast-out 0.3s ease 2.5s forwards; max-width: 300px; }
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error { border-color: var(--red); color: var(--red); }
+.toast.info { border-color: var(--cyan); color: var(--cyan); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(-10px); } }
+
+/* health grid */
+.health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.health-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+.health-card .hc-value { font-size: 22px; font-weight: 700; }
+.health-card .hc-label { font-size: 10px; color: var(--text2); text-transform: uppercase; }
+.health-card.ok .hc-value { color: var(--green); }
+.health-card.warn .hc-value { color: var(--yellow); }
+.health-card.bad .hc-value { color: var(--red); }
+
+/* importance breakdown */
+.imp-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.imp-bar .imp-label { width: 70px; font-size: 11px; color: var(--text2); }
+.imp-bar .imp-fill-bg { flex: 1; height: 16px; background: var(--bg); border-radius: 3px; overflow: hidden; position: relative; }
+.imp-bar .imp-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.imp-bar .imp-val { width: 45px; font-size: 10px; color: var(--text2); text-align: right; }
+
+/* pinned indicator */
+.pin-indicator { color: var(--yellow); font-size: 10px; }
+
 /* neural canvas */
 #neural-container { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); margin-bottom: 16px; }
 #neural-canvas { display: block; width: 100%; }
@@ -161,6 +189,8 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <a class="nav-item" href="#" onclick="showView('analytics')">Analytics</a>
       <a class="nav-item" href="#" onclick="showView('context')">Context</a>
       <a class="nav-item" href="#" onclick="showView('ingest')">Ingest</a>
+      <a class="nav-item" href="#" onclick="showView('health')">Health</a>
+      <a class="nav-item" href="#" onclick="showView('dedup')">Dedup</a>
     </div>
 
     <div class="section">
@@ -308,6 +338,27 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <div class="section-title" style="margin-top:16px">Recent Ingestions</div>
       <div id="ingest-log"></div>
     </div>
+
+    <!-- Health view -->
+    <div id="view-health" style="display:none">
+      <div class="section-title">System Health</div>
+      <div id="health-grid" class="health-grid"></div>
+      <div class="section-title" style="margin-top:16px">Memory Map</div>
+      <div id="memory-map-content"></div>
+    </div>
+
+    <!-- Dedup view -->
+    <div id="view-dedup" style="display:none">
+      <div class="section-title">Duplicate Detection</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <span style="font-size:11px;color:var(--text2)">Threshold:</span>
+        <input type="range" id="dedup-threshold" min="0.85" max="0.99" step="0.01" value="0.92" style="width:120px" oninput="document.getElementById('dedup-thresh-val').textContent=this.value">
+        <span id="dedup-thresh-val" style="font-size:11px;color:var(--text2);width:30px">0.92</span>
+        <button class="secondary" onclick="loadDuplicates()">Scan</button>
+        <button onclick="runDedup()">Auto-merge</button>
+      </div>
+      <div id="dedup-results"></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -331,6 +382,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
   </div>
 </div>
+<div id="toast-container"></div>
 
 <script>
 const API = '';
@@ -773,6 +825,7 @@ function memoryCard(m) {
       ${scoreHtml}
       ${m.access_count ? `<span class="tag">views: ${m.access_count}</span>` : ''}
       ${invalidated ? '<span class="tag" style="color:var(--red)">INVALID</span>' : ''}
+      ${m.metadata && m.metadata.pinned ? '<span class="pin-indicator">pinned</span>' : ''}
     </div>
     <div class="card-actions">
       <select onchange="promoteMemory('${m.id}',this.value);this.selectedIndex=0" title="Change layer">
@@ -782,7 +835,10 @@ function memoryCard(m) {
         <option value="semantic">semantic</option>
         <option value="procedural">procedural</option>
       </select>
-      <button onclick="event.stopPropagation();navigator.clipboard.writeText(${JSON.stringify(JSON.stringify(m.content))})">copy</button>
+      <button onclick="event.stopPropagation();togglePin('${m.id}',${!!(m.metadata&&m.metadata.pinned)})">${m.metadata&&m.metadata.pinned?'unpin':'pin'}</button>
+      <button onclick="event.stopPropagation();showSimilar('${m.id}')">similar</button>
+      <button onclick="event.stopPropagation();showImportance('${m.id}')">explain</button>
+      <button onclick="event.stopPropagation();navigator.clipboard.writeText(${JSON.stringify(JSON.stringify(m.content))});toast('Copied','success')">copy</button>
       <button onclick="event.stopPropagation();invalidateMemory('${m.id}')">invalidate</button>
       <button class="danger" onclick="event.stopPropagation();forgetMemory('${m.id}',this)">forget</button>
     </div>
@@ -854,11 +910,21 @@ async function pollEvents() {
 setInterval(pollEvents, 2000);
 pollEvents(); // initial load
 
+// --- Toast notifications ---
+function toast(msg, type='info') {
+  const el = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  el.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
 // --- Memory actions ---
 async function promoteMemory(id, layer) {
   if (!layer) return;
   await postJSON(`/api/memories/${id}/promote`, {layer});
-  // refresh current view
+  toast(`Promoted to ${layer}`, 'success');
   document.querySelectorAll('.memory-card').forEach(c => { if (c.innerHTML.includes(id)) c.style.opacity='0.5'; });
 }
 async function forgetMemory(id, btn) {
@@ -1114,6 +1180,120 @@ async function changeEntityType(entityId, type) {
   inspectEntity(entityId);
 }
 
+// --- Pin ---
+async function togglePin(id, isPinned) {
+  const endpoint = isPinned ? 'unpin' : 'pin';
+  await postJSON(`/api/memories/${id}/${endpoint}`, {});
+  toast(isPinned ? 'Unpinned' : 'Pinned — will never be forgotten', 'success');
+}
+
+// --- Similar memories ---
+async function showSimilar(id) {
+  const data = await fetchJSON(`/api/memories/${id}/similar?top_k=5`);
+  const inspector = document.getElementById('inspector');
+  inspector.classList.add('open');
+  let html = '<div><b>Similar Memories:</b><br><br>';
+  if (!data.length) { html += '<span style="color:var(--text2)">No similar memories found</span>'; }
+  for (const m of data) {
+    html += `<div class="memory-card" onclick="inspectMemory('${m.id}')" style="margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="tag ${m.layer}">${m.layer}</span>
+        <span style="font-size:10px;color:var(--cyan)">${(m.similarity*100).toFixed(1)}% similar</span>
+      </div>
+      <div style="font-size:11px;line-height:1.4">${escapeHtml((m.content||'').slice(0,150))}</div>
+    </div>`;
+  }
+  html += '</div>';
+  document.getElementById('inspector-content').innerHTML = html;
+}
+
+// --- Importance explainer ---
+async function showImportance(id) {
+  const data = await fetchJSON(`/api/memories/${id}/importance`);
+  const inspector = document.getElementById('inspector');
+  inspector.classList.add('open');
+  let html = `<div><b>Importance: ${data.composite}</b><br><br>`;
+  for (const f of data.factors) {
+    const pct = (f.value * 100).toFixed(0);
+    const weighted = (f.value * f.weight * 100).toFixed(1);
+    html += `<div class="imp-bar">
+      <span class="imp-label">${f.name}</span>
+      <div class="imp-fill-bg"><div class="imp-fill" style="width:${pct}%;background:${f.color}"></div></div>
+      <span class="imp-val">${pct}% x${f.weight}</span>
+    </div>`;
+    if (f.detail) html += `<div style="margin-left:78px;font-size:9px;color:var(--text2);margin-top:-4px;margin-bottom:4px">${f.detail}</div>`;
+  }
+  html += '</div>';
+  document.getElementById('inspector-content').innerHTML = html;
+}
+
+// --- Health dashboard ---
+async function loadHealth() {
+  const data = await fetchJSON('/api/health');
+  const mems = data.memories || {};
+  const cards = [
+    {label:'Total Memories', value: mems.total||0, status: mems.total > 0 ? 'ok' : 'warn'},
+    {label:'Entities', value: data.entities||0, status: 'ok'},
+    {label:'DB Size', value: (data.db_size_mb||0)+'MB', status: data.db_size_mb < 100 ? 'ok' : 'warn'},
+    {label:'Embedding Cache', value: data.embedding_cache_loaded ? 'loaded' : 'cold', status: data.embedding_cache_loaded ? 'ok' : 'warn'},
+    {label:'Cache Vectors', value: data.embedding_cache_size||0, status: 'ok'},
+    {label:'FTS Indexed', value: data.fts_indexed||0, status: 'ok'},
+    {label:'Orphaned Entities', value: data.orphaned_entities||0, status: (data.orphaned_entities||0) === 0 ? 'ok' : 'warn'},
+    {label:'Stale Working', value: data.stale_working||0, status: (data.stale_working||0) === 0 ? 'ok' : 'warn'},
+    {label:'No Embedding', value: data.no_embedding||0, status: (data.no_embedding||0) === 0 ? 'ok' : 'bad'},
+    {label:'Relationships', value: data.relationships||0, status: 'ok'},
+  ];
+  document.getElementById('health-grid').innerHTML = cards.map(c =>
+    `<div class="health-card ${c.status}"><div class="hc-value">${c.value}</div><div class="hc-label">${c.label}</div></div>`
+  ).join('');
+
+  // memory map
+  const map = await fetchJSON('/api/memory-map');
+  const layers = map.layers || {};
+  let mapHtml = `<div style="margin-bottom:12px;font-size:11px;color:var(--text2)">Date range: ${map.oldest||'?'} → ${map.newest||'?'}</div>`;
+  for (const [layer, info] of Object.entries(layers)) {
+    const colors = {working:'var(--yellow)',episodic:'var(--cyan)',semantic:'var(--green)',procedural:'var(--accent2)',codebase:'var(--accent)'};
+    mapHtml += `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="color:${colors[layer]||'var(--text)'};font-weight:600;font-size:12px">${layer}</span>
+        <span style="color:var(--text2);font-size:11px">${info.count} memories</span>
+      </div>`;
+    if (info.top_entities && info.top_entities.length) {
+      mapHtml += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+      for (const e of info.top_entities) {
+        mapHtml += `<span class="entity-node" style="font-size:10px">${e.canonical_name} (${e.cnt})</span>`;
+      }
+      mapHtml += '</div>';
+    }
+    mapHtml += '</div>';
+  }
+  document.getElementById('memory-map-content').innerHTML = mapHtml;
+}
+
+// --- Dedup viewer ---
+async function loadDuplicates() {
+  const threshold = document.getElementById('dedup-threshold').value;
+  const data = await fetchJSON(`/api/duplicates?threshold=${threshold}&limit=20`);
+  const el = document.getElementById('dedup-results');
+  if (!data.length) { el.innerHTML = '<div class="empty">No duplicates found at this threshold</div>'; return; }
+  el.innerHTML = `<div style="margin-bottom:8px;font-size:11px;color:var(--text2)">${data.length} duplicate pairs found</div>` +
+    data.map(d => `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:var(--cyan);font-size:11px">${(d.similarity*100).toFixed(1)}% similar</span>
+        <span class="tag ${d.memory_1.layer}">${d.memory_1.layer}</span>
+      </div>
+      <div style="font-size:11px;margin-bottom:6px;padding:6px;background:var(--bg);border-radius:4px">${escapeHtml((d.memory_1.content||'').slice(0,120))}</div>
+      <div style="font-size:11px;padding:6px;background:var(--bg);border-radius:4px">${escapeHtml((d.memory_2.content||'').slice(0,120))}</div>
+    </div>`).join('');
+}
+async function runDedup() {
+  toast('Running dedup...', 'info');
+  const data = await postJSON('/api/dedup', {});
+  toast(`Dedup: found ${data.found}, merged ${data.merged}`, 'success');
+  loadDuplicates();
+  loadStats();
+}
+
 // --- View switcher (updated) ---
 function showView(name) {
   document.querySelectorAll('[id^="view-"]').forEach(el => el.style.display = 'none');
@@ -1134,6 +1314,8 @@ function showView(name) {
   if (name === 'analytics') loadAnalytics();
   if (name === 'context') loadContext();
   if (name === 'ingest') loadIngestLog();
+  if (name === 'health') loadHealth();
+  if (name === 'dedup') loadDuplicates();
 }
 
 // --- Keyboard shortcuts ---

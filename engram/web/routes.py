@@ -488,6 +488,156 @@ async def filtered_search(request: Request, q: str, top_k: int = 10,
     return {"results": [_result_dict(r) for r in filtered]}
 
 
+# --- Health & map ---
+
+@router.get("/api/health")
+async def health_check(request: Request):
+    store = _store(request)
+    stats = store.get_stats()
+    cache_loaded = store._embedding_cache is not None
+    cache_size = len(store._embedding_cache[0]) if cache_loaded else 0
+    orphaned = store.conn.execute(
+        "SELECT COUNT(*) as cnt FROM entities e WHERE NOT EXISTS (SELECT 1 FROM entity_mentions em WHERE em.entity_id = e.id)"
+    ).fetchone()["cnt"]
+    stale = store.conn.execute(
+        "SELECT COUNT(*) as cnt FROM memories WHERE layer='working' AND forgotten=0 AND created_at < ?",
+        (time.time() - 1800,),
+    ).fetchone()["cnt"]
+    fts = store.conn.execute("SELECT COUNT(*) as cnt FROM memories_fts").fetchone()["cnt"]
+    no_emb = store.conn.execute("SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NULL AND forgotten=0").fetchone()["cnt"]
+    return {**stats, "embedding_cache_loaded": cache_loaded, "embedding_cache_size": cache_size,
+            "orphaned_entities": orphaned, "stale_working": stale, "fts_indexed": fts, "no_embedding": no_emb}
+
+
+@router.get("/api/memory-map")
+async def memory_map(request: Request):
+    store = _store(request)
+    stats = store.get_stats()
+    layers_detail = {}
+    for layer in ["working", "episodic", "semantic", "procedural", "codebase"]:
+        top = store.conn.execute(
+            """SELECT e.canonical_name, COUNT(em.memory_id) as cnt
+               FROM entity_mentions em JOIN memories m ON m.id = em.memory_id
+               JOIN entities e ON e.id = em.entity_id
+               WHERE m.layer = ? AND m.forgotten = 0
+               GROUP BY e.id ORDER BY cnt DESC LIMIT 5""", (layer,),
+        ).fetchall()
+        layers_detail[layer] = {"count": stats["memories"].get(layer, 0),
+                                "top_entities": [dict(r) for r in top]}
+    oldest = store.conn.execute("SELECT fact_date FROM memories WHERE forgotten=0 AND fact_date IS NOT NULL ORDER BY fact_date ASC LIMIT 1").fetchone()
+    newest = store.conn.execute("SELECT fact_date FROM memories WHERE forgotten=0 AND fact_date IS NOT NULL ORDER BY fact_date DESC LIMIT 1").fetchone()
+    return {**stats, "layers": layers_detail,
+            "oldest": oldest["fact_date"] if oldest else None,
+            "newest": newest["fact_date"] if newest else None}
+
+
+# --- Similar & dedup ---
+
+@router.get("/api/memories/{memory_id}/similar")
+async def similar_memories(request: Request, memory_id: str, top_k: int = 5):
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem or mem.embedding is None:
+        return JSONResponse({"error": "not found or no embedding"}, status_code=404)
+    from engram.embeddings import cosine_similarity_search
+    ids, vecs = store.get_all_embeddings()
+    hits = cosine_similarity_search(mem.embedding, vecs, top_k=top_k + 1)
+    results = []
+    for idx, score in hits:
+        if ids[idx] == memory_id:
+            continue
+        other = store.get_memory(ids[idx])
+        if other:
+            results.append({**_mem_dict(other), "similarity": round(score, 4)})
+    return results[:top_k]
+
+
+@router.get("/api/duplicates")
+async def find_dups(request: Request, threshold: float = 0.92, limit: int = 20):
+    from engram.dedup import find_duplicates
+    store = _store(request)
+    dupes = find_duplicates(store, threshold=threshold, limit=500)
+    return [{"memory_1": _mem_dict(m1), "memory_2": _mem_dict(m2), "similarity": round(sim, 4)}
+            for m1, m2, sim in dupes[:limit]]
+
+
+@router.post("/api/dedup")
+async def run_dedup(request: Request):
+    from engram.dedup import auto_dedup
+    store = _store(request)
+    return auto_dedup(store)
+
+
+# --- Importance explain ---
+
+@router.get("/api/memories/{memory_id}/importance")
+async def explain_importance(request: Request, memory_id: str):
+    import math
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    age_days = (time.time() - mem.last_accessed) / 86400
+    recency = math.exp(-0.693 * age_days / 30)
+    access_factor = min(1.0, 0.1 * math.log(1 + mem.access_count))
+    emotion = abs(mem.emotional_valence) * 0.3
+    stability = min(1.0, mem.access_count / (max(1, (mem.last_accessed - mem.created_at) / 86400) + 1)) if mem.access_count > 0 else 0.0
+    layer_boost = {"working": 0.0, "episodic": 0.1, "semantic": 0.3, "procedural": 0.2, "codebase": 0.15}.get(mem.layer, 0.0)
+    factors = [
+        {"name": "Base", "value": mem.importance, "weight": 0.30, "color": "#818cf8"},
+        {"name": "Access", "value": access_factor, "weight": 0.15, "color": "#06b6d4", "detail": f"{mem.access_count} accesses"},
+        {"name": "Recency", "value": recency, "weight": 0.15, "color": "#22c55e", "detail": f"{age_days:.1f} days ago"},
+        {"name": "Emotion", "value": emotion, "weight": 0.10, "color": "#ef4444"},
+        {"name": "Stability", "value": stability, "weight": 0.10, "color": "#eab308"},
+        {"name": "Layer", "value": layer_boost, "weight": 0.20, "color": "#6366f1", "detail": mem.layer},
+    ]
+    composite = sum(f["value"] * f["weight"] for f in factors)
+    return {"composite": round(min(1.0, max(0.0, composite)), 4), "factors": factors}
+
+
+# --- Entity timeline ---
+
+@router.get("/api/entities/{entity_id}/timeline")
+async def entity_timeline_view(request: Request, entity_id: str):
+    store = _store(request)
+    entity = store.get_entity(entity_id)
+    if not entity:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    memories = store.get_entity_memories(entity_id, limit=100)
+    def sort_key(m):
+        return m.fact_date or time.strftime("%Y-%m-%d", time.localtime(m.created_at))
+    memories.sort(key=sort_key)
+    return {"entity": entity.canonical_name, "memories": [
+        {**_mem_dict(m), "sort_date": sort_key(m)} for m in memories
+    ]}
+
+
+# --- Pin/unpin ---
+
+@router.post("/api/memories/{memory_id}/pin")
+async def pin_memory(request: Request, memory_id: str):
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    mem.metadata["pinned"] = True
+    store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?", (json.dumps(mem.metadata), memory_id))
+    store.conn.commit()
+    return {"status": "pinned"}
+
+
+@router.post("/api/memories/{memory_id}/unpin")
+async def unpin_memory(request: Request, memory_id: str):
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    mem.metadata.pop("pinned", None)
+    store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?", (json.dumps(mem.metadata), memory_id))
+    store.conn.commit()
+    return {"status": "unpinned"}
+
+
 # --- Helpers ---
 
 def _mem_dict(m: Memory) -> dict:
