@@ -22,6 +22,7 @@ class MemoryLayer(str, Enum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
     PROCEDURAL = "procedural"
+    CODEBASE = "codebase"
 
 
 class SourceType(str, Enum):
@@ -30,6 +31,7 @@ class SourceType(str, Enum):
     AI = "remember:ai"
     DREAM = "dream"
     INTERACTION = "interaction"
+    CODE_SCAN = "code_scan"
 
 
 @dataclass

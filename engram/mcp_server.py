@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 24 tools."""
+"""MCP tool server — JSON-RPC over stdio with 34 tools."""
 
 from __future__ import annotations
 
@@ -48,6 +48,21 @@ TOOLS = [
     # Diary tools
     {"name": "diary_write", "description": "Append to session diary", "inputSchema": {"type": "object", "properties": {"entry": {"type": "string"}}, "required": ["entry"]}},
     {"name": "diary_read", "description": "Read current session diary", "inputSchema": {"type": "object", "properties": {}}},
+    # Extended tools
+    {"name": "find_similar", "description": "Find memories most similar to a given memory by embedding distance", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "top_k": {"type": "integer", "default": 5}}, "required": ["memory_id"]}},
+    {"name": "merge_entities", "description": "Merge two entities that are the same thing — moves all relationships and memory links to the target", "inputSchema": {"type": "object", "properties": {"source_name": {"type": "string", "description": "Entity to merge FROM (will be deleted)"}, "target_name": {"type": "string", "description": "Entity to merge INTO (will be kept)"}}, "required": ["source_name", "target_name"]}},
+    {"name": "remember_project", "description": "Store a structured project memory — name, status, location, notes → semantic layer", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "status": {"type": "string", "description": "e.g. active, paused, completed, abandoned"}, "location": {"type": "string", "description": "file path or URL"}, "notes": {"type": "string"}}, "required": ["name"]}},
+    {"name": "recall_context", "description": "Search and return a formatted context block ready for prompt injection, with token budget", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "max_tokens": {"type": "integer", "default": 2000}}, "required": ["query"]}},
+    {"name": "count_by", "description": "Count memories grouped by a field — layer, source_type, entity, or month", "inputSchema": {"type": "object", "properties": {"group_by": {"type": "string", "enum": ["layer", "source_type", "entity", "month"]}}, "required": ["group_by"]}},
+    {"name": "bulk_forget", "description": "Forget all memories matching criteria — by source_file, layer, or older than a date", "inputSchema": {"type": "object", "properties": {"source_file": {"type": "string"}, "layer": {"type": "string"}, "older_than": {"type": "string", "description": "YYYY-MM-DD — forget memories created before this date"}, "confirm": {"type": "boolean", "description": "Must be true to execute"}}, "required": ["confirm"]}},
+    {"name": "export", "description": "Export memories as markdown or JSON", "inputSchema": {"type": "object", "properties": {"format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}, "layer": {"type": "string"}, "limit": {"type": "integer", "default": 100}}}},
+    {"name": "health", "description": "System health check — embedding cache, FTS index, orphaned entities, stale working memories", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "tag", "description": "Add or remove tags on a memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "add": {"type": "array", "items": {"type": "string"}}, "remove": {"type": "array", "items": {"type": "string"}}}, "required": ["memory_id"]}},
+    {"name": "link_memories", "description": "Manually link two memories as related via their entities", "inputSchema": {"type": "object", "properties": {"memory_id_1": {"type": "string"}, "memory_id_2": {"type": "string"}, "relation": {"type": "string", "default": "RELATED_TO"}}, "required": ["memory_id_1", "memory_id_2"]}},
+    # Codebase tools
+    {"name": "scan_codebase", "description": "Scan a project directory and extract compressed code knowledge — file tree, function signatures, dependencies. Uses ~10x fewer tokens than raw code.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "project_name": {"type": "string"}}, "required": ["path"]}},
+    {"name": "recall_code", "description": "Search the codebase layer specifically — find functions, classes, files, dependencies across scanned projects", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "project": {"type": "string"}, "top_k": {"type": "integer", "default": 10}}, "required": ["query"]}},
+    {"name": "list_projects", "description": "List all scanned codebase projects with file counts and memory counts", "inputSchema": {"type": "object", "properties": {}}},
 ]
 
 _session_diary: list[str] = []
@@ -111,6 +126,19 @@ class MCPServer:
             "ingest": self._ingest,
             "diary_write": self._diary_write,
             "diary_read": self._diary_read,
+            "find_similar": self._find_similar,
+            "merge_entities": self._merge_entities,
+            "remember_project": self._remember_project,
+            "recall_context": self._recall_context,
+            "count_by": self._count_by,
+            "bulk_forget": self._bulk_forget,
+            "export": self._export,
+            "health": self._health,
+            "tag": self._tag,
+            "link_memories": self._link_memories,
+            "scan_codebase": self._scan_codebase,
+            "recall_code": self._recall_code,
+            "list_projects": self._list_projects,
         }
         handler = handlers.get(name)
         if not handler:
@@ -295,6 +323,288 @@ class MCPServer:
 
     def _diary_read(self, args: dict):
         return {"diary": _session_diary}
+
+    # --- Extended tools ---
+
+    def _find_similar(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem or mem.embedding is None:
+            return {"error": "Memory not found or has no embedding"}
+        from engram.embeddings import cosine_similarity_search
+        ids, vecs = self.store.get_all_embeddings()
+        if not ids:
+            return {"similar": []}
+        hits = cosine_similarity_search(mem.embedding, vecs, top_k=args.get("top_k", 5) + 1)
+        results = []
+        for idx, score in hits:
+            if ids[idx] == mem.id:
+                continue  # skip self
+            other = self.store.get_memory(ids[idx])
+            if other:
+                results.append({"id": other.id, "content": other.content[:200],
+                                "similarity": round(score, 4), "layer": other.layer})
+        return {"similar": results[:args.get("top_k", 5)]}
+
+    def _merge_entities(self, args: dict):
+        source = self.store.find_entity_by_name(args["source_name"])
+        target = self.store.find_entity_by_name(args["target_name"])
+        if not source:
+            return {"error": f"Source entity '{args['source_name']}' not found"}
+        if not target:
+            return {"error": f"Target entity '{args['target_name']}' not found"}
+        if source.id == target.id:
+            return {"error": "Source and target are the same entity"}
+
+        # move all memory links
+        self.store.conn.execute(
+            "UPDATE OR IGNORE entity_mentions SET entity_id = ? WHERE entity_id = ?",
+            (target.id, source.id),
+        )
+        # move relationships
+        self.store.conn.execute(
+            "UPDATE OR IGNORE relationships SET source_entity_id = ? WHERE source_entity_id = ?",
+            (target.id, source.id),
+        )
+        self.store.conn.execute(
+            "UPDATE OR IGNORE relationships SET target_entity_id = ? WHERE target_entity_id = ?",
+            (target.id, source.id),
+        )
+        # add source name as alias on target
+        aliases = target.aliases + [source.canonical_name] + source.aliases
+        aliases = list(set(aliases))
+        self.store.conn.execute("UPDATE entities SET aliases = ? WHERE id = ?",
+                               (json.dumps(aliases), target.id))
+        # delete source entity
+        self.store.conn.execute("DELETE FROM entity_mentions WHERE entity_id = ?", (source.id,))
+        self.store.conn.execute("DELETE FROM relationships WHERE source_entity_id = ? OR target_entity_id = ?",
+                               (source.id, source.id))
+        self.store.conn.execute("DELETE FROM entities WHERE id = ?", (source.id,))
+        self.store.conn.commit()
+        return {"status": "merged", "kept": target.canonical_name, "deleted": source.canonical_name,
+                "aliases": aliases}
+
+    def _remember_project(self, args: dict):
+        parts = [f"Project: {args['name']}"]
+        if args.get("status"):
+            parts.append(f"Status: {args['status']}")
+        if args.get("location"):
+            parts.append(f"Location: {args['location']}")
+        if args.get("notes"):
+            parts.append(f"Notes: {args['notes']}")
+        content = "\n".join(parts)
+        return self._remember({"content": content, "layer": MemoryLayer.SEMANTIC,
+                               "importance": 0.7, "source_type": SourceType.HUMAN})
+
+    def _recall_context(self, args: dict):
+        max_tokens = args.get("max_tokens", 2000)
+        results = hybrid_search(args["query"], self.store, self.config, top_k=15)
+        parts = []
+        token_count = 0
+        for r in results:
+            est = int(len(r.memory.content.split()) * 1.3)
+            if token_count + est > max_tokens:
+                break
+            parts.append(r.memory.content)
+            token_count += est
+        context = "\n---\n".join(parts)
+        return {"context": context, "tokens": token_count, "memories_used": len(parts)}
+
+    def _count_by(self, args: dict):
+        group = args["group_by"]
+        if group == "layer":
+            rows = self.store.conn.execute(
+                "SELECT layer as key, COUNT(*) as count FROM memories WHERE forgotten=0 GROUP BY layer ORDER BY count DESC"
+            ).fetchall()
+        elif group == "source_type":
+            rows = self.store.conn.execute(
+                "SELECT source_type as key, COUNT(*) as count FROM memories WHERE forgotten=0 GROUP BY source_type ORDER BY count DESC"
+            ).fetchall()
+        elif group == "month":
+            rows = self.store.conn.execute(
+                "SELECT SUBSTR(fact_date, 1, 7) as key, COUNT(*) as count FROM memories WHERE forgotten=0 AND fact_date IS NOT NULL GROUP BY key ORDER BY key"
+            ).fetchall()
+        elif group == "entity":
+            rows = self.store.conn.execute(
+                """SELECT e.canonical_name as key, COUNT(em.memory_id) as count
+                   FROM entities e JOIN entity_mentions em ON em.entity_id = e.id
+                   GROUP BY e.id ORDER BY count DESC LIMIT 30"""
+            ).fetchall()
+        else:
+            return {"error": f"Unknown group_by: {group}"}
+        return {"counts": [dict(r) for r in rows]}
+
+    def _bulk_forget(self, args: dict):
+        if not args.get("confirm"):
+            return {"error": "Set confirm=true to execute bulk forget"}
+        conditions = ["forgotten = 0"]
+        params = []
+        if args.get("source_file"):
+            conditions.append("source_file = ?")
+            params.append(args["source_file"])
+        if args.get("layer"):
+            conditions.append("layer = ?")
+            params.append(args["layer"])
+        if args.get("older_than"):
+            # parse date to timestamp
+            import datetime
+            dt = datetime.datetime.strptime(args["older_than"], "%Y-%m-%d")
+            conditions.append("created_at < ?")
+            params.append(dt.timestamp())
+        if len(conditions) <= 1:
+            return {"error": "Must specify at least one filter (source_file, layer, or older_than)"}
+        where = " AND ".join(conditions)
+        count = self.store.conn.execute(f"SELECT COUNT(*) as cnt FROM memories WHERE {where}", params).fetchone()["cnt"]
+        self.store.conn.execute(f"UPDATE memories SET forgotten = 1 WHERE {where}", params)
+        self.store.conn.commit()
+        self.store.invalidate_embedding_cache()
+        return {"status": "forgotten", "count": count}
+
+    def _export(self, args: dict):
+        fmt = args.get("format", "markdown")
+        layer = args.get("layer")
+        limit = args.get("limit", 100)
+        if layer:
+            mems = self.store.get_memories_by_layer(layer, limit=limit)
+        else:
+            mems = self.store.get_recent_memories(limit=limit)
+        if fmt == "json":
+            return {"memories": [{"id": m.id, "content": m.content, "layer": m.layer,
+                                  "importance": m.importance, "fact_date": m.fact_date,
+                                  "source_type": m.source_type, "created_at": m.created_at}
+                                 for m in mems]}
+        else:
+            lines = []
+            for m in mems:
+                date = m.fact_date or time.strftime("%Y-%m-%d", time.localtime(m.created_at))
+                lines.append(f"## [{date}] {m.layer} (imp={m.importance:.2f})\n\n{m.content}\n")
+            return {"markdown": "\n---\n\n".join(lines), "count": len(mems)}
+
+    def _health(self, args: dict):
+        stats = self.store.get_stats()
+        # check embedding cache
+        cache_loaded = self.store._embedding_cache is not None
+        cache_size = len(self.store._embedding_cache[0]) if cache_loaded else 0
+        # orphaned entities (no memory links)
+        orphaned = self.store.conn.execute(
+            """SELECT COUNT(*) as cnt FROM entities e
+               WHERE NOT EXISTS (SELECT 1 FROM entity_mentions em WHERE em.entity_id = e.id)"""
+        ).fetchone()["cnt"]
+        # stale working memories
+        stale_working = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE layer='working' AND forgotten=0 AND created_at < ?",
+            (time.time() - 1800,),
+        ).fetchone()["cnt"]
+        # FTS row count
+        fts_count = self.store.conn.execute("SELECT COUNT(*) as cnt FROM memories_fts").fetchone()["cnt"]
+        # memories without embeddings
+        no_embedding = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NULL AND forgotten=0"
+        ).fetchone()["cnt"]
+        return {
+            **stats,
+            "embedding_cache_loaded": cache_loaded,
+            "embedding_cache_size": cache_size,
+            "orphaned_entities": orphaned,
+            "stale_working_memories": stale_working,
+            "fts_indexed": fts_count,
+            "memories_without_embeddings": no_embedding,
+        }
+
+    def _tag(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+        tags = set(mem.metadata.get("tags", []))
+        for t in args.get("add", []):
+            tags.add(t)
+        for t in args.get("remove", []):
+            tags.discard(t)
+        mem.metadata["tags"] = sorted(tags)
+        self.store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                               (json.dumps(mem.metadata), mem.id))
+        self.store.conn.commit()
+        return {"tags": sorted(tags)}
+
+    def _link_memories(self, args: dict):
+        from engram.store import Relationship
+        # find entities linked to each memory
+        e1_rows = self.store.conn.execute(
+            "SELECT entity_id FROM entity_mentions WHERE memory_id = ? LIMIT 1",
+            (args["memory_id_1"],),
+        ).fetchall()
+        e2_rows = self.store.conn.execute(
+            "SELECT entity_id FROM entity_mentions WHERE memory_id = ? LIMIT 1",
+            (args["memory_id_2"],),
+        ).fetchall()
+        if not e1_rows or not e2_rows:
+            return {"error": "One or both memories have no linked entities"}
+        rel = Relationship(
+            source_entity_id=e1_rows[0]["entity_id"],
+            target_entity_id=e2_rows[0]["entity_id"],
+            relation_type=args.get("relation", "RELATED_TO"),
+            created_at=time.time(),
+            last_seen=time.time(),
+        )
+        self.store.save_relationship(rel)
+        return {"status": "linked", "relation": args.get("relation", "RELATED_TO")}
+
+    # --- Codebase tools ---
+
+    def _scan_codebase(self, args: dict):
+        from engram.codebase import scan_codebase
+        return scan_codebase(args["path"], self.store, args.get("project_name"))
+
+    def _recall_code(self, args: dict):
+        query = args["query"]
+        project = args.get("project")
+        top_k = args.get("top_k", 10)
+
+        # search within codebase layer only
+        results = hybrid_search(query, self.store, self.config, top_k=top_k * 2, rerank=False)
+        filtered = []
+        for r in results:
+            if r.memory.layer != MemoryLayer.CODEBASE:
+                continue
+            if project and r.memory.metadata.get("project") != project:
+                continue
+            filtered.append({"id": r.memory.id, "content": r.memory.content,
+                             "score": round(r.score, 4),
+                             "project": r.memory.metadata.get("project"),
+                             "type": r.memory.metadata.get("type"),
+                             "file": r.memory.metadata.get("file")})
+            if len(filtered) >= top_k:
+                break
+        return {"results": filtered}
+
+    def _list_projects(self, args: dict):
+        rows = self.store.conn.execute(
+            """SELECT json_extract(metadata, '$.project') as project,
+                      COUNT(*) as memory_count,
+                      json_extract(metadata, '$.type') as types
+               FROM memories
+               WHERE layer = 'codebase' AND forgotten = 0
+                 AND json_extract(metadata, '$.project') IS NOT NULL
+               GROUP BY project"""
+        ).fetchall()
+        projects = {}
+        for r in rows:
+            p = r["project"]
+            if p not in projects:
+                projects[p] = {"name": p, "memories": 0}
+            projects[p]["memories"] += r["memory_count"]
+
+        # get type breakdown per project
+        for p in projects:
+            type_rows = self.store.conn.execute(
+                """SELECT json_extract(metadata, '$.type') as type, COUNT(*) as cnt
+                   FROM memories WHERE layer='codebase' AND forgotten=0
+                   AND json_extract(metadata, '$.project') = ?
+                   GROUP BY type""",
+                (p,),
+            ).fetchall()
+            projects[p]["types"] = {r["type"]: r["cnt"] for r in type_rows}
+
+        return {"projects": list(projects.values())}
 
     def _response(self, req_id, result):
         return {"jsonrpc": "2.0", "id": req_id, "result": result}
