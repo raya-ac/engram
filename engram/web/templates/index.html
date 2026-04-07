@@ -704,6 +704,15 @@ async function loadLayer(layer) {
   document.getElementById('view-memories').style.display = 'block';
   document.getElementById('memories-list').innerHTML =
     `<div class="section-title">${layer} memories</div>` + data.map(memoryCard).join('');
+  // highlight the correct layer nav item
+  document.querySelectorAll('.sidebar .nav-item').forEach(el => {
+    const onclick = el.getAttribute('onclick') || '';
+    if (onclick.includes(`'${layer}'`)) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
 }
 
 async function loadEntities() {
@@ -1108,8 +1117,15 @@ async function changeEntityType(entityId, type) {
 function showView(name) {
   document.querySelectorAll('[id^="view-"]').forEach(el => el.style.display = 'none');
   document.getElementById('view-' + name).style.display = 'block';
-  document.querySelectorAll('.sidebar .nav-item').forEach(el => el.classList.remove('active'));
-  if (event && event.target) event.target.classList.add('active');
+  // highlight the correct nav item by matching onclick content
+  document.querySelectorAll('.sidebar .nav-item').forEach(el => {
+    const onclick = el.getAttribute('onclick') || '';
+    if (onclick.includes(`'${name}'`)) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
 
   if (name === 'neural') { resizeCanvas(); loadNeuralData(); }
   if (name === 'memories') loadMemories();
