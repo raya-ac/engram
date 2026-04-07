@@ -1,0 +1,31 @@
+db_path: ~/.local/share/engram/memory.db
+embedding_model: BAAI/bge-small-en-v1.5
+cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+embedding_dim: 384
+
+retrieval:
+  top_k: 10
+  rrf_k: 60
+  min_confidence: 0.60
+  rerank_candidates: 20
+  dense_multiplier: 3
+  bm25_multiplier: 3
+
+lifecycle:
+  forgetting_half_life_days: 30
+  archive_after_days: 90
+  archive_min_importance: 0.3
+  archive_min_accesses: 3
+  promote_importance: 0.7
+  promote_accesses: 5
+  cluster_threshold: 0.8
+  cluster_min_size: 5
+
+llm:
+  backend: claude_cli  # claude_cli | mlx | llamacpp
+  model: claude-sonnet-4-20250514
+  mlx_model: mlx-community/Qwen2.5-3B-Instruct-4bit
+
+web:
+  host: 127.0.0.1
+  port: 8420

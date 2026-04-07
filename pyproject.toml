@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "engram"
+version = "0.1.0"
+description = "Cognitive memory system with hybrid retrieval, entity graphs, and memory lifecycle"
+requires-python = ">=3.11"
+dependencies = [
+    "sentence-transformers>=3.0.0",
+    "numpy>=1.24.0",
+    "aiosqlite>=0.19.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "jinja2>=3.1.0",
+    "sse-starlette>=2.0.0",
+    "pyyaml>=6.0",
+    "pymupdf>=1.24.0",
+]
+
+[project.scripts]
+engram = "engram.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
