@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 34 tools."""
+"""MCP tool server — JSON-RPC over stdio with 44 tools."""
 
 from __future__ import annotations
 
@@ -63,6 +63,18 @@ TOOLS = [
     {"name": "scan_codebase", "description": "Scan a project directory and extract compressed code knowledge — file tree, function signatures, dependencies. Uses ~10x fewer tokens than raw code.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "project_name": {"type": "string"}}, "required": ["path"]}},
     {"name": "recall_code", "description": "Search the codebase layer specifically — find functions, classes, files, dependencies across scanned projects", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "project": {"type": "string"}, "top_k": {"type": "integer", "default": 10}}, "required": ["query"]}},
     {"name": "list_projects", "description": "List all scanned codebase projects with file counts and memory counts", "inputSchema": {"type": "object", "properties": {}}},
+    # Dedup & maintenance
+    {"name": "dedup", "description": "Find and merge near-duplicate memories by embedding similarity", "inputSchema": {"type": "object", "properties": {"threshold": {"type": "number", "default": 0.92, "description": "Cosine similarity threshold (0.0-1.0)"}, "max_merges": {"type": "integer", "default": 50}}}},
+    {"name": "find_duplicates", "description": "Find near-duplicate memory pairs without merging them", "inputSchema": {"type": "object", "properties": {"threshold": {"type": "number", "default": 0.92}, "limit": {"type": "integer", "default": 20}}}},
+    # Conversation tools
+    {"name": "ingest_sessions", "description": "Ingest recent Claude Code conversation sessions into memory", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
+    # Session tools
+    {"name": "session_summary", "description": "Generate a summary of the current session based on diary and recent events", "inputSchema": {"type": "object", "properties": {}}},
+    # Backlinks
+    {"name": "backlinks", "description": "Find all memories that reference or are linked to a specific memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
+    # Batch operations
+    {"name": "batch_tag", "description": "Add tags to all memories matching a search query", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "default": 10}}, "required": ["query", "tags"]}},
+    {"name": "recompute_importance", "description": "Recalculate importance scores for all memories using the 7-factor formula", "inputSchema": {"type": "object", "properties": {}}},
 ]
 
 _session_diary: list[str] = []
@@ -139,6 +151,13 @@ class MCPServer:
             "scan_codebase": self._scan_codebase,
             "recall_code": self._recall_code,
             "list_projects": self._list_projects,
+            "dedup": self._dedup,
+            "find_duplicates": self._find_duplicates_tool,
+            "ingest_sessions": self._ingest_sessions,
+            "session_summary": self._session_summary,
+            "backlinks": self._backlinks,
+            "batch_tag": self._batch_tag,
+            "recompute_importance": self._recompute_importance,
         }
         handler = handlers.get(name)
         if not handler:
@@ -547,6 +566,117 @@ class MCPServer:
         )
         self.store.save_relationship(rel)
         return {"status": "linked", "relation": args.get("relation", "RELATED_TO")}
+
+    # --- Dedup & maintenance ---
+
+    def _dedup(self, args: dict):
+        from engram.dedup import auto_dedup
+        return auto_dedup(self.store, threshold=args.get("threshold", 0.92),
+                          max_merges=args.get("max_merges", 50))
+
+    def _find_duplicates_tool(self, args: dict):
+        from engram.dedup import find_duplicates
+        dupes = find_duplicates(self.store, threshold=args.get("threshold", 0.92),
+                                limit=args.get("limit", 500))
+        return {"duplicates": [
+            {"memory_1": {"id": m1.id, "content": m1.content[:150], "layer": m1.layer},
+             "memory_2": {"id": m2.id, "content": m2.content[:150], "layer": m2.layer},
+             "similarity": round(sim, 4)}
+            for m1, m2, sim in dupes[:args.get("limit", 20)]
+        ]}
+
+    # --- Conversation tools ---
+
+    def _ingest_sessions(self, args: dict):
+        from engram.conversations import ingest_all_sessions
+        return ingest_all_sessions(self.store, limit=args.get("limit", 20))
+
+    # --- Session tools ---
+
+    def _session_summary(self, args: dict):
+        """Generate a summary of the current session from diary + recent events."""
+        diary = _session_diary.copy()
+        recent_events = self.store.get_recent_events(limit=30)
+
+        # collect what happened
+        reads = [e for e in recent_events if e.get("event_type") == "recall"]
+        writes = [e for e in recent_events if "write" in (e.get("event_type") or "")]
+        queries = [e.get("detail", "") for e in reads if e.get("detail")]
+
+        parts = []
+        if diary:
+            parts.append("Diary entries:\n" + "\n".join(diary))
+        if queries:
+            unique_queries = list(dict.fromkeys(queries))[:10]
+            parts.append("Topics searched: " + ", ".join(unique_queries))
+        if writes:
+            parts.append(f"Memories written: {len(writes)}")
+        parts.append(f"Total events this session: {len(recent_events)}")
+
+        summary = "\n".join(parts) if parts else "No activity recorded this session."
+        return {"summary": summary, "diary_entries": len(diary),
+                "searches": len(reads), "writes": len(writes)}
+
+    # --- Backlinks ---
+
+    def _backlinks(self, args: dict):
+        """Find memories that share entities with the given memory."""
+        mem_id = args["memory_id"]
+        # get entities linked to this memory
+        entity_rows = self.store.conn.execute(
+            "SELECT entity_id FROM entity_mentions WHERE memory_id = ?", (mem_id,)
+        ).fetchall()
+        if not entity_rows:
+            return {"backlinks": [], "note": "Memory has no linked entities"}
+
+        entity_ids = [r["entity_id"] for r in entity_rows]
+        placeholders = ",".join("?" * len(entity_ids))
+
+        # find other memories sharing those entities
+        rows = self.store.conn.execute(
+            f"""SELECT DISTINCT m.id, m.content, m.layer, m.importance,
+                       e.canonical_name as via_entity
+                FROM entity_mentions em
+                JOIN memories m ON m.id = em.memory_id
+                JOIN entities e ON e.id = em.entity_id
+                WHERE em.entity_id IN ({placeholders})
+                  AND em.memory_id != ?
+                  AND m.forgotten = 0
+                ORDER BY m.importance DESC
+                LIMIT 20""",
+            entity_ids + [mem_id],
+        ).fetchall()
+        return {"backlinks": [dict(r) for r in rows]}
+
+    # --- Batch operations ---
+
+    def _batch_tag(self, args: dict):
+        results = hybrid_search(args["query"], self.store, self.config,
+                                top_k=args.get("top_k", 10), rerank=False)
+        tagged = 0
+        for r in results:
+            mem = r.memory
+            tags = set(mem.metadata.get("tags", []))
+            tags.update(args["tags"])
+            mem.metadata["tags"] = sorted(tags)
+            self.store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                                   (json.dumps(mem.metadata), mem.id))
+            tagged += 1
+        self.store.conn.commit()
+        return {"tagged": tagged, "tags_added": args["tags"]}
+
+    def _recompute_importance(self, args: dict):
+        rows = self.store.conn.execute(
+            "SELECT * FROM memories WHERE forgotten = 0"
+        ).fetchall()
+        updated = 0
+        for row in rows:
+            mem = self.store._row_to_memory(row)
+            new_imp = compute_importance(mem)
+            if abs(new_imp - mem.importance) > 0.01:
+                self.store.update_importance(mem.id, new_imp)
+                updated += 1
+        return {"total": len(rows), "updated": updated}
 
     # --- Codebase tools ---
 

@@ -18,7 +18,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
-**37 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, timeline queries, similarity search, consolidation, bulk operations, export, health checks, the works.
+**44 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, bulk operations, export, health checks, the works.
 
 **codebase scanning** — point `scan_codebase` at a project directory and it extracts file trees, function/class signatures, import graphs, and config files into compressed codebase-layer memories. stores ~10x fewer tokens than raw code while keeping what you actually need to work with the project. then `recall_code` searches only those memories.
 
@@ -137,7 +137,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 37 tools:
+restart claude code. you get 44 tools:
 
 **recall & search**
 
@@ -185,6 +185,23 @@ restart claude code. you get 37 tools:
 | `recall_code` | search the codebase layer specifically |
 | `list_projects` | show all scanned projects with file counts |
 
+**dedup & maintenance**
+
+| tool | what it does |
+|------|-------------|
+| `dedup` | find and merge near-duplicate memories by embedding similarity |
+| `find_duplicates` | preview duplicate pairs without merging |
+| `recompute_importance` | recalculate all importance scores with the 7-factor formula |
+| `batch_tag` | add tags to all memories matching a search query |
+
+**conversations & sessions**
+
+| tool | what it does |
+|------|-------------|
+| `ingest_sessions` | auto-extract memories from recent Claude Code conversation logs |
+| `session_summary` | generate summary from diary + recent events |
+| `backlinks` | find all memories linked to a specific memory via shared entities |
+
 **lifecycle & system**
 
 | tool | what it does |
@@ -231,11 +248,13 @@ engram/
 ├── lifecycle.py      # ebbinghaus forgetting, 7-factor importance scoring, promotion/demotion
 ├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer
+├── conversations.py  # claude code session ingest — exchange pairs, decision/correction detection
+├── dedup.py          # semantic deduplication — find and merge near-duplicates by embedding
 ├── layers.py         # L0-L3 graduated context retrieval
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 37-tool MCP server (JSON-RPC, stdio)
+├── mcp_server.py     # 44-tool MCP server (JSON-RPC, stdio)
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
@@ -250,9 +269,9 @@ engram/
 i studied three existing memory systems and six IR papers before building this. took the best parts from each:
 
 **systems:**
-- [cmyui/ai-memory](https://github.com/cmyui/ai-memory) — LLM-extracted atomic facts, three-stage hybrid retrieval with RRF, dream cycle
-- [mempalace](https://github.com/milla-jovovich/mempalace) — spatial metaphor, graduated layers, entity registry, exchange-pair chunking
-- [neuro-memory](https://github.com/raya-ac/neuro-memory) — atkinson-shiffrin model, ebbinghaus forgetting, importance scoring, procedural memory
+- [neuro-memory](https://github.com/raya-ac/neuro-memory) — my earlier memory system (built for openclaw, never finished). atkinson-shiffrin 4-layer model, ebbinghaus forgetting curve, 7-factor importance scoring, procedural memory with pattern templates. engram takes the layer architecture and lifecycle model from here.
+- [cmyui/ai-memory](https://github.com/cmyui/ai-memory) — LLM-extracted atomic facts, three-stage hybrid retrieval with RRF, dream cycle. cmyui used neuro-memory as inspiration for their system, and i pulled the best retrieval ideas from theirs back into engram.
+- [mempalace](https://github.com/milla-jovovich/mempalace) — spatial palace metaphor, graduated layers (L0-L3), entity registry with disambiguation, exchange-pair chunking for conversations, AAAK compression dialect
 
 **papers:**
 - [Reciprocal Rank Fusion](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf) (Cormack et al. 2009) — the RRF formula and k=60 constant
