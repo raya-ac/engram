@@ -67,7 +67,9 @@ memories aren't static. they move between layers based on how useful they turn o
 
 **promotion** — episodic memories that hit importance >= 0.7 and access count >= 5 get promoted to semantic (permanent). working memories auto-promote to episodic after 30 minutes or 2 accesses. the sweep runs on every `recall` call so it's basically free.
 
-**forgetting** — ebbinghaus decay on episodic memories. after 90 days, if importance < 0.3 and access count < 3, the memory gets soft-deleted (archived, not destroyed). semantic and procedural memories don't decay.
+**pinning** — pin any memory with the `pin` tool or the pin button in the web UI. pinned memories are immune to the dream cycle's forgetting pass. useful for memories that are important but accessed infrequently — the kind ebbinghaus would normally archive.
+
+**forgetting** — ebbinghaus decay on episodic memories. after 90 days, if importance < 0.3 and access count < 3, the memory gets soft-deleted (archived, not destroyed). semantic, procedural, and pinned memories don't decay.
 
 **consolidation** (dream cycle) — clusters similar memories by embedding distance, summarizes clusters of 5+, generates peer cards for entities with enough data, archives low-value old memories. run manually with `engram consolidate` or the MCP `consolidate` tool.
 
@@ -79,7 +81,16 @@ relationships form automatically through co-occurrence (entities mentioned in th
 
 traversal uses recursive SQL CTEs for multi-hop queries — "show me everything connected to Ari within 2 hops" runs in a single SQL query, no graph database needed. the `recall_related` tool does this.
 
-you can also manually link entities (`link_memories`), merge duplicates (`merge_entities`), add aliases (`update_entity`), and find backlinks (`backlinks`).
+you can also manually link entities (`link_memories`), merge duplicates (`merge_entities`), add aliases (`update_entity`), find backlinks (`backlinks`), and fuzzy-search for entities by partial name (`search_entities`).
+
+## editing and annotating
+
+memories aren't write-once. you can:
+
+- **edit content** — `edit_memory` changes the text and automatically re-embeds and rebuilds the FTS index. the memory keeps its ID, access history, and entity links.
+- **annotate** — `annotate` attaches timestamped notes to a memory without touching its content. useful for adding context later ("this turned out to be wrong" or "confirmed by Ari on april 8").
+- **invalidate** — `invalidate` marks a fact as no longer true with a reason. the memory stays in the database (useful for audit) but gets flagged and shown with a strikethrough in the web UI.
+- **tag** — `tag` adds or removes freeform tags. `batch_tag` applies tags to all memories matching a search query.
 
 ## install
 
@@ -265,15 +276,19 @@ full monitoring UI at `http://127.0.0.1:8420`:
 
 - **neural map** — force-directed entity graph with concentric layer rings (semantic core → procedural → episodic → working). neurons glow and fire impulse particles along synapses when memories are accessed. drag nodes, hover for details, click to inspect. polls the database every 2s so MCP queries show up in real time.
 - **search** — hybrid search with debug mode showing all 4 retrieval stages. filter chips for layer, importance slider.
-- **memories** — browse all memories, filter by layer (including codebase). every card has inline actions: layer dropdown to promote/demote, copy to clipboard, invalidate with reason, forget with confirmation.
+- **memories** — browse all memories, filter by layer (including codebase). every card has inline actions: promote/demote dropdown, pin/unpin, find similar, explain importance, copy, invalidate, forget. pinned memories show a yellow indicator.
 - **entities** — entity chips with memory counts. click to open inspector with relationship graph, add aliases, change entity type.
 - **timeline** — date range queries with memory cards.
 - **remember** — tabbed forms: general (any layer/importance), decision (with rationale → procedural), error pattern (with prevention → procedural), Q+A interaction (→ episodic).
 - **analytics** — donut chart for layer distribution, bar charts for most recalled memories, top entities by memory count, source type breakdown.
 - **context** — L0-L3 graduated context viewer with token counts per layer and copy buttons. query input for L3 search-based context.
+- **health** — system health dashboard with 10 status cards (embedding cache, orphaned entities, stale working memories, FTS index, embedding coverage, db size, etc). plus a memory map showing top entities per layer and full date range.
+- **dedup** — duplicate detection with adjustable similarity threshold slider. scan to preview duplicate pairs side by side, one-click auto-merge.
 - **ingest** — file path input with recent ingestion log from the database.
 - **live events** — real-time feed of all memory reads/writes across all processes (MCP, CLI, web). deduplicates events within 2-second windows and shows result counts.
 - **session diary** — quick note-taking input in the sidebar, timestamped entries.
+- **inspector panel** — right sidebar that shows memory details, entity graphs, similar memories (with similarity percentages), importance factor breakdowns (colored bar chart with 7 weighted factors), annotations, and access history.
+- **toast notifications** — bottom-right toasts for all actions (promote, pin, copy, forget, dedup) with success/error/info styling and auto-dismiss.
 - **keyboard shortcuts** — `/` focus search, `n` neural map, `s` search, `r` remember, `a` analytics, `Esc` close inspector.
 
 ### web API
@@ -283,24 +298,33 @@ the dashboard is backed by a full JSON API you can hit directly:
 ```
 GET  /api/memories                    paginated list, optional ?layer= filter
 GET  /api/memories/:id                full memory with hypothetical queries, entities, access history
+GET  /api/memories/:id/similar        find similar memories by embedding distance
+GET  /api/memories/:id/importance     7-factor importance score breakdown
 GET  /api/search?q=...&debug=true     hybrid search with optional debug breakdown
 GET  /api/search/filtered?q=...       search with layer, importance, date, source filters
 GET  /api/entities                    all entities with memory counts
 GET  /api/entities/:id/graph          entity relationship subgraph
+GET  /api/entities/:id/timeline       entity memories ordered chronologically
 GET  /api/neural                      full graph for neural visualization
 GET  /api/neural/fires?since=...      recent access events (lightweight polling)
 GET  /api/timeline?start=...&end=...  temporal query
 GET  /api/analytics                   layer distribution, top accessed, top entities
+GET  /api/health                      system health (cache, orphans, FTS, embeddings)
+GET  /api/memory-map                  full system overview with per-layer top entities
 GET  /api/context?query=...           L0-L3 graduated context with token counts
+GET  /api/duplicates?threshold=0.92   preview near-duplicate memory pairs
 GET  /api/stats                       system statistics
 GET  /api/events                      recent events from all processes
 GET  /api/diary                       session diary entries
 GET  /api/ingest/log                  recent file ingestions
 POST /api/remember                    store a memory
 POST /api/consolidate                 trigger dream cycle
+POST /api/dedup                       auto-merge duplicate memories
 POST /api/memories/:id/promote        change memory layer
 POST /api/memories/:id/invalidate     mark as no longer true
 POST /api/memories/:id/forget         soft-delete
+POST /api/memories/:id/pin            pin (prevent forgetting)
+POST /api/memories/:id/unpin          unpin
 POST /api/entities/:id/alias          add entity alias
 POST /api/entities/:id/type           change entity type
 POST /api/diary                       append diary entry
@@ -326,12 +350,12 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 52-tool MCP server (JSON-RPC, stdio)
+├── mcp_server.py     # 52-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
     ├── app.py        # fastapi with model warmup on startup
-    ├── routes.py     # REST API + analytics + entity management + filtered search
+    ├── routes.py     # 32 REST endpoints — search, analytics, entity mgmt, health, dedup, importance
     ├── events.py     # SSE event stream (in-process)
     └── templates/
         └── index.html  # single-page htmx dashboard with neural canvas
