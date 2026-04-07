@@ -74,7 +74,9 @@ def should_promote(mem: Memory, config: Config) -> str | None:
         if mem.importance >= lc.promote_importance and mem.access_count >= lc.promote_accesses:
             return MemoryLayer.SEMANTIC
     elif mem.layer == MemoryLayer.WORKING:
-        if mem.access_count >= 2:
+        age_minutes = (time.time() - mem.created_at) / 60
+        # auto-promote working to episodic after 30 min or if accessed twice
+        if age_minutes > 30 or mem.access_count >= 2:
             return MemoryLayer.EPISODIC
 
     return None

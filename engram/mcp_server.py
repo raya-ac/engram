@@ -120,10 +120,21 @@ class MCPServer:
     # --- Read tools ---
 
     def _recall(self, args: dict):
+        self._sweep_working()
         results = hybrid_search(args["query"], self.store, self.config, top_k=args.get("top_k", 10))
         return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
                  "layer": r.memory.layer, "fact_date": r.memory.fact_date,
                  "importance": r.memory.importance} for r in results]
+
+    def _sweep_working(self):
+        """Auto-promote old working memories to episodic."""
+        cutoff = time.time() - 1800  # 30 minutes
+        rows = self.store.conn.execute(
+            "SELECT id FROM memories WHERE layer = 'working' AND created_at < ? AND forgotten = 0",
+            (cutoff,),
+        ).fetchall()
+        for row in rows:
+            self.store.update_layer(row["id"], "episodic")
 
     def _recall_entity(self, args: dict):
         entity = self.store.find_entity_by_name(args["name"])
