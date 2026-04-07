@@ -22,7 +22,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
-**44 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**52 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -159,7 +159,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 44 tools:
+restart claude code. you get 52 tools:
 
 **recall & search**
 
@@ -185,6 +185,9 @@ restart claude code. you get 44 tools:
 | `remember_error` | error pattern + prevention → procedural layer |
 | `remember_interaction` | Q+A pair → episodic layer |
 | `remember_project` | structured project info → semantic layer |
+| `edit_memory` | edit content of an existing memory (re-embeds automatically) |
+| `annotate` | add a note to a memory without changing its content |
+| `pin` / `unpin` | pin a memory so it never gets forgotten by the dream cycle |
 | `forget` | soft-delete a memory |
 | `invalidate` | mark a fact as no longer true |
 | `tag` | add or remove tags on a memory |
@@ -196,7 +199,9 @@ restart claude code. you get 44 tools:
 |------|-------------|
 | `update_entity` | add aliases, change type |
 | `merge_entities` | combine two entities that are the same thing |
+| `search_entities` | fuzzy search for entities by partial name |
 | `entity_graph` | relationship subgraph as JSON |
+| `entity_timeline` | entity's memories ordered chronologically |
 | `link_memories` | manually relate two memories via their entities |
 | `backlinks` | find all memories linked to a specific memory via shared entities |
 
@@ -237,6 +242,8 @@ restart claude code. you get 44 tools:
 | `count_by` | group counts by layer, source type, entity, or month |
 | `export` | dump memories as markdown or JSON |
 | `ingest` | import files or directories |
+| `explain_importance` | break down a memory's importance score into 7 component factors |
+| `memory_map` | high-level map of the whole system — layer counts, top entities per layer, date range, recent activity |
 | `diary_write` / `diary_read` | session notes |
 
 ## hooks
@@ -319,7 +326,7 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 44-tool MCP server (JSON-RPC, stdio)
+├── mcp_server.py     # 52-tool MCP server (JSON-RPC, stdio)
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/

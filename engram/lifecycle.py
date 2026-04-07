@@ -51,6 +51,8 @@ def compute_importance(mem: Memory) -> float:
 
 def should_forget(mem: Memory, config: Config) -> bool:
     """Should this memory be archived (soft-forgotten)?"""
+    if mem.metadata.get("pinned"):
+        return False  # pinned memories never get forgotten
     if mem.layer == MemoryLayer.SEMANTIC:
         return False  # semantic memories are permanent
     if mem.layer == MemoryLayer.PROCEDURAL:

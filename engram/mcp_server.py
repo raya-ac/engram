@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 44 tools."""
+"""MCP tool server — JSON-RPC over stdio with 52 tools."""
 
 from __future__ import annotations
 
@@ -75,6 +75,18 @@ TOOLS = [
     # Batch operations
     {"name": "batch_tag", "description": "Add tags to all memories matching a search query", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "default": 10}}, "required": ["query", "tags"]}},
     {"name": "recompute_importance", "description": "Recalculate importance scores for all memories using the 7-factor formula", "inputSchema": {"type": "object", "properties": {}}},
+    # Edit & annotate
+    {"name": "edit_memory", "description": "Edit the content of an existing memory. Re-embeds automatically.", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "new_content": {"type": "string"}}, "required": ["memory_id", "new_content"]}},
+    {"name": "annotate", "description": "Add a note/annotation to a memory without changing its content", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "note": {"type": "string"}}, "required": ["memory_id", "note"]}},
+    {"name": "pin", "description": "Pin a memory so it never gets forgotten or archived by the dream cycle", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
+    {"name": "unpin", "description": "Unpin a previously pinned memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
+    # Entity tools
+    {"name": "search_entities", "description": "Fuzzy search for entities by name — finds partial matches unlike recall_entity which needs exact name", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}, "required": ["query"]}},
+    {"name": "entity_timeline", "description": "Get an entity's memories ordered by date — see its story chronologically", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    # Explain
+    {"name": "explain_importance", "description": "Break down a memory's importance score into its 7 component factors", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
+    # Visualization data
+    {"name": "memory_map", "description": "Get a high-level map of the entire memory system — layer counts, top entities per layer, recent activity, oldest/newest memories", "inputSchema": {"type": "object", "properties": {}}},
 ]
 
 _session_diary: list[str] = []
@@ -151,6 +163,14 @@ class MCPServer:
             "scan_codebase": self._scan_codebase,
             "recall_code": self._recall_code,
             "list_projects": self._list_projects,
+            "edit_memory": self._edit_memory,
+            "annotate": self._annotate,
+            "pin": self._pin,
+            "unpin": self._unpin,
+            "search_entities": self._search_entities,
+            "entity_timeline": self._entity_timeline,
+            "explain_importance": self._explain_importance,
+            "memory_map": self._memory_map,
             "dedup": self._dedup,
             "find_duplicates": self._find_duplicates_tool,
             "ingest_sessions": self._ingest_sessions,
@@ -566,6 +586,185 @@ class MCPServer:
         )
         self.store.save_relationship(rel)
         return {"status": "linked", "relation": args.get("relation", "RELATED_TO")}
+
+    # --- Edit & annotate ---
+
+    def _edit_memory(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+        new_content = args["new_content"]
+        # re-embed
+        emb = embed_documents([new_content], self.config.embedding_model)
+        emb_blob = emb[0].astype('float32').tobytes() if emb.size > 0 else None
+        # update content + embedding + FTS
+        self.store.conn.execute(
+            "UPDATE memories SET content = ?, embedding = ? WHERE id = ?",
+            (new_content, emb_blob, mem.id),
+        )
+        # rebuild FTS entry
+        row = self.store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (mem.id,)).fetchone()
+        if row:
+            self.store.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (row[0],))
+            hqs = self.store.conn.execute(
+                "SELECT query_text FROM hypothetical_queries WHERE memory_id = ?", (mem.id,)
+            ).fetchall()
+            hq_text = " ".join(r["query_text"] for r in hqs)
+            self.store.conn.execute(
+                "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, ?)",
+                (row[0], new_content, hq_text),
+            )
+        self.store.invalidate_embedding_cache()
+        self.store._emit_event("memory_edit", memory_id=mem.id, detail=f"content updated ({len(new_content)} chars)")
+        self.store.conn.commit()
+        return {"status": "edited", "id": mem.id}
+
+    def _annotate(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+        annotations = mem.metadata.get("annotations", [])
+        annotations.append({"note": args["note"], "timestamp": time.time()})
+        mem.metadata["annotations"] = annotations
+        self.store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                               (json.dumps(mem.metadata), mem.id))
+        self.store.conn.commit()
+        return {"status": "annotated", "total_annotations": len(annotations)}
+
+    def _pin(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+        mem.metadata["pinned"] = True
+        self.store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                               (json.dumps(mem.metadata), mem.id))
+        self.store.conn.commit()
+        return {"status": "pinned"}
+
+    def _unpin(self, args: dict):
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+        mem.metadata.pop("pinned", None)
+        self.store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                               (json.dumps(mem.metadata), mem.id))
+        self.store.conn.commit()
+        return {"status": "unpinned"}
+
+    # --- Entity tools ---
+
+    def _search_entities(self, args: dict):
+        query = args["query"].lower()
+        rows = self.store.conn.execute(
+            """SELECT e.id, e.canonical_name, e.entity_type, e.aliases,
+                      COUNT(em.memory_id) as mem_count
+               FROM entities e
+               LEFT JOIN entity_mentions em ON em.entity_id = e.id
+               WHERE LOWER(e.canonical_name) LIKE ?
+                  OR LOWER(e.aliases) LIKE ?
+               GROUP BY e.id
+               ORDER BY mem_count DESC
+               LIMIT ?""",
+            (f"%{query}%", f"%{query}%", args.get("limit", 20)),
+        ).fetchall()
+        return {"entities": [dict(r) for r in rows]}
+
+    def _entity_timeline(self, args: dict):
+        entity = self.store.find_entity_by_name(args["name"])
+        if not entity:
+            return {"error": f"Entity '{args['name']}' not found"}
+        memories = self.store.get_entity_memories(entity.id, limit=100)
+        # sort by fact_date first, then created_at
+        def sort_key(m):
+            if m.fact_date:
+                return m.fact_date
+            return time.strftime("%Y-%m-%d", time.localtime(m.created_at))
+        memories.sort(key=sort_key)
+        return {"entity": entity.canonical_name, "timeline": [
+            {"date": m.fact_date or time.strftime("%Y-%m-%d", time.localtime(m.created_at)),
+             "content": m.content[:200], "layer": m.layer, "importance": m.importance}
+            for m in memories
+        ]}
+
+    # --- Explain ---
+
+    def _explain_importance(self, args: dict):
+        import math
+        mem = self.store.get_memory(args["memory_id"])
+        if not mem:
+            return {"error": "Memory not found"}
+
+        age_days = (time.time() - mem.last_accessed) / 86400
+        recency = math.exp(-0.693 * age_days / 30)
+        access_factor = min(1.0, 0.1 * math.log(1 + mem.access_count))
+        emotion = abs(mem.emotional_valence) * 0.3
+        if mem.access_count > 0:
+            span = max(1, (mem.last_accessed - mem.created_at) / 86400)
+            stability = min(1.0, mem.access_count / (span + 1))
+        else:
+            stability = 0.0
+        layer_boost = {"working": 0.0, "episodic": 0.1, "semantic": 0.3, "procedural": 0.2, "codebase": 0.15}.get(mem.layer, 0.0)
+
+        factors = {
+            "base_importance": {"value": round(mem.importance, 3), "weight": 0.30},
+            "access_frequency": {"value": round(access_factor, 3), "weight": 0.15, "raw_count": mem.access_count},
+            "recency": {"value": round(recency, 3), "weight": 0.15, "age_days": round(age_days, 1)},
+            "emotional_valence": {"value": round(emotion, 3), "weight": 0.10, "raw_valence": mem.emotional_valence},
+            "stability": {"value": round(stability, 3), "weight": 0.10},
+            "layer_boost": {"value": round(layer_boost, 3), "weight": 0.20, "layer": mem.layer},
+        }
+        composite = sum(f["value"] * f["weight"] for f in factors.values())
+        return {"memory_id": mem.id, "composite_score": round(min(1.0, max(0.0, composite)), 4), "factors": factors}
+
+    # --- Memory map ---
+
+    def _memory_map(self, args: dict):
+        stats = self.store.get_stats()
+
+        # top entities per layer
+        layers_detail = {}
+        for layer in ["working", "episodic", "semantic", "procedural", "codebase"]:
+            top = self.store.conn.execute(
+                """SELECT e.canonical_name, COUNT(em.memory_id) as cnt
+                   FROM entity_mentions em
+                   JOIN memories m ON m.id = em.memory_id
+                   JOIN entities e ON e.id = em.entity_id
+                   WHERE m.layer = ? AND m.forgotten = 0
+                   GROUP BY e.id ORDER BY cnt DESC LIMIT 5""",
+                (layer,),
+            ).fetchall()
+            layers_detail[layer] = {
+                "count": stats["memories"].get(layer, 0),
+                "top_entities": [{"name": r["canonical_name"], "count": r["cnt"]} for r in top],
+            }
+
+        # oldest and newest
+        oldest = self.store.conn.execute(
+            "SELECT fact_date, content FROM memories WHERE forgotten=0 AND fact_date IS NOT NULL ORDER BY fact_date ASC LIMIT 1"
+        ).fetchone()
+        newest = self.store.conn.execute(
+            "SELECT fact_date, content FROM memories WHERE forgotten=0 AND fact_date IS NOT NULL ORDER BY fact_date DESC LIMIT 1"
+        ).fetchone()
+
+        # recent activity
+        recent_writes = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM events WHERE event_type LIKE '%write%' AND created_at > ?",
+            (time.time() - 3600,),
+        ).fetchone()["cnt"]
+        recent_reads = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM events WHERE event_type LIKE '%read%' OR event_type = 'recall' AND created_at > ?",
+            (time.time() - 3600,),
+        ).fetchone()["cnt"]
+
+        return {
+            **stats,
+            "layers": layers_detail,
+            "date_range": {
+                "oldest": dict(oldest) if oldest else None,
+                "newest": dict(newest) if newest else None,
+            },
+            "last_hour": {"writes": recent_writes, "reads": recent_reads},
+        }
 
     # --- Dedup & maintenance ---
 
