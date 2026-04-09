@@ -50,6 +50,12 @@ def main():
     # status
     p_status = sub.add_parser("status", help="Show system stats")
 
+    # demo
+    p_demo = sub.add_parser("demo", help="Interactive demo walkthrough")
+    p_demo.add_argument("--keep", action="store_true", help="Keep demo database after")
+    p_demo.add_argument("--web", action="store_true", help="Also start web dashboard")
+    p_demo.add_argument("--port", type=int, default=8421, help="Web dashboard port")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
@@ -71,6 +77,9 @@ def main():
         cmd_consolidate(args, config)
     elif args.command == "status":
         cmd_status(args, config)
+    elif args.command == "demo":
+        from engram.demo import run_demo
+        run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
     elif args.command == "serve":
         cmd_serve(args, config)
     else:
