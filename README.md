@@ -56,8 +56,10 @@ the hypothetical query part is from [docTTTTTquery](https://cs.uwaterloo.ca/~jim
 
 memories aren't static. they move between layers based on how useful they turn out to be.
 
+**surprise-based importance** — at write time, every new memory is compared against existing embeddings using k-NN cosine distance (k=5). novel memories (far from anything stored) get their importance boosted up to +0.3. redundant memories (close to existing) get importance reduced and are flagged as potential duplicates. the surprise score is stored in metadata so you can audit it later. this is inspired by the [Titans paper](https://arxiv.org/abs/2501.00663) (Behrouz et al., Google) where memory updates are proportional to surprise — the gradient of the loss function. the `remember` tool now returns a `surprise` field (0-1) and warns when near-duplicates are detected.
+
 **importance scoring** uses 7 factors:
-- base importance (set at creation, 0.0-1.0)
+- base importance (set at creation, 0.0-1.0, adjusted by surprise at write time)
 - access frequency (log scale, how often it's been recalled)
 - recency (exponential decay, 30-day half-life)
 - emotional valence (strong emotions = more memorable)
@@ -341,6 +343,7 @@ engram/
 ├── retrieval.py      # 4-stage hybrid pipeline (dense + BM25 + graph → RRF → boost → rerank)
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
+├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
 ├── lifecycle.py      # ebbinghaus forgetting, 7-factor importance, promotion/demotion
 ├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer

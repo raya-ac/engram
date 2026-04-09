@@ -18,6 +18,7 @@ from engram.layers import get_context_layers, format_context
 from engram.compress import compress_memories
 from engram.lifecycle import compute_importance
 from engram.consolidator import consolidate
+from engram.surprise import compute_surprise, adjust_importance
 
 TOOLS = [
     # Read tools
@@ -97,6 +98,7 @@ class MCPServer:
         self.config = config
         self.store = Store(config)
         self.store.init_db()
+        self._session_id = str(uuid.uuid4())[:8]
 
     def handle_request(self, request: dict) -> dict:
         method = request.get("method", "")
@@ -273,6 +275,16 @@ class MCPServer:
         emb = embed_documents([mem.content], self.config.embedding_model)
         if emb.size > 0:
             mem.embedding = emb[0]
+
+        # surprise gate: compute novelty before storing
+        surprise_info = {}
+        if mem.embedding is not None:
+            surprise_info = compute_surprise(mem.embedding, self.store)
+            mem.importance = adjust_importance(mem.importance, surprise_info)
+            mem.metadata["surprise"] = surprise_info["surprise"]
+            if surprise_info["is_duplicate"] and surprise_info["nearest_id"]:
+                mem.metadata["duplicate_of"] = surprise_info["nearest_id"]
+
         hqs = []
         try:
             hqs = generate_hypothetical_queries(mem.content, self.config)
@@ -280,7 +292,14 @@ class MCPServer:
             pass
         self.store.save_memory(mem, hypothetical_queries=hqs)
         process_entities_for_memory(self.store, mem.id, mem.content)
-        return {"id": mem.id, "status": "stored"}
+        result = {"id": mem.id, "status": "stored"}
+        if surprise_info:
+            result["surprise"] = surprise_info["surprise"]
+            result["importance"] = mem.importance
+            if surprise_info["is_duplicate"]:
+                result["warning"] = "near-duplicate detected"
+                result["duplicate_of"] = surprise_info["nearest_id"]
+        return result
 
     def _remember_interaction(self, args: dict):
         content = f"Q: {args['question']}\nA: {args['answer']}"
@@ -353,15 +372,19 @@ class MCPServer:
         cmd_ingest(fake_args, self.config)
         return {"status": "ingested"}
 
-    # --- Diary tools ---
+    # --- Diary tools (persistent) ---
 
     def _diary_write(self, args: dict):
         entry = f"[{time.strftime('%H:%M:%S')}] {args['entry']}"
-        _session_diary.append(entry)
+        _session_diary.append(entry)  # keep in-memory for session_summary
+        self.store.write_diary(entry, session_id=self._session_id)
         return {"status": "written", "entries": len(_session_diary)}
 
     def _diary_read(self, args: dict):
-        return {"diary": _session_diary}
+        # return persistent diary, fallback to session
+        entries = self.store.get_diary(limit=50)
+        texts = [e["text"] for e in entries]
+        return {"diary": texts if texts else _session_diary}
 
     # --- Extended tools ---
 
@@ -713,6 +736,11 @@ class MCPServer:
             "stability": {"value": round(stability, 3), "weight": 0.10},
             "layer_boost": {"value": round(layer_boost, 3), "weight": 0.20, "layer": mem.layer},
         }
+        # surprise factor (stored at write time)
+        surprise_val = mem.metadata.get("surprise", 0.5)
+        factors["surprise"] = {"value": round(surprise_val, 3), "weight": 0.0,
+                               "note": "recorded at write time, used for initial importance adjustment"}
+
         composite = sum(f["value"] * f["weight"] for f in factors.values())
         return {"memory_id": mem.id, "composite_score": round(min(1.0, max(0.0, composite)), 4), "factors": factors}
 
