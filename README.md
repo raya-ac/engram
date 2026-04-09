@@ -101,6 +101,19 @@ memories aren't write-once. you can:
 - **invalidate** — `invalidate` marks a fact as no longer true with a reason. the memory stays in the database (useful for audit) but gets flagged and shown with a strikethrough in the web UI.
 - **tag** — `tag` adds or removes freeform tags. `batch_tag` applies tags to all memories matching a search query.
 
+## examples
+
+the `examples/` directory has ready-to-use setup guides:
+
+| file | what it covers |
+|------|---------------|
+| [`claude-code-setup.md`](examples/claude-code-setup.md) | full walkthrough: install, wire into claude code, add CLAUDE.md instructions, seed memories |
+| [`agent-patterns.md`](examples/agent-patterns.md) | common patterns: session orientation, learning from corrections, check-before-store, cognitive scaffolding, multi-agent setup |
+| [`python-client.py`](examples/python-client.py) | standalone Python usage without MCP — direct library calls for store, search, surprise scoring, reranker |
+| [`custom-agent.py`](examples/custom-agent.py) | minimal conversational agent with engram memory using the Anthropic SDK |
+| [`openai-compatible.py`](examples/openai-compatible.py) | same agent pattern but works with any OpenAI-compatible API (OpenAI, Ollama, vLLM, llama.cpp) |
+| [`hooks-setup.md`](examples/hooks-setup.md) | auto-extract memories from conversations via claude code hooks |
+
 ## install
 
 ```bash
