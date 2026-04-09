@@ -71,7 +71,12 @@ memories aren't static. they move between layers based on how useful they turn o
 
 **pinning** — pin any memory with the `pin` tool or the pin button in the web UI. pinned memories are immune to the dream cycle's forgetting pass. useful for memories that are important but accessed infrequently — the kind ebbinghaus would normally archive.
 
-**forgetting** — ebbinghaus decay on episodic memories. after 90 days, if importance < 0.3 and access count < 3, the memory gets soft-deleted (archived, not destroyed). semantic, procedural, and pinned memories don't decay.
+**retention regularization** — forgetting is reframed as retention regularization, inspired by [Miras](https://arxiv.org/abs/2504.13173) (Behrouz et al., Google). three modes, configurable via `retention_mode` in config:
+- `l2` (classic ebbinghaus): smooth exponential decay, 50% at half-life. everything fades gradually.
+- `huber` (default): matches L2 near-term, transitions to linear for old memories. robust to burst-then-quiet access patterns — old-but-once-hot memories get a gentler transition instead of an infinite long tail. `huber_delta` controls the transition point.
+- `elastic` (L1+L2): sparse retention. strongly-held memories stay near full strength, weakly-held ones decay faster. produces cleaner separation between keepers and forgettables. `elastic_l1_ratio` controls the L1/L2 blend.
+
+all modes include access reinforcement — each recall strengthens retention (spaced repetition effect, log-scaled, capped at +0.3). after 90 days, if retention < 0.15, importance < 0.3, and access count < 3, the memory gets soft-deleted. semantic, procedural, and pinned memories don't decay.
 
 **consolidation** (dream cycle) — clusters similar memories by embedding distance, summarizes clusters of 5+, generates peer cards for entities with enough data, archives low-value old memories. run manually with `engram consolidate` or the MCP `consolidate` tool.
 
@@ -419,6 +424,9 @@ lifecycle:
   promote_importance: 0.7
   promote_accesses: 5
   cluster_threshold: 0.8
+  retention_mode: huber        # l2 | huber | elastic
+  huber_delta: 0.5             # transition point for huber (in half-lives)
+  elastic_l1_ratio: 0.3        # L1 weight for elastic (0=pure L2, 1=pure L1)
 
 llm:
   backend: claude_cli   # claude_cli | mlx

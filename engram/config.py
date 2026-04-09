@@ -29,6 +29,9 @@ class LifecycleConfig:
     promote_accesses: int = 5
     cluster_threshold: float = 0.8
     cluster_min_size: int = 5
+    retention_mode: str = "huber"  # l2 | huber | elastic
+    huber_delta: float = 0.5      # transition point (in half-lives) for huber mode
+    elastic_l1_ratio: float = 0.3  # L1 weight for elastic mode (0=pure L2, 1=pure L1)
 
 
 @dataclass
