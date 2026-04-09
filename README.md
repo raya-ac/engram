@@ -50,6 +50,8 @@ query
      final top-k results
 ```
 
+**deep retrieval** — optional 5th stage: a learned 2-layer MLP reranker trained on actual access patterns. which memories get accessed after being returned in search results? that signal teaches the reranker what's useful vs what's just semantically similar. takes 10 features (cosine similarity, importance, access count, age, layer one-hot, retention score) and outputs a relevance prediction. train with `train_reranker`, model persists to disk next to the database. runs automatically on every `recall` once trained. lightweight — adds <1ms per query.
+
 the hypothetical query part is from [docTTTTTquery](https://cs.uwaterloo.ca/~jimmylin/publications/Nogueira_Lin_2019_docTTTTTquery.pdf) — at ingestion time, generate questions each memory might answer, index them alongside the content. fixes the vocabulary mismatch problem where your search terms don't match the stored text.
 
 ## memory lifecycle
@@ -177,7 +179,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 52 tools:
+restart claude code. you get 54 tools:
 
 **recall & search**
 
@@ -239,6 +241,8 @@ restart claude code. you get 52 tools:
 | `find_duplicates` | preview duplicate pairs without merging |
 | `recompute_importance` | recalculate all importance scores with the 7-factor formula |
 | `batch_tag` | add tags to all memories matching a search query |
+| `train_reranker` | train the deep MLP reranker on access patterns |
+| `reranker_status` | check if the deep reranker is trained |
 
 **conversations & sessions**
 
@@ -349,6 +353,7 @@ engram/
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
 ├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
+├── deep_retrieval.py # learned MLP reranker trained on access patterns
 ├── lifecycle.py      # ebbinghaus forgetting, 7-factor importance, promotion/demotion
 ├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer
@@ -358,7 +363,7 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 52-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── mcp_server.py     # 54-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/

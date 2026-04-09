@@ -36,7 +36,8 @@ class RetrievalDebug:
 
 def search(query: str, store: Store, config: Config | None = None,
            top_k: int | None = None, debug: bool = False,
-           rerank: bool = True) -> list[RetrievalResult] | tuple[list[RetrievalResult], RetrievalDebug]:
+           rerank: bool = True,
+           deep_reranker=None) -> list[RetrievalResult] | tuple[list[RetrievalResult], RetrievalDebug]:
     if config is None:
         config = Config.load()
 
@@ -99,6 +100,35 @@ def search(query: str, store: Store, config: Config | None = None,
                     "rrf": rrf_scores.get(mid, 0),
                 }
                 results.append(RetrievalResult(memory=mem, score=score, sources=sources))
+
+    # --- Optional: deep reranker pass ---
+    if deep_reranker and deep_reranker.is_trained and results:
+        query_vec = embed_query(query, config.embedding_model)
+        candidates = []
+        emb_map = {}
+        for r in results:
+            c = {
+                "id": r.memory.id,
+                "score": r.score,
+                "importance": r.memory.importance,
+                "access_count": r.memory.access_count,
+                "created_at": r.memory.created_at,
+                "layer": r.memory.layer,
+            }
+            candidates.append(c)
+            if r.memory.embedding is not None:
+                emb_map[r.memory.id] = r.memory.embedding
+
+        reranked_candidates = deep_reranker.rerank(candidates, query_vec, emb_map)
+
+        # rebuild results in new order
+        mem_map = {r.memory.id: r for r in results}
+        new_results = []
+        for c in reranked_candidates[:k]:
+            r = mem_map[c["id"]]
+            r.sources["deep_reranker"] = c.get("deep_score", 0)
+            new_results.append(r)
+        results = new_results
 
     # record access — one event per search, not per result
     if results:

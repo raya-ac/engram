@@ -19,6 +19,7 @@ from engram.compress import compress_memories
 from engram.lifecycle import compute_importance
 from engram.consolidator import consolidate
 from engram.surprise import compute_surprise, adjust_importance
+from engram.deep_retrieval import DeepReranker
 
 TOOLS = [
     # Read tools
@@ -88,6 +89,9 @@ TOOLS = [
     {"name": "explain_importance", "description": "Break down a memory's importance score into its 7 component factors", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
     # Visualization data
     {"name": "memory_map", "description": "Get a high-level map of the entire memory system — layer counts, top entities per layer, recent activity, oldest/newest memories", "inputSchema": {"type": "object", "properties": {}}},
+    # Deep retrieval
+    {"name": "train_reranker", "description": "Train the deep retrieval MLP reranker on access patterns — learns which memories are actually useful from historical recall data", "inputSchema": {"type": "object", "properties": {"epochs": {"type": "integer", "default": 50}, "learning_rate": {"type": "number", "default": 0.01}}}},
+    {"name": "reranker_status", "description": "Check if the deep reranker is trained and its model path", "inputSchema": {"type": "object", "properties": {}}},
 ]
 
 _session_diary: list[str] = []
@@ -99,6 +103,9 @@ class MCPServer:
         self.store = Store(config)
         self.store.init_db()
         self._session_id = str(uuid.uuid4())[:8]
+        # deep reranker — persists model next to db
+        model_path = config.resolved_db_path.parent / "reranker.npz"
+        self._reranker = DeepReranker(model_path=model_path)
 
     def handle_request(self, request: dict) -> dict:
         method = request.get("method", "")
@@ -180,6 +187,8 @@ class MCPServer:
             "backlinks": self._backlinks,
             "batch_tag": self._batch_tag,
             "recompute_importance": self._recompute_importance,
+            "train_reranker": self._train_reranker,
+            "reranker_status": self._reranker_status,
         }
         handler = handlers.get(name)
         if not handler:
@@ -190,7 +199,9 @@ class MCPServer:
 
     def _recall(self, args: dict):
         self._sweep_working()
-        results = hybrid_search(args["query"], self.store, self.config, top_k=args.get("top_k", 10))
+        results = hybrid_search(args["query"], self.store, self.config,
+                                top_k=args.get("top_k", 10),
+                                deep_reranker=self._reranker)
         return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
                  "layer": r.memory.layer, "fact_date": r.memory.fact_date,
                  "importance": r.memory.importance} for r in results]
@@ -962,6 +973,23 @@ class MCPServer:
             projects[p]["types"] = {r["type"]: r["cnt"] for r in type_rows}
 
         return {"projects": list(projects.values())}
+
+    # --- Deep retrieval ---
+
+    def _train_reranker(self, args: dict):
+        result = self._reranker.train(
+            self.store,
+            lr=args.get("learning_rate", 0.01),
+            epochs=args.get("epochs", 50),
+        )
+        return result
+
+    def _reranker_status(self, args: dict):
+        return {
+            "trained": self._reranker.is_trained,
+            "model_path": str(self._reranker.model_path) if self._reranker.model_path else None,
+            "model_exists": self._reranker.model_path.exists() if self._reranker.model_path else False,
+        }
 
     def _response(self, req_id, result):
         return {"jsonrpc": "2.0", "id": req_id, "result": result}
