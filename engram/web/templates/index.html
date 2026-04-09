@@ -26,7 +26,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 a { color: var(--accent2); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-.layout { display: grid; grid-template-columns: 240px 1fr 300px; grid-template-rows: 48px 1fr; height: 100vh; }
+.layout { display: grid; grid-template-columns: 240px 1fr 300px; grid-template-rows: 48px 1fr 32px; height: 100vh; }
 .header { grid-column: 1/-1; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; }
 .header h1 { font-size: 15px; color: var(--accent2); font-weight: 600; letter-spacing: 1px; }
 .header .stats { color: var(--text2); font-size: 11px; margin-left: auto; }
@@ -47,7 +47,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
 .search-box { width: 100%; display: flex; gap: 8px; margin-bottom: 16px; }
 .search-box input { flex: 1; }
 
-.memory-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
+.memory-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s, opacity 0.15s; animation: slideIn 0.2s ease; }
 .memory-card:hover { border-color: var(--accent); }
 .memory-card .content { margin-bottom: 6px; line-height: 1.5; }
 .memory-card .meta { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--text2); }
@@ -56,6 +56,50 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
 .tag.episodic { color: var(--cyan); }
 .tag.semantic { color: var(--green); }
 .tag.procedural { color: var(--accent2); }
+.tag.codebase { color: var(--accent); }
+
+/* layer-colored left border */
+.memory-card.layer-working { border-left: 2px solid var(--yellow); }
+.memory-card.layer-episodic { border-left: 2px solid var(--cyan); }
+.memory-card.layer-semantic { border-left: 2px solid var(--green); }
+.memory-card.layer-procedural { border-left: 2px solid var(--accent2); }
+.memory-card.layer-codebase { border-left: 2px solid var(--accent); }
+
+/* importance bar */
+.importance-bar { height: 2px; margin-top: 4px; border-radius: 1px; }
+
+/* pinned card glow */
+.memory-card.pinned { box-shadow: inset 3px 0 0 var(--yellow); }
+
+/* hint card */
+.hint-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; backdrop-filter: blur(8px); opacity: 0.85; font-size: 12px; animation: slideIn 0.2s ease; }
+.hint-card:hover { border-color: var(--accent); opacity: 1; }
+.hint-card .hint-entities { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.hint-card .hint-entities .entity-pill { background: var(--bg); padding: 1px 6px; border-radius: 8px; font-size: 10px; color: var(--cyan); }
+
+/* view transitions */
+.view-panel { transition: opacity 0.15s ease; }
+
+/* surprise gauge */
+.surprise-gauge { display: inline-block; }
+
+/* retention chart */
+.curve-chart { display: block; }
+
+/* card slide-in animation */
+@keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* select mode */
+.memory-card .select-cb { display: none; margin-right: 6px; }
+.select-mode .memory-card .select-cb { display: inline-block; }
+.bulk-bar { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: var(--bg2); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 16px; display: none; gap: 8px; align-items: center; z-index: 100; font-size: 12px; }
+.bulk-bar.visible { display: flex; }
+
+/* search history dropdown */
+.search-history { position: absolute; background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 50; display: none; width: 100%; }
+.search-history.open { display: block; }
+.search-history-item { padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--text2); }
+.search-history-item:hover { background: var(--bg3); color: var(--text); }
 
 .entity-node { display: inline-block; background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 3px 10px; margin: 2px; font-size: 11px; cursor: pointer; }
 .entity-node:hover { border-color: var(--accent); }
@@ -87,7 +131,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
 .empty { color: var(--text2); text-align: center; padding: 40px; }
 
 /* card actions */
-.card-actions { display: flex; gap: 4px; margin-top: 6px; }
+.card-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
 .card-actions button { font-size: 10px; padding: 2px 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text2); }
 .card-actions button:hover { border-color: var(--accent); color: var(--text); }
 .card-actions button.danger:hover { border-color: var(--red); color: var(--red); }
@@ -164,6 +208,51 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
 #neural-tooltip .tt-type { color: var(--text2); font-size: 10px; }
 #neural-tooltip .tt-count { color: var(--cyan); margin-top: 2px; }
 
+/* session pulse bar */
+.pulse-bar { grid-column: 1/-1; background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; height: 32px; font-size: 11px; }
+.pulse-stat { display: flex; align-items: center; gap: 4px; }
+.pulse-stat .pulse-dot { width: 6px; height: 6px; border-radius: 50%; }
+.pulse-stat .pulse-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pulse-sparkline { display: flex; align-items: flex-end; gap: 1px; height: 18px; margin-left: auto; }
+.pulse-sparkline .spark-bar { width: 5px; background: var(--accent); border-radius: 1px 1px 0 0; min-height: 1px; transition: height 0.3s; }
+
+/* heatmap */
+.heatmap-grid { display: flex; flex-direction: column; gap: 2px; }
+.heatmap-row { display: flex; gap: 2px; align-items: center; }
+.heatmap-cell { width: 14px; height: 14px; border-radius: 2px; background: var(--bg3); }
+.heatmap-label { width: 30px; font-size: 9px; color: var(--text2); text-align: right; padding-right: 4px; }
+.heatmap-legend { display: flex; gap: 4px; align-items: center; margin-top: 8px; font-size: 9px; color: var(--text2); }
+.heatmap-legend .hm-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+/* bridge card */
+.bridge-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; animation: slideIn 0.2s ease; }
+.bridge-card .bridge-header { font-size: 13px; font-weight: 600; color: var(--accent2); margin-bottom: 6px; }
+.bridge-card .bridge-text { font-size: 11px; line-height: 1.5; margin-bottom: 6px; }
+.bridge-card .bridge-meta { font-size: 10px; color: var(--text2); display: flex; gap: 8px; }
+
+/* cognition tabs */
+.cog-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.cog-input-row input, .cog-input-row textarea { flex: 1; }
+.slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; }
+.slider-row label { width: 80px; color: var(--text2); }
+.slider-row input[type=range] { flex: 1; max-width: 200px; }
+.slider-row .slider-val { width: 40px; color: var(--text2); text-align: right; }
+.cog-result { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-top: 8px; font-size: 11px; line-height: 1.5; }
+.cog-status-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+
+/* inline edit */
+.edit-area { width: 100%; margin-bottom: 6px; }
+.edit-area textarea { width: 100%; min-height: 60px; font-size: 12px; }
+.edit-actions { display: flex; gap: 4px; }
+
+/* annotation */
+.annotation-item { font-size: 10px; padding: 3px 0; border-bottom: 1px solid var(--border); color: var(--text2); }
+.annotation-item .ann-time { color: var(--text2); opacity: 0.7; }
+
+/* export inline form */
+.export-form { margin-top: 6px; display: none; }
+.export-form.open { display: block; }
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: 48px auto; }
   .sidebar, .panel { display: none; }
@@ -187,10 +276,13 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <a class="nav-item" href="#" onclick="showView('timeline')">Timeline</a>
       <a class="nav-item" href="#" onclick="showView('remember')">Remember</a>
       <a class="nav-item" href="#" onclick="showView('analytics')">Analytics</a>
+      <a class="nav-item" href="#" onclick="showView('heatmap')">Heatmap</a>
       <a class="nav-item" href="#" onclick="showView('context')">Context</a>
       <a class="nav-item" href="#" onclick="showView('ingest')">Ingest</a>
       <a class="nav-item" href="#" onclick="showView('health')">Health</a>
       <a class="nav-item" href="#" onclick="showView('dedup')">Dedup</a>
+      <a class="nav-item" href="#" onclick="showView('cognition')">Cognition</a>
+      <a class="nav-item" href="#" onclick="showView('bridges')">Bridges</a>
     </div>
 
     <div class="section">
@@ -211,12 +303,30 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <div class="section-title">Actions</div>
       <button class="secondary" style="width:100%;margin-bottom:6px" onclick="runConsolidate()">Run Dream Cycle</button>
       <div id="consolidate-result" style="font-size:10px;color:var(--text2)"></div>
+      <button class="secondary" style="width:100%;margin-bottom:6px;margin-top:4px" onclick="toggleExportForm()">Export</button>
+      <div id="export-form" class="export-form">
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <select id="export-format" style="font-size:11px;flex:1">
+            <option value="markdown">Markdown</option>
+            <option value="json">JSON</option>
+          </select>
+          <select id="export-layer" style="font-size:11px;flex:1">
+            <option value="">All layers</option>
+            <option value="working">Working</option>
+            <option value="episodic">Episodic</option>
+            <option value="semantic">Semantic</option>
+            <option value="procedural">Procedural</option>
+            <option value="codebase">Codebase</option>
+          </select>
+        </div>
+        <button style="width:100%;font-size:11px;padding:4px 8px" onclick="doExport()">Download</button>
+      </div>
     </div>
   </div>
 
   <div class="main" id="main-content">
     <!-- Neural view (default) -->
-    <div id="view-neural">
+    <div id="view-neural" class="view-panel">
       <div id="neural-container">
         <canvas id="neural-canvas" width="900" height="560"></canvas>
         <div id="neural-tooltip">
@@ -228,12 +338,16 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Search view -->
-    <div id="view-search" style="display:none">
-      <div class="search-box">
-        <input type="text" id="search-input" placeholder="Search memories... (press /)" onkeydown="if(event.key==='Enter')doSearch()">
+    <div id="view-search" class="view-panel" style="display:none">
+      <div class="search-box" style="position:relative">
+        <input type="text" id="search-input" placeholder="Search memories... (press /)" onkeydown="if(event.key==='Enter'){doSearch();hideSearchHistory()}" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,200)">
+        <div id="search-history" class="search-history"></div>
         <button onclick="doSearch()">Search</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2)">
           <input type="checkbox" id="search-debug"> Debug
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2)">
+          <input type="checkbox" id="search-hints"> Hints
         </label>
       </div>
       <div class="filter-bar">
@@ -246,20 +360,26 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
         <input type="range" id="filter-importance" min="0" max="1" step="0.1" value="0" style="width:60px" oninput="document.getElementById('imp-val').textContent=this.value">
         <span id="imp-val" style="font-size:10px;color:var(--text2);width:20px">0</span>
       </div>
+      <div style="margin-bottom:8px">
+        <button class="secondary" style="font-size:10px;padding:3px 10px" onclick="toggleSelectMode()">Select</button>
+      </div>
       <div id="search-results"></div>
     </div>
 
-    <div id="view-memories" style="display:none">
+    <div id="view-memories" class="view-panel" style="display:none">
       <div class="section-title">Recent Memories</div>
+      <div style="margin-bottom:8px">
+        <button class="secondary" style="font-size:10px;padding:3px 10px" onclick="toggleSelectMode()">Select</button>
+      </div>
       <div id="memories-list"></div>
     </div>
 
-    <div id="view-entities" style="display:none">
+    <div id="view-entities" class="view-panel" style="display:none">
       <div class="section-title">Entity Graph</div>
       <div id="entities-list"></div>
     </div>
 
-    <div id="view-timeline" style="display:none">
+    <div id="view-timeline" class="view-panel" style="display:none">
       <div class="section-title">Timeline</div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input type="text" id="timeline-start" placeholder="YYYY-MM-DD" value="2026-03">
@@ -269,7 +389,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <div id="timeline-list"></div>
     </div>
 
-    <div id="view-remember" style="display:none">
+    <div id="view-remember" class="view-panel" style="display:none">
       <div class="tabs">
         <div class="tab active" onclick="switchRememberTab('general',this)">General</div>
         <div class="tab" onclick="switchRememberTab('decision',this)">Decision</div>
@@ -303,7 +423,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Analytics view -->
-    <div id="view-analytics" style="display:none">
+    <div id="view-analytics" class="view-panel" style="display:none">
       <div class="section-title">Layer Distribution</div>
       <div class="donut-container">
         <canvas id="donut-canvas" width="120" height="120"></canvas>
@@ -318,7 +438,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Context layers viewer -->
-    <div id="view-context" style="display:none">
+    <div id="view-context" class="view-panel" style="display:none">
       <div class="section-title">Graduated Context Layers</div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input type="text" id="context-query" placeholder="Query for L3 (optional)" style="flex:1">
@@ -328,11 +448,14 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Ingest view -->
-    <div id="view-ingest" style="display:none">
+    <div id="view-ingest" class="view-panel" style="display:none">
       <div class="section-title">Ingest Files</div>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
         <input type="text" id="ingest-path" placeholder="~/path/to/files" style="flex:1">
         <button onclick="doIngest()">Ingest</button>
+      </div>
+      <div style="margin-bottom:16px">
+        <button class="secondary" style="font-size:11px" onclick="doIngestSessions()">Ingest Sessions</button>
       </div>
       <div id="ingest-status"></div>
       <div class="section-title" style="margin-top:16px">Recent Ingestions</div>
@@ -340,7 +463,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Health view -->
-    <div id="view-health" style="display:none">
+    <div id="view-health" class="view-panel" style="display:none">
       <div class="section-title">System Health</div>
       <div id="health-grid" class="health-grid"></div>
       <div class="section-title" style="margin-top:16px">Memory Map</div>
@@ -348,7 +471,7 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
 
     <!-- Dedup view -->
-    <div id="view-dedup" style="display:none">
+    <div id="view-dedup" class="view-panel" style="display:none">
       <div class="section-title">Duplicate Detection</div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
         <span style="font-size:11px;color:var(--text2)">Threshold:</span>
@@ -358,6 +481,105 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
         <button onclick="runDedup()">Auto-merge</button>
       </div>
       <div id="dedup-results"></div>
+    </div>
+
+    <!-- Heatmap view -->
+    <div id="view-heatmap" class="view-panel" style="display:none">
+      <div class="section-title">Activity Heatmap</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <span style="font-size:11px;color:var(--text2)">Days:</span>
+        <select id="heatmap-days" style="font-size:11px" onchange="loadHeatmap()">
+          <option value="7">7</option>
+          <option value="14">14</option>
+          <option value="30" selected>30</option>
+          <option value="60">60</option>
+        </select>
+        <span style="font-size:11px;color:var(--text2);margin-left:8px">Filter:</span>
+        <select id="heatmap-filter" style="font-size:11px" onchange="loadHeatmap()">
+          <option value="all">All</option>
+          <option value="writes">Writes</option>
+          <option value="reads">Reads</option>
+        </select>
+      </div>
+      <div id="heatmap-container"></div>
+    </div>
+
+    <!-- Cognition view (NEW) -->
+    <div id="view-cognition" class="view-panel" style="display:none">
+      <div class="section-title">Cognition</div>
+      <div class="tabs">
+        <div class="tab active" onclick="switchCognitionTab('surprise',this)">Surprise</div>
+        <div class="tab" onclick="switchCognitionTab('retention',this)">Retention</div>
+        <div class="tab" onclick="switchCognitionTab('reranker',this)">Reranker</div>
+      </div>
+
+      <!-- Surprise tab -->
+      <div id="ctab-surprise">
+        <div class="cog-input-row">
+          <textarea id="surprise-text" rows="3" style="flex:1" placeholder="Enter text to check surprise/novelty..."></textarea>
+          <button onclick="checkSurprise()">Check Surprise</button>
+        </div>
+        <div style="display:flex;gap:20px;align-items:flex-start">
+          <div class="surprise-gauge">
+            <canvas id="surprise-gauge" width="200" height="200"></canvas>
+          </div>
+          <div id="surprise-result" class="cog-result" style="flex:1;min-height:100px">
+            <span style="color:var(--text2)">Enter text and click "Check Surprise" to see novelty analysis.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Retention tab -->
+      <div id="ctab-retention" style="display:none">
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div class="slider-row">
+              <label>Half-life</label>
+              <input type="range" id="ret-halflife" min="5" max="120" value="30" oninput="document.getElementById('ret-hl-val').textContent=this.value;drawRetentionCurves()">
+              <span class="slider-val" id="ret-hl-val">30</span>
+            </div>
+            <div class="slider-row">
+              <label>Huber delta</label>
+              <input type="range" id="ret-huber-delta" min="0.1" max="2.0" step="0.1" value="0.5" oninput="document.getElementById('ret-hd-val').textContent=this.value;drawRetentionCurves()">
+              <span class="slider-val" id="ret-hd-val">0.5</span>
+            </div>
+            <div class="slider-row">
+              <label>L1 ratio</label>
+              <input type="range" id="ret-l1-ratio" min="0.0" max="1.0" step="0.05" value="0.3" oninput="document.getElementById('ret-l1-val').textContent=this.value;drawRetentionCurves()">
+              <span class="slider-val" id="ret-l1-val">0.3</span>
+            </div>
+            <div style="margin-top:8px">
+              <span class="chip active" style="font-size:9px">Huber (default)</span>
+              <span class="chip" style="font-size:9px">L2</span>
+              <span class="chip" style="font-size:9px">Elastic Net</span>
+            </div>
+          </div>
+          <div class="curve-chart">
+            <canvas id="retention-chart" width="600" height="300"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reranker tab -->
+      <div id="ctab-reranker" style="display:none">
+        <div id="reranker-status" class="cog-status-card">
+          <span style="color:var(--text2)">Loading reranker status...</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <label style="font-size:11px;color:var(--text2)">Epochs:</label>
+          <input type="number" id="reranker-epochs" value="50" min="1" max="500" style="width:60px;font-size:11px">
+          <label style="font-size:11px;color:var(--text2)">LR:</label>
+          <input type="number" id="reranker-lr" value="0.01" min="0.001" max="0.1" step="0.001" style="width:70px;font-size:11px">
+          <button onclick="trainReranker()">Train Reranker</button>
+        </div>
+        <div id="reranker-result"></div>
+      </div>
+    </div>
+
+    <!-- Bridges view (NEW) -->
+    <div id="view-bridges" class="view-panel" style="display:none">
+      <div class="section-title">Cross-Domain Bridges</div>
+      <div id="bridges-list"></div>
     </div>
   </div>
 
@@ -382,7 +604,31 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     </div>
   </div>
 </div>
+  <div class="pulse-bar" id="pulse-bar">
+    <span class="pulse-stat"><span class="pulse-dot" style="background:var(--yellow)"></span><span class="pulse-val" id="pulse-created">0</span> created</span>
+    <span class="pulse-stat"><span class="pulse-dot" style="background:var(--cyan)"></span><span class="pulse-val" id="pulse-recalled">0</span> recalled</span>
+    <span class="pulse-stat"><span class="pulse-dot" style="background:var(--green)"></span><span class="pulse-val" id="pulse-promoted">0</span> promoted</span>
+    <span class="pulse-stat"><span class="pulse-dot" style="background:var(--red)"></span><span class="pulse-val" id="pulse-forgotten">0</span> forgotten</span>
+    <span style="color:var(--text2);font-size:10px" id="pulse-total"></span>
+    <div class="pulse-sparkline" id="pulse-sparkline"></div>
+  </div>
+</div>
 <div id="toast-container"></div>
+
+<!-- Bulk action bar -->
+<div class="bulk-bar" id="bulk-bar">
+  <span id="bulk-count">0 selected</span>
+  <select id="bulk-promote-layer" style="font-size:11px">
+    <option value="">Promote to...</option>
+    <option value="working">Working</option>
+    <option value="episodic">Episodic</option>
+    <option value="semantic">Semantic</option>
+    <option value="procedural">Procedural</option>
+  </select>
+  <button style="font-size:11px;padding:3px 10px" onclick="bulkAction('promote')">Promote</button>
+  <button class="danger" style="font-size:11px;padding:3px 10px;background:var(--bg);border:1px solid var(--red);color:var(--red)" onclick="bulkAction('forget')">Forget</button>
+  <button class="secondary" style="font-size:11px;padding:3px 10px" onclick="toggleSelectMode()">Cancel</button>
+</div>
 
 <script>
 const API = '';
@@ -402,6 +648,10 @@ let dragNode = null;
 let mouseX = 0, mouseY = 0;
 let animFrame;
 let nodeById = {};
+// constellation mode — focused subgraph view
+let constellationNode = null;  // the focused entity
+let constellationSet = null;   // Set of node ids in the subgraph
+let constellationEdges = null; // edges in the subgraph
 
 // layer config — concentric rings
 const LAYER_CONFIG = {
@@ -416,9 +666,19 @@ const TYPE_COLORS = {
   email:{r:129,g:140,b:248}, url:{r:129,g:140,b:248}, path:{r:99,g:102,b:241},
   date:{r:239,g:68,b:68}, default:{r:129,g:140,b:248},
 };
+const FIRE_COLORS = {
+  read:  {r:6,g:182,b:212},    // cyan — cool recall
+  write: {r:251,g:191,b:36},   // amber/gold — warm creation
+};
 
 // traveling impulse particles
 let impulses = [];
+// radial burst effects (for writes)
+let bursts = [];
+// diffusion particles (memory birth — travels from center to layer ring)
+let diffusions = [];
+// migration animations (promotion — node slides between rings)
+let migrations = [];
 
 function resizeCanvas() {
   const container = document.getElementById('neural-container');
@@ -477,21 +737,25 @@ async function loadNeuralData() {
       source: nodeMap[e.source_entity_id],
       target: nodeMap[e.target_entity_id],
       strength: e.strength || 1,
+      relation_type: e.relation_type || '',
     }));
 
-  // fire initial
+  // fire initial (with read/write differentiation)
   for (const f of (data.fires || [])) {
+    const ft = f.fire_type || 'read';
     for (const id of (f.entity_ids || '').split(',')) {
       const node = nodeMap[id.trim()];
-      if (node) fireNode(node);
+      if (node) fireNode(node, ft);
     }
   }
 
   if (!animFrame) animate();
 }
 
-function fireNode(node) {
+function fireNode(node, fireType = 'read') {
   node.glow = 1.0;
+  const isWrite = fireType === 'write';
+  const color = isWrite ? FIRE_COLORS.write : FIRE_COLORS.read;
   // send impulse along each connected edge
   neuralEdges.forEach(e => {
     if (e.source === node || e.target === node) {
@@ -500,13 +764,55 @@ function fireNode(node) {
       impulses.push({
         from, to,
         progress: 0,
-        speed: 0.008 + Math.random() * 0.006,
-        color: TYPE_COLORS[from.type] || TYPE_COLORS.default,
-        size: 3,
+        speed: isWrite ? 0.012 + Math.random() * 0.008 : 0.008 + Math.random() * 0.006,
+        color,
+        size: isWrite ? 4 : 3,
         cascaded: false,
+        fireType,
       });
     }
   });
+  // writes get a radial burst effect + diffusion particle from center
+  if (isWrite) {
+    node.glow = 1.5;
+    bursts.push({ x: node.x, y: node.y, radius: node.r, maxRadius: node.r * 12, progress: 0, color });
+    // spawn diffusion particle from center to this node
+    const W = neuralCanvas.clientWidth, H = neuralCanvas.clientHeight;
+    diffusions.push({
+      sx: W / 2, sy: H / 2,  // start at center
+      tx: node.x, ty: node.y, // target node position
+      progress: 0,
+      speed: 0.015 + Math.random() * 0.005,
+      color,
+      size: 5,
+      targetNode: node,
+    });
+  }
+}
+
+// animate a node migrating between rings (promotion/demotion)
+function migrateNode(node, fromLayer, toLayer) {
+  const W = neuralCanvas.clientWidth, H = neuralCanvas.clientHeight;
+  const cx = W / 2, cy = H / 2;
+  const maxR = Math.min(W, H) * 0.45;
+  const fromCfg = LAYER_CONFIG[fromLayer] || LAYER_CONFIG.episodic;
+  const toCfg = LAYER_CONFIG[toLayer] || LAYER_CONFIG.episodic;
+  const fromR = fromCfg.ring * maxR;
+  const toR = toCfg.ring * maxR;
+  // compute current angle of node relative to center
+  const angle = Math.atan2(node.y - cy, node.x - cx);
+  const targetX = cx + Math.cos(angle) * toR;
+  const targetY = cy + Math.sin(angle) * toR;
+  migrations.push({
+    node,
+    sx: node.x, sy: node.y,
+    tx: targetX, ty: targetY,
+    progress: 0,
+    speed: 0.008,
+    fromColor: fromCfg.color,
+    toColor: toCfg.color,
+  });
+  node.layer = toLayer;
 }
 
 function animate() {
@@ -580,15 +886,35 @@ function animate() {
     n.pulsePhase += 0.015;
   }
 
-  // draw edges
+  // draw edges (dim non-constellation edges)
+  const inConstellation = constellationSet !== null;
   for (const e of neuralEdges) {
-    const alpha = 0.04 + e.strength * 0.02;
+    const edgeInSubgraph = inConstellation && constellationSet.has(e.source.id) && constellationSet.has(e.target.id);
+    const basealpha = 0.04 + e.strength * 0.02;
+    const alpha = inConstellation ? (edgeInSubgraph ? Math.max(0.15, basealpha * 4) : basealpha * 0.15) : basealpha;
     nCtx.beginPath();
     nCtx.moveTo(e.source.x, e.source.y);
     nCtx.lineTo(e.target.x, e.target.y);
-    nCtx.strokeStyle = `rgba(100,110,140,${alpha})`;
-    nCtx.lineWidth = 0.4;
+    if (edgeInSubgraph) {
+      const cn = constellationNode;
+      const other = e.source === cn ? e.target : e.target === cn ? e.source : null;
+      const c = other ? (TYPE_COLORS[other.type] || TYPE_COLORS.default) : {r:100,g:110,b:140};
+      nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${alpha})`;
+      nCtx.lineWidth = 1.5;
+    } else {
+      nCtx.strokeStyle = `rgba(100,110,140,${alpha})`;
+      nCtx.lineWidth = 0.4;
+    }
     nCtx.stroke();
+    // draw relationship label on constellation edges
+    if (edgeInSubgraph && e.relation_type) {
+      const mx = (e.source.x + e.target.x) / 2;
+      const my = (e.source.y + e.target.y) / 2;
+      nCtx.font = '8px ' + getComputedStyle(document.body).fontFamily;
+      nCtx.fillStyle = 'rgba(200,200,212,0.5)';
+      nCtx.textAlign = 'center';
+      nCtx.fillText(e.relation_type, mx, my - 3);
+    }
   }
 
   // draw + update impulses (traveling fire particles)
@@ -640,17 +966,118 @@ function animate() {
   }
   impulses = aliveImpulses;
 
-  // draw nodes
+  // draw radial bursts (write birth effect)
+  const aliveBursts = [];
+  for (const b of bursts) {
+    b.progress += 0.02;
+    if (b.progress >= 1) continue;
+    aliveBursts.push(b);
+    const r = b.radius + (b.maxRadius - b.radius) * b.progress;
+    const alpha = (1 - b.progress) * 0.5;
+    nCtx.beginPath();
+    nCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    nCtx.strokeStyle = `rgba(${b.color.r},${b.color.g},${b.color.b},${alpha})`;
+    nCtx.lineWidth = 2 * (1 - b.progress);
+    nCtx.stroke();
+    // inner ring
+    const r2 = b.radius + (b.maxRadius - b.radius) * b.progress * 0.6;
+    nCtx.beginPath();
+    nCtx.arc(b.x, b.y, r2, 0, Math.PI * 2);
+    nCtx.strokeStyle = `rgba(${b.color.r},${b.color.g},${b.color.b},${alpha * 0.5})`;
+    nCtx.lineWidth = 1;
+    nCtx.stroke();
+  }
+  bursts = aliveBursts;
+
+  // draw diffusion particles (memory birth — center to ring)
+  const aliveDiffusions = [];
+  for (const d of diffusions) {
+    d.progress += d.speed;
+    if (d.progress >= 1) {
+      // arrived — trigger glow on target
+      if (d.targetNode) d.targetNode.glow = Math.max(d.targetNode.glow, 1.2);
+      continue;
+    }
+    aliveDiffusions.push(d);
+    const t = d.progress;
+    // ease-out cubic
+    const et = 1 - Math.pow(1 - t, 3);
+    const px = d.sx + (d.tx - d.sx) * et;
+    const py = d.sy + (d.ty - d.sy) * et;
+    const c = d.color;
+    // comet trail
+    for (let i = 0; i < 6; i++) {
+      const tp = t - i * d.speed * 2.5;
+      if (tp < 0) break;
+      const tet = 1 - Math.pow(1 - tp, 3);
+      const tx = d.sx + (d.tx - d.sx) * tet;
+      const ty = d.sy + (d.ty - d.sy) * tet;
+      const a = (1 - i / 6) * 0.4;
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, d.size * (1 - i / 6 * 0.6), 0, Math.PI * 2);
+      nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${a})`;
+      nCtx.fill();
+    }
+    // bright head with glow
+    const headGlow = nCtx.createRadialGradient(px, py, 0, px, py, d.size * 3);
+    headGlow.addColorStop(0, `rgba(${Math.min(255,c.r+80)},${Math.min(255,c.g+80)},${Math.min(255,c.b+80)},0.9)`);
+    headGlow.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},0.3)`);
+    headGlow.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+    nCtx.beginPath();
+    nCtx.arc(px, py, d.size * 3, 0, Math.PI * 2);
+    nCtx.fillStyle = headGlow;
+    nCtx.fill();
+    nCtx.beginPath();
+    nCtx.arc(px, py, d.size * 0.8, 0, Math.PI * 2);
+    nCtx.fillStyle = `rgba(255,255,255,0.9)`;
+    nCtx.fill();
+  }
+  diffusions = aliveDiffusions;
+
+  // draw migration animations (promotion — node slides between rings)
+  const aliveMigrations = [];
+  for (const m of migrations) {
+    m.progress += m.speed;
+    if (m.progress >= 1) {
+      m.node.x = m.tx;
+      m.node.y = m.ty;
+      m.node.glow = 1.0;
+      continue;
+    }
+    aliveMigrations.push(m);
+    const et = 1 - Math.pow(1 - m.progress, 2); // ease-out quad
+    m.node.x = m.sx + (m.tx - m.sx) * et;
+    m.node.y = m.sy + (m.ty - m.sy) * et;
+    m.node.glow = 0.8;
+    // trail between old and new position
+    const fc = m.fromColor, tc = m.toColor;
+    const blend = m.progress;
+    const cr = fc.r + (tc.r - fc.r) * blend;
+    const cg = fc.g + (tc.g - fc.g) * blend;
+    const cb = fc.b + (tc.b - fc.b) * blend;
+    nCtx.beginPath();
+    nCtx.moveTo(m.sx, m.sy);
+    nCtx.lineTo(m.node.x, m.node.y);
+    nCtx.strokeStyle = `rgba(${cr},${cg},${cb},${0.4 * (1 - m.progress)})`;
+    nCtx.lineWidth = 2;
+    nCtx.stroke();
+  }
+  migrations = aliveMigrations;
+
+  // draw nodes (dim non-constellation nodes)
   for (const n of neuralNodes) {
     const c = TYPE_COLORS[n.type] || TYPE_COLORS.default;
     const isHovered = n === hoveredNode;
     const breathe = Math.sin(n.pulsePhase) * 0.1 + 0.9;
+    const nodeInSubgraph = !inConstellation || constellationSet.has(n.id);
+    const isFocusNode = inConstellation && n === constellationNode;
+    const dimFactor = nodeInSubgraph ? 1 : 0.12;
 
     // glow halo
-    if (n.glow > 0.03 || isHovered) {
-      const glowR = n.r * (3 + n.glow * 8);
+    if ((n.glow > 0.03 || isHovered || isFocusNode) && nodeInSubgraph) {
+      const glowR = n.r * (3 + n.glow * 8 + (isFocusNode ? 4 : 0));
       const grad = nCtx.createRadialGradient(n.x, n.y, n.r*0.3, n.x, n.y, glowR);
-      const ga = isHovered ? 0.3 : n.glow * 0.8;
+      const ga = isFocusNode ? 0.5 : isHovered ? 0.3 : n.glow * 0.8;
       grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${ga})`);
       grad.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},${ga*0.3})`);
       grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
@@ -661,26 +1088,28 @@ function animate() {
     }
 
     // neuron body
-    const bodyAlpha = isHovered ? 1 : (0.5 + n.glow * 0.5);
+    const bodyAlpha = (isHovered ? 1 : (0.5 + n.glow * 0.5)) * dimFactor;
     nCtx.beginPath();
     nCtx.arc(n.x, n.y, n.r * breathe, 0, Math.PI*2);
     nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.25})`;
     nCtx.fill();
     nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha})`;
-    nCtx.lineWidth = isHovered ? 2 : 1;
+    nCtx.lineWidth = isFocusNode ? 2.5 : isHovered ? 2 : 1;
     nCtx.stroke();
 
     // nucleus
     nCtx.beginPath();
     nCtx.arc(n.x, n.y, n.r * 0.25, 0, Math.PI*2);
-    const nucAlpha = 0.6 + n.glow * 0.4;
+    const nucAlpha = (0.6 + n.glow * 0.4) * dimFactor;
     nCtx.fillStyle = `rgba(${Math.min(255,c.r+100)},${Math.min(255,c.g+100)},${Math.min(255,c.b+100)},${nucAlpha})`;
     nCtx.fill();
 
-    // label
-    if (isHovered || n.r > 7) {
-      nCtx.font = `${isHovered ? 11 : 9}px ${getComputedStyle(document.body).fontFamily}`;
-      nCtx.fillStyle = `rgba(200,200,212,${isHovered ? 0.95 : 0.4})`;
+    // label — always show in constellation subgraph, otherwise normal rules
+    const showLabel = (inConstellation && nodeInSubgraph) || isHovered || n.r > 7;
+    if (showLabel) {
+      const labelAlpha = nodeInSubgraph ? (isHovered || isFocusNode ? 0.95 : 0.7) : 0.15;
+      nCtx.font = `${isHovered || isFocusNode ? 11 : 9}px ${getComputedStyle(document.body).fontFamily}`;
+      nCtx.fillStyle = `rgba(200,200,212,${labelAlpha})`;
       nCtx.textAlign = 'center';
       nCtx.fillText(n.name, n.x, n.y + n.r + 13);
     }
@@ -715,14 +1144,43 @@ neuralCanvas.addEventListener('mousedown', () => { if (hoveredNode) { dragNode =
 neuralCanvas.addEventListener('mouseup', () => { dragNode = null; });
 neuralCanvas.addEventListener('click', () => {
   if (hoveredNode && !dragNode) {
+    if (constellationNode === hoveredNode) {
+      // clicking same node exits constellation mode
+      exitConstellation();
+    } else {
+      enterConstellation(hoveredNode);
+    }
     fireNode(hoveredNode);
     inspectEntity(hoveredNode.id);
+  } else if (!hoveredNode) {
+    // clicking empty space exits constellation
+    exitConstellation();
   }
 });
 
-function fireNeuronByName(name) {
+function enterConstellation(node) {
+  constellationNode = node;
+  // collect all directly connected nodes
+  constellationSet = new Set([node.id]);
+  constellationEdges = [];
+  neuralEdges.forEach(e => {
+    if (e.source === node || e.target === node) {
+      constellationSet.add(e.source.id);
+      constellationSet.add(e.target.id);
+      constellationEdges.push(e);
+    }
+  });
+}
+
+function exitConstellation() {
+  constellationNode = null;
+  constellationSet = null;
+  constellationEdges = null;
+}
+
+function fireNeuronByName(name, fireType = 'read') {
   const n = neuralNodes.find(n => n.name.toLowerCase() === name.toLowerCase());
-  if (n) fireNode(n);
+  if (n) fireNode(n, fireType);
 }
 
 // poll SQLite for fires from MCP server (every 2s)
@@ -734,9 +1192,20 @@ async function pollFires() {
     const data = await fetchJSON(`/api/neural/fires?since=${lastFireTimestamp}`);
     if (data.timestamp) lastFireTimestamp = data.timestamp - 1;
     for (const f of (data.fires || [])) {
+      const ft = f.fire_type || 'read';
+      // detect promotions from detail string
+      const detail = f.query_text || '';
+      const promoMatch = detail.match(/promoted.*?→\s*(\w+)/i) || detail.match(/layer=(\w+)/);
       for (const id of (f.entity_ids || '').split(',')) {
         const node = nodeById[id.trim()];
-        if (node) fireNode(node);
+        if (!node) continue;
+        if (ft === 'write' && promoMatch) {
+          const toLayer = promoMatch[1];
+          if (toLayer && toLayer !== node.layer) {
+            migrateNode(node, node.layer, toLayer);
+          }
+        }
+        fireNode(node, ft);
       }
     }
   } catch(e) {}
@@ -807,6 +1276,21 @@ async function inspectMemory(id) {
     for (const e of data.entities) html += `<span class="entity-node ${e.entity_type}">${e.canonical_name}</span>`;
     html += '</div>';
   }
+  // Annotations
+  const annotations = (data.metadata && data.metadata.annotations) || [];
+  html += '<div style="margin-top:8px"><b>Annotations:</b></div>';
+  if (annotations.length) {
+    for (const ann of annotations) {
+      const t = ann.timestamp ? new Date(ann.timestamp * 1000).toLocaleString() : '';
+      html += `<div class="annotation-item"><span class="ann-time">${t}</span> ${escapeHtml(ann.text || ann.note || '')}</div>`;
+    }
+  } else {
+    html += '<div style="font-size:10px;color:var(--text2);margin-bottom:4px">No annotations yet</div>';
+  }
+  html += `<div style="display:flex;gap:4px;margin-top:4px">
+    <input type="text" id="annotate-input-${id}" placeholder="Add note..." style="flex:1;font-size:11px">
+    <button style="font-size:10px;padding:2px 8px" onclick="addAnnotation('${id}')">Add Note</button>
+  </div>`;
   html += '</div>';
   document.getElementById('inspector-content').innerHTML = html;
 }
@@ -816,8 +1300,18 @@ function memoryCard(m) {
   const scoreHtml = m.score !== undefined ? `<span class="tag">score: ${m.score}</span>` : '';
   const invalidated = m.metadata && m.metadata.invalidated;
   const contentStyle = invalidated ? 'text-decoration:line-through;opacity:0.5' : '';
-  return `<div class="memory-card" ${invalidated ? 'style="border-color:var(--red);opacity:0.7"' : ''}>
-    <div class="content" style="${contentStyle}" onclick="inspectMemory('${m.id}')">${escapeHtml(content)}</div>
+  const isPinned = m.metadata && m.metadata.pinned;
+  const layerClass = `layer-${m.layer || 'episodic'}`;
+  const pinnedClass = isPinned ? ' pinned' : '';
+  const imp = m.importance || 0;
+  const impPct = (imp * 100).toFixed(0);
+  // importance bar gradient: red(0) -> yellow(0.5) -> green(1)
+  const impR = Math.round(255 * (1 - imp));
+  const impG = Math.round(255 * imp);
+  return `<div class="memory-card ${layerClass}${pinnedClass}" ${invalidated ? 'style="border-color:var(--red);opacity:0.7"' : ''}>
+    <input type="checkbox" class="select-cb" data-id="${m.id}" onchange="updateBulkCount()">
+    <div class="content" id="content-${m.id}" style="${contentStyle}" onclick="inspectMemory('${m.id}')">${escapeHtml(content)}</div>
+    <div class="importance-bar" style="width:${impPct}%;background:linear-gradient(90deg,rgb(${impR},${impG},0),rgb(${impR},${impG},0))"></div>
     <div class="meta">
       <span class="tag ${m.layer}">${m.layer}</span>
       <span class="tag">imp: ${m.importance?.toFixed(2) || '?'}</span>
@@ -825,7 +1319,7 @@ function memoryCard(m) {
       ${scoreHtml}
       ${m.access_count ? `<span class="tag">views: ${m.access_count}</span>` : ''}
       ${invalidated ? '<span class="tag" style="color:var(--red)">INVALID</span>' : ''}
-      ${m.metadata && m.metadata.pinned ? '<span class="pin-indicator">pinned</span>' : ''}
+      ${isPinned ? '<span class="pin-indicator">pinned</span>' : ''}
     </div>
     <div class="card-actions">
       <select onchange="promoteMemory('${m.id}',this.value);this.selectedIndex=0" title="Change layer">
@@ -835,9 +1329,10 @@ function memoryCard(m) {
         <option value="semantic">semantic</option>
         <option value="procedural">procedural</option>
       </select>
-      <button onclick="event.stopPropagation();togglePin('${m.id}',${!!(m.metadata&&m.metadata.pinned)})">${m.metadata&&m.metadata.pinned?'unpin':'pin'}</button>
+      <button onclick="event.stopPropagation();togglePin('${m.id}',${!!isPinned})">${isPinned?'unpin':'pin'}</button>
       <button onclick="event.stopPropagation();showSimilar('${m.id}')">similar</button>
       <button onclick="event.stopPropagation();showImportance('${m.id}')">explain</button>
+      <button onclick="event.stopPropagation();startEdit('${m.id}')">edit</button>
       <button onclick="event.stopPropagation();navigator.clipboard.writeText(${JSON.stringify(JSON.stringify(m.content))});toast('Copied','success')">copy</button>
       <button onclick="event.stopPropagation();invalidateMemory('${m.id}')">invalidate</button>
       <button class="danger" onclick="event.stopPropagation();forgetMemory('${m.id}',this)">forget</button>
@@ -941,6 +1436,60 @@ async function invalidateMemory(id) {
   if (card) card.style.textDecoration = 'line-through';
 }
 
+// --- Inline Editing ---
+function startEdit(id) {
+  const contentEl = document.getElementById('content-' + id);
+  if (!contentEl) return;
+  const currentText = contentEl.textContent;
+  contentEl.outerHTML = `<div class="edit-area" id="edit-area-${id}">
+    <textarea id="edit-textarea-${id}" rows="4">${escapeHtml(currentText)}</textarea>
+    <div class="edit-actions">
+      <button onclick="saveEdit('${id}')" style="font-size:10px;padding:2px 8px">Save</button>
+      <button class="secondary" onclick="cancelEdit('${id}')" style="font-size:10px;padding:2px 8px">Cancel</button>
+    </div>
+  </div>`;
+}
+
+async function saveEdit(id) {
+  const textarea = document.getElementById('edit-textarea-' + id);
+  if (!textarea) return;
+  const newContent = textarea.value;
+  try {
+    await postJSON(`/api/memories/${id}/edit`, {content: newContent});
+    toast('Memory updated', 'success');
+    // re-render the card by re-fetching
+    const editArea = document.getElementById('edit-area-' + id);
+    if (editArea) {
+      const truncated = newContent.length > 200 ? newContent.slice(0,200) + '...' : newContent;
+      editArea.outerHTML = `<div class="content" id="content-${id}" onclick="inspectMemory('${id}')">${escapeHtml(truncated)}</div>`;
+    }
+  } catch(e) {
+    toast('Edit failed: ' + e, 'error');
+  }
+}
+
+function cancelEdit(id) {
+  // reload the current view to restore original card
+  const currentView = document.querySelector('[id^="view-"]:not([style*="display: none"]):not([style*="display:none"])');
+  if (currentView) {
+    const viewName = currentView.id.replace('view-', '');
+    showView(viewName);
+  }
+}
+
+// --- Annotations ---
+async function addAnnotation(id) {
+  const input = document.getElementById('annotate-input-' + id);
+  if (!input || !input.value.trim()) return;
+  try {
+    await postJSON(`/api/memories/${id}/annotate`, {note: input.value.trim()});
+    toast('Annotation added', 'success');
+    inspectMemory(id);
+  } catch(e) {
+    toast('Failed to annotate: ' + e, 'error');
+  }
+}
+
 // --- Search filters ---
 let activeFilters = {};
 function toggleChip(el) {
@@ -951,14 +1500,49 @@ function toggleChip(el) {
   activeFilters.layers = layers.length ? layers : null;
 }
 
+// --- Search History ---
+function getSearchHistory() {
+  try { return JSON.parse(localStorage.getItem('engram_search_history') || '[]'); } catch(e) { return []; }
+}
+function addSearchHistory(q) {
+  let hist = getSearchHistory();
+  hist = hist.filter(h => h !== q);
+  hist.unshift(q);
+  if (hist.length > 20) hist = hist.slice(0, 20);
+  localStorage.setItem('engram_search_history', JSON.stringify(hist));
+}
+function showSearchHistory() {
+  const hist = getSearchHistory();
+  const el = document.getElementById('search-history');
+  if (!hist.length) { el.classList.remove('open'); return; }
+  el.innerHTML = hist.map(h => `<div class="search-history-item" onmousedown="event.preventDefault();document.getElementById('search-input').value='${escapeHtml(h)}';hideSearchHistory();doSearch()">${escapeHtml(h)}</div>`).join('');
+  el.classList.add('open');
+}
+function hideSearchHistory() {
+  document.getElementById('search-history').classList.remove('open');
+}
+
 async function doSearch() {
   const q = document.getElementById('search-input').value;
   if (!q) return;
+  addSearchHistory(q);
   const debug = document.getElementById('search-debug').checked;
+  const hints = document.getElementById('search-hints').checked;
   const minImp = parseFloat(document.getElementById('filter-importance').value);
   const layers = activeFilters.layers;
 
   let url, data;
+
+  if (hints) {
+    // Hint mode
+    data = await fetchJSON(`/api/search/hints?q=${encodeURIComponent(q)}&top_k=10`);
+    const el = document.getElementById('search-results');
+    const results = data.results || data.hints || [];
+    if (!results.length) { el.innerHTML = '<div class="empty">No memories found</div>'; return; }
+    el.innerHTML = results.map(r => hintCard(r)).join('');
+    return;
+  }
+
   if (layers || minImp > 0) {
     // use filtered endpoint
     let params = `q=${encodeURIComponent(q)}&top_k=15&min_importance=${minImp}`;
@@ -977,7 +1561,41 @@ async function doSearch() {
   if (!results.length) html += '<div class="empty">No memories found</div>';
   for (const r of results) html += memoryCard(r);
   el.innerHTML = html;
-  q.split(/\s+/).forEach(w => fireNeuronByName(w));
+  // fire matching entities on neural map
+  const entityIds = data.entity_ids || [];
+  if (entityIds.length > 0) {
+    for (const id of entityIds) {
+      const node = nodeById[id];
+      if (node) fireNode(node, 'read');
+    }
+  } else {
+    q.split(/\s+/).forEach(w => fireNeuronByName(w));
+  }
+}
+
+// --- Hint cards ---
+function hintCard(h) {
+  const snippet = h.snippet || h.content || '';
+  const entities = h.entities || [];
+  const layer = h.layer || 'episodic';
+  const id = h.id || h.memory_id || '';
+  return `<div class="hint-card" id="hint-${id}">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <span class="tag ${layer}">${layer}</span>
+      <button style="font-size:10px;padding:2px 8px;background:var(--accent);color:white;border:none;border-radius:3px" onclick="revealHint('${id}')">Reveal</button>
+    </div>
+    <div style="font-size:11px;color:var(--text);line-height:1.4">${escapeHtml(snippet)}</div>
+    ${entities.length ? '<div class="hint-entities">' + entities.map(e => `<span class="entity-pill">${escapeHtml(e)}</span>`).join('') + '</div>' : ''}
+  </div>`;
+}
+
+async function revealHint(id) {
+  if (!id) return;
+  const data = await fetchJSON(`/api/memories/${id}`);
+  const hintEl = document.getElementById('hint-' + id);
+  if (hintEl && data) {
+    hintEl.outerHTML = memoryCard(data);
+  }
 }
 
 // --- Remember tabs ---
@@ -993,7 +1611,21 @@ async function doRemember() {
   const layer = document.getElementById('remember-layer').value;
   const importance = parseFloat(document.getElementById('remember-importance').value);
   const data = await postJSON('/api/remember', {content, layer, importance});
-  document.getElementById('remember-result').innerHTML = `<div style="color:var(--green)">Stored: ${data.id}</div>`;
+  let resultHtml = `<div style="color:var(--green)">Stored: ${data.id}`;
+  if (data.surprise !== undefined) {
+    resultHtml += ` | Surprise: ${(data.surprise || 0).toFixed(3)}`;
+  }
+  if (data.importance !== undefined) {
+    resultHtml += ` | Importance: ${(data.importance || importance).toFixed(3)}`;
+  }
+  resultHtml += '</div>';
+  if (data.warning) {
+    resultHtml += `<div style="color:var(--yellow);font-size:11px;margin-top:4px">${escapeHtml(data.warning)}</div>`;
+  }
+  if (data.is_duplicate) {
+    resultHtml += `<div style="color:var(--yellow);font-size:11px;margin-top:4px">Near-duplicate detected</div>`;
+  }
+  document.getElementById('remember-result').innerHTML = resultHtml;
   document.getElementById('remember-content').value = '';
 }
 async function doRememberDecision() {
@@ -1098,24 +1730,44 @@ async function loadContext() {
   ).join('');
 }
 
-// --- Ingest ---
+// --- Ingest (real implementation) ---
 async function doIngest() {
   const path = document.getElementById('ingest-path').value;
   if (!path) return;
   document.getElementById('ingest-status').innerHTML = '<span style="color:var(--yellow)">Ingesting...</span>';
   try {
-    await postJSON('/api/remember', {content:`[ingest requested: ${path}]`, layer:'working', importance:0.1});
-    document.getElementById('ingest-status').innerHTML = '<span style="color:var(--green)">Ingest triggered. Check CLI for progress.</span>';
+    const data = await postJSON('/api/ingest/path', {path});
+    if (data.error) {
+      document.getElementById('ingest-status').innerHTML = `<span style="color:var(--red)">Error: ${escapeHtml(data.error)}</span>`;
+    } else {
+      const count = data.memories_created || data.count || 0;
+      document.getElementById('ingest-status').innerHTML = `<span style="color:var(--green)">Ingested: ${count} memories created</span>`;
+      toast(`Ingest complete: ${count} memories`, 'success');
+    }
   } catch(e) { document.getElementById('ingest-status').innerHTML = `<span style="color:var(--red)">Error: ${e}</span>`; }
   loadIngestLog();
 }
+async function doIngestSessions() {
+  document.getElementById('ingest-status').innerHTML = '<span style="color:var(--yellow)">Ingesting sessions...</span>';
+  try {
+    const data = await postJSON('/api/ingest/sessions', {});
+    const count = data.sessions_ingested || data.count || 0;
+    document.getElementById('ingest-status').innerHTML = `<span style="color:var(--green)">Sessions ingested: ${count}</span>`;
+    toast(`Sessions ingested: ${count}`, 'success');
+  } catch(e) {
+    document.getElementById('ingest-status').innerHTML = `<span style="color:var(--red)">Error: ${e}</span>`;
+  }
+  loadIngestLog();
+}
 async function loadIngestLog() {
-  const data = await fetchJSON('/api/ingest/log');
-  document.getElementById('ingest-log').innerHTML = (data||[]).map(r => {
-    const t = new Date(r.last_ingested * 1000).toLocaleString();
-    const name = r.file_path.split('/').pop();
-    return `<div class="event-item"><span class="time">${t}</span> ${name} <span style="color:var(--cyan)">${r.memory_count} mems</span></div>`;
-  }).join('');
+  try {
+    const data = await fetchJSON('/api/ingest/log');
+    document.getElementById('ingest-log').innerHTML = (data||[]).map(r => {
+      const t = new Date(r.last_ingested * 1000).toLocaleString();
+      const name = r.file_path.split('/').pop();
+      return `<div class="event-item"><span class="time">${t}</span> ${name} <span style="color:var(--cyan)">${r.memory_count} mems</span></div>`;
+    }).join('');
+  } catch(e) {}
 }
 
 // --- Diary ---
@@ -1209,10 +1861,40 @@ async function showSimilar(id) {
 
 // --- Importance explainer ---
 async function showImportance(id) {
-  const data = await fetchJSON(`/api/memories/${id}/importance`);
+  const [data, histData] = await Promise.all([
+    fetchJSON(`/api/memories/${id}/importance`),
+    fetchJSON(`/api/memories/${id}/history`),
+  ]);
   const inspector = document.getElementById('inspector');
   inspector.classList.add('open');
   let html = `<div><b>Importance: ${data.composite}</b><br><br>`;
+
+  // decay sparkline if history exists
+  const history = histData.history || [];
+  if (history.length > 1) {
+    const w = 200, h = 40;
+    const maxS = Math.max(...history.map(p => p.score), 0.01);
+    const minS = Math.min(...history.map(p => p.score));
+    const range = Math.max(maxS - minS, 0.01);
+    let path = '';
+    history.forEach((p, i) => {
+      const x = (i / (history.length - 1)) * w;
+      const y = h - ((p.score - minS) / range) * h;
+      path += (i === 0 ? `M${x},${y}` : ` L${x},${y}`);
+    });
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:10px;color:var(--text2);margin-bottom:4px">Importance over time (${history.length} snapshots)</div>
+      <svg width="${w}" height="${h}" style="background:var(--bg);border-radius:4px;padding:4px">
+        <polyline points="${path.replace(/[ML]/g, (m) => m === 'M' ? '' : ' ').trim()}" fill="none" stroke="var(--cyan)" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="${w}" cy="${h - ((history[history.length-1].score - minS) / range) * h}" r="2.5" fill="var(--cyan)"/>
+      </svg>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2)">
+        <span>${new Date(history[0].recorded_at * 1000).toLocaleDateString()}</span>
+        <span>${new Date(history[history.length-1].recorded_at * 1000).toLocaleDateString()}</span>
+      </div>
+    </div>`;
+  }
+
   for (const f of data.factors) {
     const pct = (f.value * 100).toFixed(0);
     const weighted = (f.value * f.weight * 100).toFixed(1);
@@ -1294,6 +1976,324 @@ async function runDedup() {
   loadStats();
 }
 
+// --- Cognition: Surprise ---
+async function checkSurprise() {
+  const text = document.getElementById('surprise-text').value;
+  if (!text) return;
+  try {
+    const data = await postJSON('/api/surprise/preview', {content: text});
+    // draw gauge
+    drawSurpriseGauge(data.surprise || 0);
+    // show result
+    const el = document.getElementById('surprise-result');
+    const s = data.surprise || 0;
+    const color = s > 0.7 ? 'var(--green)' : s > 0.3 ? 'var(--yellow)' : 'var(--red)';
+    let html = `<div style="margin-bottom:6px"><b>Surprise:</b> <span style="color:${color};font-size:16px;font-weight:700">${s.toFixed(3)}</span></div>`;
+    if (data.nearest_distance !== undefined) {
+      html += `<div style="margin-bottom:4px"><b>Nearest distance:</b> ${data.nearest_distance.toFixed(4)}</div>`;
+    }
+    if (data.is_duplicate) {
+      html += `<div style="color:var(--yellow);margin-bottom:4px;font-weight:600">Near-duplicate detected</div>`;
+    }
+    if (data.nearest_content) {
+      html += `<div style="margin-top:6px;padding:6px;background:var(--bg);border-radius:4px;font-size:10px;line-height:1.4"><b>Nearest:</b> ${escapeHtml((data.nearest_content || '').slice(0,200))}</div>`;
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    toast('Surprise check failed: ' + e, 'error');
+  }
+}
+
+function drawSurpriseGauge(value) {
+  const canvas = document.getElementById('surprise-gauge');
+  const ctx = canvas.getContext('2d');
+  const w = 200, h = 200;
+  const cx = w / 2, cy = h / 2;
+  const radius = 75;
+  ctx.clearRect(0, 0, w, h);
+
+  // background arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(42,42,58,0.5)';
+  ctx.lineWidth = 12;
+  ctx.stroke();
+
+  // value arc (green=novel, red=duplicate)
+  const endAngle = -Math.PI / 2 + value * Math.PI * 2;
+  const r = Math.round(239 * (1 - value));
+  const g = Math.round(197 * value);
+  const b = Math.round(68 * (1 - value));
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, -Math.PI / 2, endAngle);
+  ctx.strokeStyle = `rgb(${r},${g},${b})`;
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // center text
+  ctx.font = 'bold 28px ' + getComputedStyle(document.body).fontFamily;
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(value.toFixed(2), cx, cy - 6);
+
+  ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.fillStyle = '#8888a0';
+  ctx.fillText(value > 0.7 ? 'NOVEL' : value > 0.3 ? 'MODERATE' : 'DUPLICATE', cx, cy + 18);
+}
+
+// --- Cognition: Retention curves ---
+function drawRetentionCurves() {
+  const canvas = document.getElementById('retention-chart');
+  const ctx = canvas.getContext('2d');
+  const w = 600, h = 300;
+  const pad = { left: 50, right: 20, top: 20, bottom: 40 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  const halfLife = parseFloat(document.getElementById('ret-halflife').value);
+  const delta = parseFloat(document.getElementById('ret-huber-delta').value);
+  const l1Ratio = parseFloat(document.getElementById('ret-l1-ratio').value);
+  const maxDays = halfLife * 4;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // grid
+  ctx.strokeStyle = 'rgba(42,42,58,0.5)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (plotH / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = '#8888a0';
+    ctx.textAlign = 'right';
+    ctx.fillText((1 - i * 0.25).toFixed(2), pad.left - 6, y + 3);
+  }
+  for (let d = 0; d <= maxDays; d += Math.max(1, Math.floor(maxDays / 6))) {
+    const x = pad.left + (d / maxDays) * plotW;
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, h - pad.bottom); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillText(d + 'd', x, h - pad.bottom + 15);
+  }
+
+  // L2 curve
+  function drawCurve(fn, color, label) {
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= plotW; i++) {
+      const day = (i / plotW) * maxDays;
+      const val = Math.max(0, Math.min(1, fn(day)));
+      const x = pad.left + i;
+      const y = pad.top + (1 - val) * plotH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // label at end
+    const endVal = Math.max(0, fn(maxDays));
+    const endY = pad.top + (1 - endVal) * plotH;
+    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.fillText(label, w - pad.right + 4, endY + 3);
+  }
+
+  // L2: pure exponential
+  const l2Fn = (day) => Math.exp(-0.693 * day / halfLife);
+
+  // Huber: transition at delta
+  const huberFn = (day) => {
+    const t = day / halfLife;
+    if (t <= delta) {
+      return Math.exp(-0.693 * day / halfLife);
+    } else {
+      const transitionVal = Math.exp(-0.693 * delta);
+      const slope = 0.693 * transitionVal / halfLife;
+      return Math.max(0, transitionVal - slope * (day - delta * halfLife));
+    }
+  };
+
+  // Elastic net
+  const elasticFn = (day) => {
+    const l2Val = Math.exp(-0.693 * day / halfLife);
+    const l1Val = Math.max(0, 1 - day / (2 * halfLife));
+    return l1Ratio * l1Val + (1 - l1Ratio) * l2Val;
+  };
+
+  drawCurve(l2Fn, '#06b6d4', 'L2');
+  drawCurve(huberFn, '#eab308', 'Huber');
+  drawCurve(elasticFn, '#22c55e', 'Elastic');
+
+  // axis labels
+  ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.fillStyle = '#8888a0';
+  ctx.textAlign = 'center';
+  ctx.fillText('Days', pad.left + plotW / 2, h - 5);
+  ctx.save();
+  ctx.translate(12, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Retention', 0, 0);
+  ctx.restore();
+}
+
+function switchCognitionTab(tab, el) {
+  document.querySelectorAll('[id^="ctab-"]').forEach(t => t.style.display = 'none');
+  document.getElementById('ctab-' + tab).style.display = 'block';
+  // update tab active state within cognition view
+  const tabBar = el.parentElement;
+  tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// --- Cognition: Reranker ---
+async function loadRerankerStatus() {
+  try {
+    const data = await fetchJSON('/api/reranker/status');
+    const el = document.getElementById('reranker-status');
+    const trained = data.trained || data.is_trained || false;
+    const modelPath = data.model_path || data.path || 'N/A';
+    el.innerHTML = `<div style="display:flex;gap:12px;align-items:center">
+      <div><b>Status:</b> <span style="color:${trained ? 'var(--green)' : 'var(--yellow)'}">${trained ? 'Trained' : 'Not trained'}</span></div>
+      <div style="font-size:11px;color:var(--text2)">Model: ${escapeHtml(modelPath)}</div>
+    </div>`;
+  } catch(e) {
+    document.getElementById('reranker-status').innerHTML = '<span style="color:var(--text2)">Could not load reranker status</span>';
+  }
+}
+
+async function trainReranker() {
+  const epochs = parseInt(document.getElementById('reranker-epochs').value) || 50;
+  const lr = parseFloat(document.getElementById('reranker-lr').value) || 0.01;
+  const el = document.getElementById('reranker-result');
+  el.innerHTML = '<span style="color:var(--yellow)">Training...</span>';
+  try {
+    const data = await postJSON('/api/reranker/train', {epochs, learning_rate: lr});
+    el.innerHTML = `<div class="cog-result"><b>Training complete</b><br>
+      ${data.message || ''}<br>
+      ${data.final_loss !== undefined ? 'Loss: ' + data.final_loss.toFixed(4) : ''}
+      ${data.samples !== undefined ? ' | Samples: ' + data.samples : ''}
+    </div>`;
+    toast('Reranker trained', 'success');
+    loadRerankerStatus();
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--red)">Training failed: ${e}</span>`;
+  }
+}
+
+// --- Bridges ---
+async function loadBridges() {
+  try {
+    const data = await fetchJSON('/api/bridges');
+    const el = document.getElementById('bridges-list');
+    const bridges = data.bridges || data || [];
+    if (!bridges.length) {
+      el.innerHTML = '<div class="empty">No cross-domain bridges yet. Run the dream cycle to discover connections.</div>';
+      return;
+    }
+    el.innerHTML = bridges.map(b => {
+      const content = b.content || '';
+      // try to parse entity names and connection/insight from content
+      const entityMatch = content.match(/Bridge:\s*(.+?)\s*↔\s*(.+?)(?:\n|$)/i) ||
+                         content.match(/(.+?)\s*↔\s*(.+?)(?:\n|$)/);
+      const entityA = (b.entity_a || (entityMatch && entityMatch[1]) || 'Entity A').trim();
+      const entityB = (b.entity_b || (entityMatch && entityMatch[2]) || 'Entity B').trim();
+      const similarity = b.similarity || b.score || 0;
+      const date = b.fact_date || b.created_at || '';
+
+      // parse out connection and insight text
+      const connectionMatch = content.match(/Connection:\s*(.+?)(?:\n|$)/i);
+      const insightMatch = content.match(/Insight:\s*(.+?)(?:\n|$)/i);
+      const connectionText = connectionMatch ? connectionMatch[1] : '';
+      const insightText = insightMatch ? insightMatch[1] : content.slice(0, 200);
+
+      return `<div class="bridge-card" style="border-left: 3px solid; border-image: linear-gradient(var(--cyan), var(--green)) 1;">
+        <div class="bridge-header">${escapeHtml(entityA)} ↔ ${escapeHtml(entityB)}</div>
+        ${connectionText ? `<div class="bridge-text"><b>Connection:</b> ${escapeHtml(connectionText)}</div>` : ''}
+        <div class="bridge-text">${escapeHtml(insightText)}</div>
+        <div class="bridge-meta">
+          ${similarity ? `<span class="tag" style="color:var(--cyan)">similarity: ${(similarity * 100).toFixed(1)}%</span>` : ''}
+          ${date ? `<span>${date}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('bridges-list').innerHTML = '<div class="empty">Failed to load bridges</div>';
+  }
+}
+
+// --- Export ---
+function toggleExportForm() {
+  document.getElementById('export-form').classList.toggle('open');
+}
+
+async function doExport() {
+  const format = document.getElementById('export-format').value;
+  const layer = document.getElementById('export-layer').value;
+  let url = `/api/export?format=${format}`;
+  if (layer) url += `&layer=${layer}`;
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `engram-export.${format === 'json' ? 'json' : 'md'}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Export downloaded', 'success');
+  } catch(e) {
+    toast('Export failed: ' + e, 'error');
+  }
+}
+
+// --- Bulk actions ---
+let selectMode = false;
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  document.getElementById('main-content').classList.toggle('select-mode', selectMode);
+  if (!selectMode) {
+    // uncheck all
+    document.querySelectorAll('.select-cb').forEach(cb => cb.checked = false);
+    document.getElementById('bulk-bar').classList.remove('visible');
+  }
+}
+
+function updateBulkCount() {
+  const checked = document.querySelectorAll('.select-cb:checked');
+  const bar = document.getElementById('bulk-bar');
+  document.getElementById('bulk-count').textContent = checked.length + ' selected';
+  bar.classList.toggle('visible', checked.length > 0);
+}
+
+async function bulkAction(action) {
+  const ids = Array.from(document.querySelectorAll('.select-cb:checked')).map(cb => cb.dataset.id);
+  if (!ids.length) return;
+
+  if (action === 'forget') {
+    if (!confirm(`Forget ${ids.length} memories?`)) return;
+    try {
+      await postJSON('/api/memories/bulk', {action: 'forget', memory_ids: ids});
+      toast(`Forgot ${ids.length} memories`, 'success');
+    } catch(e) { toast('Bulk forget failed', 'error'); }
+  } else if (action === 'promote') {
+    const layer = document.getElementById('bulk-promote-layer').value;
+    if (!layer) { toast('Select a target layer', 'error'); return; }
+    try {
+      await postJSON('/api/memories/bulk', {action: 'promote', memory_ids: ids, layer});
+      toast(`Promoted ${ids.length} memories to ${layer}`, 'success');
+    } catch(e) { toast('Bulk promote failed', 'error'); }
+  }
+
+  toggleSelectMode();
+  // refresh current view
+  const currentView = document.querySelector('.view-panel:not([style*="display: none"]):not([style*="display:none"])');
+  if (currentView) {
+    const viewName = currentView.id.replace('view-', '');
+    showView(viewName);
+  }
+  loadStats();
+}
+
 // --- View switcher (updated) ---
 function showView(name) {
   document.querySelectorAll('[id^="view-"]').forEach(el => el.style.display = 'none');
@@ -1316,6 +2316,9 @@ function showView(name) {
   if (name === 'ingest') loadIngestLog();
   if (name === 'health') loadHealth();
   if (name === 'dedup') loadDuplicates();
+  if (name === 'heatmap') loadHeatmap();
+  if (name === 'cognition') { loadRerankerStatus(); drawRetentionCurves(); drawSurpriseGauge(0); }
+  if (name === 'bridges') loadBridges();
 }
 
 // --- Keyboard shortcuts ---
@@ -1327,16 +2330,108 @@ document.addEventListener('keydown', (e) => {
     case 's': showView('search'); break;
     case 'r': showView('remember'); break;
     case 'a': showView('analytics'); break;
-    case 'Escape': document.getElementById('inspector').classList.remove('open'); break;
+    case 'c': showView('cognition'); break;
+    case 'b': showView('bridges'); break;
+    case 'Escape': exitConstellation(); document.getElementById('inspector').classList.remove('open'); break;
   }
 });
+
+// --- Session Pulse ---
+async function pollPulse() {
+  try {
+    const data = await fetchJSON('/api/pulse');
+    document.getElementById('pulse-created').textContent = data.created;
+    document.getElementById('pulse-recalled').textContent = data.recalled;
+    document.getElementById('pulse-promoted').textContent = data.promoted;
+    document.getElementById('pulse-forgotten').textContent = data.forgotten;
+    document.getElementById('pulse-total').textContent = `${data.total_events} events/hr`;
+    // sparkline
+    const sparkEl = document.getElementById('pulse-sparkline');
+    const max = Math.max(...data.sparkline, 1);
+    sparkEl.innerHTML = data.sparkline.map(v =>
+      `<div class="spark-bar" style="height:${Math.max(1, v/max*18)}px;opacity:${0.3+v/max*0.7}"></div>`
+    ).join('');
+  } catch(e) {}
+}
+
+// --- Activity Heatmap ---
+async function loadHeatmap() {
+  const days = document.getElementById('heatmap-days').value;
+  const filter = document.getElementById('heatmap-filter').value;
+  const data = await fetchJSON(`/api/heatmap?days=${days}`);
+  const container = document.getElementById('heatmap-container');
+
+  // aggregate cells into day/hour grid
+  const grid = {}; // day_offset -> hour -> count
+  let maxCount = 1;
+  for (const c of data.cells) {
+    if (filter === 'writes' && !c.event_type.includes('write')) continue;
+    if (filter === 'reads' && c.event_type !== 'recall' && !c.event_type.includes('read')) continue;
+    const key = `${c.day_offset}_${c.hour}`;
+    grid[key] = (grid[key] || 0) + c.cnt;
+    maxCount = Math.max(maxCount, grid[key]);
+  }
+
+  const hourLabels = ['12a','','','3a','','','6a','','','9a','','','12p','','','3p','','','6p','','','9p','',''];
+  let html = '<div class="heatmap-grid">';
+  // header row with day numbers
+  html += '<div class="heatmap-row"><span class="heatmap-label"></span>';
+  for (let d = 0; d < days; d++) {
+    if (d % 7 === 0) {
+      const date = new Date(Date.now() - (days - d) * 86400000);
+      html += `<div style="width:14px;font-size:8px;color:var(--text2);text-align:center">${date.getDate()}</div>`;
+    } else {
+      html += '<div style="width:14px"></div>';
+    }
+  }
+  html += '</div>';
+
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="heatmap-row"><span class="heatmap-label">${hourLabels[h]}</span>`;
+    for (let d = 0; d < days; d++) {
+      const val = grid[`${d}_${h}`] || 0;
+      const intensity = val / maxCount;
+      let color;
+      if (val === 0) {
+        color = 'var(--bg3)';
+      } else if (intensity < 0.25) {
+        color = 'rgba(99,102,241,0.2)';
+      } else if (intensity < 0.5) {
+        color = 'rgba(99,102,241,0.4)';
+      } else if (intensity < 0.75) {
+        color = 'rgba(99,102,241,0.65)';
+      } else {
+        color = 'rgba(99,102,241,0.9)';
+      }
+      html += `<div class="heatmap-cell" style="background:${color}" title="Day ${d}, ${h}:00 — ${val} events"></div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // legend
+  html += `<div class="heatmap-legend">
+    <span>Less</span>
+    <div class="hm-swatch" style="background:var(--bg3)"></div>
+    <div class="hm-swatch" style="background:rgba(99,102,241,0.2)"></div>
+    <div class="hm-swatch" style="background:rgba(99,102,241,0.4)"></div>
+    <div class="hm-swatch" style="background:rgba(99,102,241,0.65)"></div>
+    <div class="hm-swatch" style="background:rgba(99,102,241,0.9)"></div>
+    <span>More</span>
+    <span style="margin-left:12px">${Object.values(grid).reduce((a,b)=>a+b,0)} total events over ${days} days</span>
+  </div>`;
+
+  container.innerHTML = html;
+}
 
 // --- Init ---
 resizeCanvas();
 loadStats();
 loadNeuralData();
 loadDiary();
+pollPulse();
 setInterval(loadStats, 30000);
+setInterval(pollPulse, 5000);
 window.addEventListener('resize', () => { resizeCanvas(); });
 </script>
 </body>
