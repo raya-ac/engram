@@ -92,6 +92,8 @@ TOOLS = [
     # Deep retrieval
     {"name": "train_reranker", "description": "Train the deep retrieval MLP reranker on access patterns — learns which memories are actually useful from historical recall data", "inputSchema": {"type": "object", "properties": {"epochs": {"type": "integer", "default": 50}, "learning_rate": {"type": "number", "default": 0.01}}}},
     {"name": "reranker_status", "description": "Check if the deep reranker is trained and its model path", "inputSchema": {"type": "object", "properties": {}}},
+    # Cognitive scaffolding
+    {"name": "recall_hints", "description": "Search memories but return only hints (truncated snippets + entity names) to trigger recognition without replacing cognition. Use when you want to check if you know something before pulling full context. Returns memory IDs you can fetch with recall if needed.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "hint_length": {"type": "integer", "default": 60, "description": "Max characters per hint snippet"}}, "required": ["query"]}},
 ]
 
 _session_diary: list[str] = []
@@ -189,6 +191,7 @@ class MCPServer:
             "recompute_importance": self._recompute_importance,
             "train_reranker": self._train_reranker,
             "reranker_status": self._reranker_status,
+            "recall_hints": self._recall_hints,
         }
         handler = handlers.get(name)
         if not handler:
@@ -989,6 +992,63 @@ class MCPServer:
             "trained": self._reranker.is_trained,
             "model_path": str(self._reranker.model_path) if self._reranker.model_path else None,
             "model_exists": self._reranker.model_path.exists() if self._reranker.model_path else False,
+        }
+
+    # --- Cognitive scaffolding ---
+
+    def _recall_hints(self, args: dict):
+        """Return memory hints — truncated snippets + entities to trigger recognition.
+
+        Inspired by "Your Brain on ChatGPT" (Kosmyna et al.): full context
+        replacement weakens cognition. Hints trigger recognition without
+        replacing the recall process.
+        """
+        self._sweep_working()
+        results = hybrid_search(args["query"], self.store, self.config,
+                                top_k=args.get("top_k", 10),
+                                deep_reranker=self._reranker)
+
+        hint_length = args.get("hint_length", 60)
+        hints = []
+
+        for r in results:
+            mem = r.memory
+            content = mem.content.strip()
+
+            # extract first meaningful line as title
+            lines = [l.strip() for l in content.split("\n") if l.strip()]
+            title = lines[0][:hint_length] if lines else content[:hint_length]
+
+            # truncate with ellipsis if needed
+            if len(title) < len(lines[0] if lines else content):
+                title += "..."
+
+            # get linked entities
+            entity_rows = self.store.conn.execute(
+                """SELECT e.canonical_name, e.entity_type
+                FROM entity_mentions em
+                JOIN entities e ON e.id = em.entity_id
+                WHERE em.memory_id = ?
+                LIMIT 5""",
+                (mem.id,),
+            ).fetchall()
+            entities = [{"name": r["canonical_name"], "type": r["entity_type"]}
+                        for r in entity_rows]
+
+            hints.append({
+                "id": mem.id,
+                "hint": title,
+                "layer": mem.layer,
+                "importance": round(mem.importance, 2),
+                "date": mem.fact_date,
+                "entities": entities,
+                "score": round(r.score, 4),
+            })
+
+        return {
+            "query": args["query"],
+            "hints": hints,
+            "note": "Use recall with memory IDs to get full content if needed.",
         }
 
     def _response(self, req_id, result):

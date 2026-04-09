@@ -179,7 +179,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 54 tools:
+restart claude code. you get 55 tools:
 
 **recall & search**
 
@@ -191,6 +191,7 @@ restart claude code. you get 54 tools:
 | `recall_related` | multi-hop graph traversal from an entity |
 | `recall_recent` | last N memories by creation time |
 | `recall_layer` | search within a specific layer |
+| `recall_hints` | search memories but return only hints (truncated snippets + entity names) to trigger recognition without replacing cognition |
 | `recall_code` | search the codebase layer for functions, classes, files |
 | `recall_context` | search and return a formatted context block with token budget |
 | `find_similar` | find memories most similar to a given one by embedding distance |
@@ -363,7 +364,7 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 54-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── mcp_server.py     # 55-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
@@ -407,6 +408,9 @@ i studied three existing memory systems and six IR papers before building this. 
 - [ColBERT-PRF](https://arxiv.org/abs/2106.11251) (Wang et al. 2021) — pseudo-relevance feedback for dense retrieval
 - [BM25 Query Augmentation](https://arxiv.org/abs/2305.14087) (Chen & Wiseman 2023) — learned query expansion
 - [Word Embedding GLM](https://dl.acm.org/doi/10.1145/2766462.2767780) (Ganguly et al. 2015) — embedding-based language model for IR
+- [Titans](https://arxiv.org/abs/2501.00663) (Behrouz et al. 2025) — surprise-based memorization, memory updates proportional to loss gradient
+- [Miras](https://arxiv.org/abs/2504.13173) (Behrouz et al. 2025) — unifying framework for sequence models, forgetting as retention regularization
+- [Your Brain on ChatGPT](https://arxiv.org/abs/2506.08872) (Kosmyna et al. 2025) — cognitive scaffolding vs replacement, recall_hints design
 
 ## config
 
