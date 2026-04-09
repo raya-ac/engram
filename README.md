@@ -80,7 +80,7 @@ memories aren't static. they move between layers based on how useful they turn o
 
 all modes include access reinforcement — each recall strengthens retention (spaced repetition effect, log-scaled, capped at +0.3). after 90 days, if retention < 0.15, importance < 0.3, and access count < 3, the memory gets soft-deleted. semantic, procedural, and pinned memories don't decay.
 
-**consolidation** (dream cycle) — clusters similar memories by embedding distance, summarizes clusters of 5+, generates peer cards for entities with enough data, archives low-value old memories. run manually with `engram consolidate` or the MCP `consolidate` tool.
+**consolidation** (dream cycle) — clusters similar memories by embedding distance, summarizes clusters of 5+, generates peer cards for entities with enough data, archives low-value old memories. now includes cross-domain synthesis: finds entity pairs in different contexts that aren't directly linked but share moderate embedding similarity (0.75-0.90), then uses an LLM to check for genuine non-obvious connections. confirmed bridges become semantic memories linking both entities with a SYNTHESIZED_WITH relationship. run manually with `engram consolidate` or the MCP `consolidate` tool.
 
 ## entity graph
 
