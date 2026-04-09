@@ -19,6 +19,9 @@ from engram.consolidator import consolidate
 from engram.layers import get_context_layers
 from engram.compress import compress_memories
 from engram.web.events import event_generator, get_recent_events, push_event
+from engram.surprise import compute_surprise, adjust_importance
+from engram.lifecycle import retention_l2, retention_huber, retention_elastic, compute_retention
+from engram.deep_retrieval import DeepReranker
 
 router = APIRouter()
 
@@ -95,8 +98,10 @@ async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool
 
     if debug:
         results, dbg = result
+        entity_ids = _collect_entity_ids(store, [r.memory.id for r in results])
         return {
             "results": [_result_dict(r) for r in results],
+            "entity_ids": entity_ids,
             "debug": {
                 "latency_ms": round(dbg.latency_ms, 1),
                 "dense_count": len(dbg.dense_candidates),
@@ -105,7 +110,9 @@ async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool
                 "rrf_count": len(dbg.rrf_scores),
             },
         }
-    return {"results": [_result_dict(r) for r in result]}
+    results = result
+    entity_ids = _collect_entity_ids(store, [r.memory.id for r in results])
+    return {"results": [_result_dict(r) for r in results], "entity_ids": entity_ids}
 
 
 @router.get("/api/entities")
@@ -200,10 +207,11 @@ async def neural_graph(request: Request, limit: int = 80):
         for r in rels:
             edges.append(dict(r))
 
-    # get recent access events (for firing animation)
-    recent = store.conn.execute(
-        """SELECT al.memory_id, al.accessed_at, al.query_text,
-                  GROUP_CONCAT(e.id) as entity_ids
+    # get recent access events (reads + writes for firing animation)
+    cutoff = time.time() - 300  # last 5 minutes
+    read_fires = store.conn.execute(
+        """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
+                  GROUP_CONCAT(e.id) as entity_ids, 'read' as fire_type
            FROM access_log al
            JOIN entity_mentions em ON em.memory_id = al.memory_id
            JOIN entities e ON e.id = em.entity_id
@@ -211,22 +219,40 @@ async def neural_graph(request: Request, limit: int = 80):
            GROUP BY al.id
            ORDER BY al.accessed_at DESC
            LIMIT 30""",
-        (time.time() - 300,),  # last 5 minutes
+        (cutoff,),
     ).fetchall()
-    fires = [dict(r) for r in recent]
+    write_fires = store.conn.execute(
+        """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
+                  GROUP_CONCAT(e.id) as entity_ids, 'write' as fire_type
+           FROM events ev
+           JOIN entity_mentions em ON em.memory_id = ev.memory_id
+           JOIN entities e ON e.id = em.entity_id
+           WHERE ev.created_at > ?
+             AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
+           GROUP BY ev.id
+           ORDER BY ev.created_at DESC
+           LIMIT 30""",
+        (cutoff,),
+    ).fetchall()
+    fires = [dict(r) for r in read_fires] + [dict(r) for r in write_fires]
+    fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
+    fires = fires[:30]
 
     return {"nodes": nodes, "edges": edges, "fires": fires}
 
 
 @router.get("/api/neural/fires")
 async def neural_fires(request: Request, since: float = 0):
-    """Lightweight poll endpoint — returns recent access events since timestamp."""
+    """Lightweight poll endpoint — returns recent read AND write events since timestamp."""
     store = _store(request)
     cutoff = since if since > 0 else time.time() - 10
-    recent = store.conn.execute(
-        """SELECT al.memory_id, al.accessed_at, al.query_text,
+
+    # reads from access_log
+    reads = store.conn.execute(
+        """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
                   GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
-                  GROUP_CONCAT(DISTINCT e.id) as entity_ids
+                  GROUP_CONCAT(DISTINCT e.id) as entity_ids,
+                  'read' as fire_type
            FROM access_log al
            JOIN entity_mentions em ON em.memory_id = al.memory_id
            JOIN entities e ON e.id = em.entity_id
@@ -236,7 +262,28 @@ async def neural_fires(request: Request, since: float = 0):
            LIMIT 50""",
         (cutoff,),
     ).fetchall()
-    return {"fires": [dict(r) for r in recent], "timestamp": time.time()}
+
+    # writes from events table
+    writes = store.conn.execute(
+        """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
+                  GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
+                  GROUP_CONCAT(DISTINCT e.id) as entity_ids,
+                  'write' as fire_type
+           FROM events ev
+           JOIN entity_mentions em ON em.memory_id = ev.memory_id
+           JOIN entities e ON e.id = em.entity_id
+           WHERE ev.created_at > ?
+             AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
+           GROUP BY ev.id
+           ORDER BY ev.created_at DESC
+           LIMIT 50""",
+        (cutoff,),
+    ).fetchall()
+
+    # merge and sort by timestamp descending
+    fires = [dict(r) for r in reads] + [dict(r) for r in writes]
+    fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
+    return {"fires": fires[:50], "timestamp": time.time()}
 
 
 @router.get("/api/timeline")
@@ -258,6 +305,64 @@ async def events(request: Request, limit: int = 50):
     return store.get_recent_events(limit=limit)
 
 
+@router.get("/api/pulse")
+async def session_pulse(request: Request):
+    """Real-time session activity counters + hourly sparkline."""
+    store = _store(request)
+    now = time.time()
+    hour_ago = now - 3600
+
+    # count events by type in last hour
+    rows = store.conn.execute(
+        """SELECT event_type, COUNT(*) as cnt
+           FROM events WHERE created_at > ?
+           GROUP BY event_type""",
+        (hour_ago,),
+    ).fetchall()
+    counts = {r["event_type"]: r["cnt"] for r in rows}
+
+    # sparkline: activity per 5-min bucket over last hour (12 buckets)
+    sparkline = []
+    for i in range(12):
+        bucket_start = hour_ago + i * 300
+        bucket_end = bucket_start + 300
+        cnt = store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM events WHERE created_at >= ? AND created_at < ?",
+            (bucket_start, bucket_end),
+        ).fetchone()["cnt"]
+        sparkline.append(cnt)
+
+    return {
+        "created": counts.get("memory_write", 0),
+        "recalled": counts.get("recall", 0) + counts.get("memory_read", 0),
+        "promoted": counts.get("memory_promote", 0),
+        "forgotten": counts.get("memory_forget", 0),
+        "total_events": sum(counts.values()),
+        "sparkline": sparkline,
+        "timestamp": now,
+    }
+
+
+@router.get("/api/heatmap")
+async def activity_heatmap(request: Request, days: int = 30):
+    """GitHub-style activity heatmap: day x hour bucketed event counts."""
+    store = _store(request)
+    cutoff = time.time() - days * 86400
+    rows = store.conn.execute(
+        """SELECT
+             CAST((created_at - ?) / 86400 AS INT) as day_offset,
+             CAST(((created_at - ?) % 86400) / 3600 AS INT) as hour,
+             event_type,
+             COUNT(*) as cnt
+           FROM events WHERE created_at > ?
+           GROUP BY day_offset, hour, event_type
+           ORDER BY day_offset, hour""",
+        (cutoff, cutoff, cutoff),
+    ).fetchall()
+    cells = [dict(r) for r in rows]
+    return {"cells": cells, "days": days}
+
+
 # --- API: Write ---
 
 @router.post("/api/remember")
@@ -274,8 +379,14 @@ async def remember(request: Request):
         importance=body.get("importance", 0.7),
     )
     emb = embed_documents([mem.content], config.embedding_model)
+    surprise_info = {}
     if emb.size > 0:
         mem.embedding = emb[0]
+        surprise_info = compute_surprise(mem.embedding, store)
+        mem.importance = adjust_importance(mem.importance, surprise_info)
+        mem.metadata["surprise"] = surprise_info["surprise"]
+        if surprise_info["is_duplicate"] and surprise_info["nearest_id"]:
+            mem.metadata["duplicate_of"] = surprise_info["nearest_id"]
     hqs = []
     try:
         hqs = generate_hypothetical_queries(mem.content, config)
@@ -284,7 +395,13 @@ async def remember(request: Request):
     store.save_memory(mem, hypothetical_queries=hqs)
     process_entities_for_memory(store, mem.id, mem.content)
     push_event("remember", {"id": mem.id, "content": mem.content[:100]})
-    return {"id": mem.id, "status": "stored"}
+    result = {"id": mem.id, "status": "stored"}
+    if surprise_info:
+        result["surprise"] = surprise_info["surprise"]
+        result["importance"] = mem.importance
+        if surprise_info["is_duplicate"]:
+            result["warning"] = "near-duplicate detected"
+    return result
 
 
 @router.post("/api/consolidate")
@@ -339,6 +456,15 @@ async def invalidate_memory(request: Request, memory_id: str):
                        (json.dumps(meta), memory_id))
     store.conn.commit()
     return {"status": "invalidated"}
+
+
+# --- Importance history ---
+
+@router.get("/api/memories/{memory_id}/history")
+async def importance_history(request: Request, memory_id: str):
+    store = _store(request)
+    history = store.get_importance_history(memory_id)
+    return {"memory_id": memory_id, "history": history}
 
 
 # --- Entity management ---
@@ -415,21 +541,22 @@ async def analytics(request: Request):
     }
 
 
-# --- Diary ---
-
-_web_diary: list[dict] = []
+# --- Diary (persistent) ---
 
 @router.get("/api/diary")
 async def get_diary(request: Request):
-    return {"entries": _web_diary}
+    store = _store(request)
+    entries = store.get_diary(limit=100)
+    return {"entries": [{"text": e["text"], "timestamp": e["created_at"]} for e in entries]}
 
 
 @router.post("/api/diary")
 async def write_diary(request: Request):
     body = await request.json()
-    entry = {"text": body.get("entry", ""), "timestamp": time.time()}
-    _web_diary.append(entry)
-    return {"status": "written", "count": len(_web_diary)}
+    store = _store(request)
+    text = body.get("entry", "")
+    store.write_diary(text)
+    return {"status": "written"}
 
 
 # --- Context layers ---
@@ -638,7 +765,312 @@ async def unpin_memory(request: Request, memory_id: str):
     return {"status": "unpinned"}
 
 
+# --- Surprise ---
+
+@router.post("/api/surprise/preview")
+async def surprise_preview(request: Request):
+    """Compute surprise score for text before storing."""
+    body = await request.json()
+    store = _store(request)
+    config = _config(request)
+    text = body.get("content", "")
+    if not text:
+        return JSONResponse({"error": "content required"}, status_code=400)
+    emb = embed_documents([text], config.embedding_model)
+    if emb.size == 0:
+        return JSONResponse({"error": "embedding failed"}, status_code=500)
+    result = compute_surprise(emb[0], store)
+    # add nearest memory content snippet
+    if result.get("nearest_id"):
+        nearest = store.get_memory(result["nearest_id"])
+        if nearest:
+            result["nearest_content"] = nearest.content[:150]
+    return result
+
+
+@router.get("/api/surprise/{memory_id}")
+async def memory_surprise(request: Request, memory_id: str):
+    """Get the stored surprise score for a memory."""
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return {
+        "memory_id": memory_id,
+        "surprise": mem.metadata.get("surprise"),
+        "duplicate_of": mem.metadata.get("duplicate_of"),
+    }
+
+
+# --- Retention curves ---
+
+@router.get("/api/retention/curves")
+async def retention_curves(request: Request,
+                           half_life: int = 30, huber_delta: float = 0.5,
+                           l1_ratio: float = 0.3, points: int = 100):
+    """Generate retention curve data for visualization."""
+    max_days = half_life * 3
+    step = max_days / points
+    curves = {"l2": [], "huber": [], "elastic": []}
+    for i in range(points + 1):
+        d = i * step
+        curves["l2"].append({"day": round(d, 1), "retention": round(retention_l2(d, half_life), 4)})
+        curves["huber"].append({"day": round(d, 1), "retention": round(retention_huber(d, half_life, huber_delta), 4)})
+        curves["elastic"].append({"day": round(d, 1), "retention": round(retention_elastic(d, half_life, l1_ratio), 4)})
+    config = _config(request)
+    return {
+        "curves": curves,
+        "config": {
+            "retention_mode": getattr(config.lifecycle, 'retention_mode', 'l2'),
+            "half_life": config.lifecycle.forgetting_half_life_days,
+            "huber_delta": getattr(config.lifecycle, 'huber_delta', 0.5),
+            "l1_ratio": getattr(config.lifecycle, 'elastic_l1_ratio', 0.3),
+        },
+    }
+
+
+@router.get("/api/retention/scatter")
+async def retention_scatter(request: Request, limit: int = 200):
+    """Get real memory age vs retention for scatter plot."""
+    import math
+    store = _store(request)
+    config = _config(request)
+    rows = store.conn.execute(
+        "SELECT * FROM memories WHERE forgotten = 0 AND layer IN ('episodic', 'working') LIMIT ?",
+        (limit,),
+    ).fetchall()
+    points = []
+    for row in rows:
+        mem = store._row_to_memory(row)
+        age = (time.time() - mem.last_accessed) / 86400
+        ret = compute_retention(mem, config)
+        points.append({
+            "id": mem.id,
+            "age_days": round(age, 1),
+            "retention": round(ret, 4),
+            "layer": mem.layer,
+            "importance": mem.importance,
+            "access_count": mem.access_count,
+        })
+    return {"points": points}
+
+
+# --- Reranker ---
+
+@router.get("/api/reranker/status")
+async def reranker_status(request: Request):
+    config = _config(request)
+    model_path = config.resolved_db_path.parent / "reranker.npz"
+    reranker = DeepReranker(model_path=model_path)
+    result = {"trained": reranker.is_trained, "model_path": str(model_path),
+              "model_exists": model_path.exists()}
+    if model_path.exists():
+        result["model_size_kb"] = round(model_path.stat().st_size / 1024, 1)
+    return result
+
+
+@router.post("/api/reranker/train")
+async def train_reranker(request: Request):
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    store = _store(request)
+    config = _config(request)
+    model_path = config.resolved_db_path.parent / "reranker.npz"
+    reranker = DeepReranker(model_path=model_path)
+    result = reranker.train(store, lr=body.get("learning_rate", 0.01),
+                            epochs=body.get("epochs", 50))
+    return result
+
+
+# --- Bridges ---
+
+@router.get("/api/bridges")
+async def list_bridges(request: Request, limit: int = 20):
+    store = _store(request)
+    rows = store.conn.execute(
+        """SELECT * FROM memories
+           WHERE forgotten = 0 AND json_extract(metadata, '$.type') = 'cross_domain_bridge'
+           ORDER BY created_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    bridges = []
+    for row in rows:
+        mem = store._row_to_memory(row)
+        bridges.append({
+            **_mem_dict(mem),
+            "entity_a": mem.metadata.get("entity_a"),
+            "entity_b": mem.metadata.get("entity_b"),
+            "similarity": mem.metadata.get("similarity"),
+        })
+    return {"bridges": bridges}
+
+
+# --- Edit & Annotate (web) ---
+
+@router.post("/api/memories/{memory_id}/edit")
+async def edit_memory(request: Request, memory_id: str):
+    body = await request.json()
+    store = _store(request)
+    config = _config(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    new_content = body.get("content", "")
+    if not new_content:
+        return JSONResponse({"error": "content required"}, status_code=400)
+    emb = embed_documents([new_content], config.embedding_model)
+    emb_blob = emb[0].astype('float32').tobytes() if emb.size > 0 else None
+    store.conn.execute("UPDATE memories SET content = ?, embedding = ? WHERE id = ?",
+                       (new_content, emb_blob, memory_id))
+    row = store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (memory_id,)).fetchone()
+    if row:
+        store.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (row[0],))
+        store.conn.execute("INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, '')",
+                           (row[0], new_content))
+    store.invalidate_embedding_cache()
+    store._emit_event("memory_edit", memory_id=memory_id)
+    store.conn.commit()
+    return {"status": "edited"}
+
+
+@router.post("/api/memories/{memory_id}/annotate")
+async def annotate_memory(request: Request, memory_id: str):
+    body = await request.json()
+    store = _store(request)
+    mem = store.get_memory(memory_id)
+    if not mem:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    annotations = mem.metadata.get("annotations", [])
+    annotations.append({"note": body.get("note", ""), "timestamp": time.time()})
+    mem.metadata["annotations"] = annotations
+    store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                       (json.dumps(mem.metadata), memory_id))
+    store.conn.commit()
+    return {"status": "annotated", "count": len(annotations)}
+
+
+# --- Bulk actions ---
+
+@router.post("/api/memories/bulk")
+async def bulk_action(request: Request):
+    body = await request.json()
+    store = _store(request)
+    action = body.get("action")
+    ids = body.get("memory_ids", [])
+    if not ids or not action:
+        return JSONResponse({"error": "action and memory_ids required"}, status_code=400)
+    affected = 0
+    for mid in ids:
+        if action == "forget":
+            store.forget_memory(mid)
+            affected += 1
+        elif action == "promote":
+            target = body.get("layer", "semantic")
+            store.update_layer(mid, target)
+            affected += 1
+        elif action == "demote":
+            target = body.get("layer", "episodic")
+            store.update_layer(mid, target)
+            affected += 1
+        elif action == "tag":
+            mem = store.get_memory(mid)
+            if mem:
+                tags = set(mem.metadata.get("tags", []))
+                tags.update(body.get("tags", []))
+                mem.metadata["tags"] = sorted(tags)
+                store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
+                                   (json.dumps(mem.metadata), mid))
+                affected += 1
+    store.conn.commit()
+    store.invalidate_embedding_cache()
+    return {"affected": affected, "action": action}
+
+
+# --- Export ---
+
+@router.get("/api/export")
+async def export_memories(request: Request, format: str = "json",
+                          layer: str | None = None, limit: int = 200):
+    store = _store(request)
+    if layer:
+        mems = store.get_memories_by_layer(layer, limit=limit)
+    else:
+        mems = store.get_recent_memories(limit=limit)
+    if format == "markdown":
+        lines = []
+        for m in mems:
+            date = m.fact_date or time.strftime("%Y-%m-%d", time.localtime(m.created_at))
+            lines.append(f"## [{date}] {m.layer} (imp={m.importance:.2f})\n\n{m.content}\n")
+        return {"format": "markdown", "content": "\n---\n\n".join(lines), "count": len(mems)}
+    else:
+        return {"format": "json", "memories": [_mem_dict(m) for m in mems], "count": len(mems)}
+
+
+# --- Ingest (web) ---
+
+@router.post("/api/ingest/path")
+async def ingest_path(request: Request):
+    body = await request.json()
+    path = body.get("path", "")
+    if not path:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    from engram.cli import cmd_ingest
+    import argparse
+    config = _config(request)
+    try:
+        fake_args = argparse.Namespace(paths=[path], jobs=1, no_queries=False)
+        cmd_ingest(fake_args, config)
+        return {"status": "ingested", "path": path}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/api/ingest/sessions")
+async def ingest_sessions(request: Request):
+    store = _store(request)
+    from engram.conversations import ingest_all_sessions
+    result = ingest_all_sessions(store, limit=20)
+    return result
+
+
+# --- Search hints ---
+
+@router.get("/api/search/hints")
+async def search_hints(request: Request, q: str, top_k: int = 10, hint_length: int = 60):
+    store = _store(request)
+    config = _config(request)
+    results = hybrid_search(q, store, config, top_k=top_k)
+    hints = []
+    for r in results:
+        mem = r.memory
+        lines = [l.strip() for l in mem.content.split("\n") if l.strip()]
+        title = (lines[0] if lines else mem.content)[:hint_length]
+        if len(title) < len(lines[0] if lines else mem.content):
+            title += "..."
+        entities = store.conn.execute(
+            "SELECT e.canonical_name, e.entity_type FROM entity_mentions em JOIN entities e ON e.id = em.entity_id WHERE em.memory_id = ? LIMIT 5",
+            (mem.id,),
+        ).fetchall()
+        hints.append({
+            "id": mem.id, "hint": title, "layer": mem.layer,
+            "importance": round(mem.importance, 2), "date": mem.fact_date,
+            "entities": [dict(e) for e in entities], "score": round(r.score, 4),
+        })
+    return {"hints": hints, "query": q}
+
+
 # --- Helpers ---
+
+def _collect_entity_ids(store: Store, memory_ids: list[str]) -> list[str]:
+    """Get unique entity IDs mentioned in the given memories."""
+    if not memory_ids:
+        return []
+    placeholders = ",".join("?" * len(memory_ids))
+    rows = store.conn.execute(
+        f"SELECT DISTINCT entity_id FROM entity_mentions WHERE memory_id IN ({placeholders})",
+        memory_ids,
+    ).fetchall()
+    return [r["entity_id"] for r in rows]
+
 
 def _mem_dict(m: Memory) -> dict:
     return {
