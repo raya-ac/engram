@@ -22,11 +22,11 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
-**52 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**55 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
-four stages, each one filters and reranks:
+five stages — three parallel signals, fused, boosted, and reranked:
 
 ```
 query
@@ -40,11 +40,15 @@ query
            │
            ▼
      temporal + importance boosting
-     ebbinghaus decay, access frequency, date matching
+     retention regularization, access frequency, date matching
            │
            ▼
      cross-encoder reranking (ms-marco-MiniLM-L-6-v2)
      joint (query, document) scoring — optional, adds ~200ms
+           │
+           ▼
+     deep MLP reranker (optional, if trained)
+     learned relevance from historical access patterns, <1ms
            │
            ▼
      final top-k results
@@ -363,12 +367,12 @@ everything lives in one sqlite file (`~/.local/share/engram/memory.db`). no exte
 engram/
 ├── store.py          # sqlite schema, CRUD, FTS5, entity graph (recursive CTEs)
 ├── embeddings.py     # bge-small-en-v1.5 + ms-marco cross-encoder, lazy loading
-├── retrieval.py      # 4-stage hybrid pipeline (dense + BM25 + graph → RRF → boost → rerank)
+├── retrieval.py      # 5-stage hybrid pipeline (dense + BM25 + graph → RRF → boost → rerank → deep)
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
 ├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
 ├── deep_retrieval.py # learned MLP reranker trained on access patterns
-├── lifecycle.py      # ebbinghaus forgetting, 7-factor importance, promotion/demotion
+├── lifecycle.py      # retention regularization (L2/Huber/elastic), 7-factor importance, promotion
 ├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer
 ├── conversations.py  # claude code session ingest — exchange pairs, classification
@@ -433,26 +437,33 @@ lives at `config.yaml` or `~/.config/engram/config.yaml`. env vars override ever
 db_path: ~/.local/share/engram/memory.db
 embedding_model: BAAI/bge-small-en-v1.5
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+embedding_dim: 384
 
 retrieval:
   top_k: 10
   rrf_k: 60
   min_confidence: 0.60
   rerank_candidates: 20
+  dense_multiplier: 3          # candidates = top_k * multiplier
+  bm25_multiplier: 3
 
 lifecycle:
   forgetting_half_life_days: 30
   archive_after_days: 90
+  archive_min_importance: 0.3  # below this + age + low access → forget
+  archive_min_accesses: 3
   promote_importance: 0.7
   promote_accesses: 5
   cluster_threshold: 0.8
+  cluster_min_size: 5
   retention_mode: huber        # l2 | huber | elastic
   huber_delta: 0.5             # transition point for huber (in half-lives)
   elastic_l1_ratio: 0.3        # L1 weight for elastic (0=pure L2, 1=pure L1)
 
 llm:
-  backend: claude_cli   # claude_cli | mlx
+  backend: claude_cli          # claude_cli | mlx | llamacpp
   model: claude-sonnet-4-20250514
+  mlx_model: mlx-community/Qwen2.5-3B-Instruct-4bit
 
 web:
   host: 127.0.0.1
