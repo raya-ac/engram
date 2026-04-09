@@ -304,21 +304,27 @@ you can also wire it into Claude Code's hook system by adding to your settings �
 full monitoring UI at `http://127.0.0.1:8420`:
 
 - **neural map** — force-directed entity graph with concentric layer rings (semantic core → procedural → episodic → working). neurons glow and fire impulse particles along synapses when memories are accessed. drag nodes, hover for details, click to inspect. polls the database every 2s so MCP queries show up in real time.
-- **search** — hybrid search with debug mode showing all 4 retrieval stages. filter chips for layer, importance slider.
-- **memories** — browse all memories, filter by layer (including codebase). every card has inline actions: promote/demote dropdown, pin/unpin, find similar, explain importance, copy, invalidate, forget. pinned memories show a yellow indicator.
+- **search** — hybrid search with debug mode showing all 5 retrieval stages. filter chips for layer, importance slider. hint mode toggle returns truncated snippets with reveal buttons for cognitive scaffolding. search history saved to localStorage with dropdown.
+- **memories** — browse all memories, filter by layer (including codebase). layer-colored left borders, importance bars, slide-in animations. every card has inline actions: edit content, promote/demote, pin/unpin, find similar, explain importance, copy, invalidate, forget. select mode for bulk operations (promote/forget multiple at once). pinned memories show gold glow.
 - **entities** — entity chips with memory counts. click to open inspector with relationship graph, add aliases, change entity type.
 - **timeline** — date range queries with memory cards.
-- **remember** — tabbed forms: general (any layer/importance), decision (with rationale → procedural), error pattern (with prevention → procedural), Q+A interaction (→ episodic).
+- **remember** — tabbed forms: general (any layer/importance), decision (with rationale → procedural), error pattern (with prevention → procedural), Q+A interaction (→ episodic). now shows surprise score and adjusted importance after storing.
+- **cognition** — three tabs for the new memory science features:
+  - *surprise*: paste text to preview novelty score before storing. radial gauge visualization (green=novel, red=duplicate), k-NN distance bars, nearest memory snippet.
+  - *retention*: interactive canvas chart overlaying L2, Huber, and elastic net decay curves. sliders for half-life, huber delta, and L1 ratio — curves redraw client-side in real time.
+  - *reranker*: deep MLP reranker status card, train button with epoch/LR inputs, training results display.
+- **bridges** — cross-domain synthesis viewer. shows entity pairs connected by the dream cycle's LLM-confirmed bridges, with similarity scores and connection descriptions.
 - **analytics** — donut chart for layer distribution, bar charts for most recalled memories, top entities by memory count, source type breakdown.
 - **context** — L0-L3 graduated context viewer with token counts per layer and copy buttons. query input for L3 search-based context.
 - **health** — system health dashboard with 10 status cards (embedding cache, orphaned entities, stale working memories, FTS index, embedding coverage, db size, etc). plus a memory map showing top entities per layer and full date range.
 - **dedup** — duplicate detection with adjustable similarity threshold slider. scan to preview duplicate pairs side by side, one-click auto-merge.
-- **ingest** — file path input with recent ingestion log from the database.
+- **ingest** — file/directory path ingestion with real backend processing, session ingest button, and recent ingestion log.
+- **export** — download memories as markdown or JSON from sidebar, with optional layer filter.
 - **live events** — real-time feed of all memory reads/writes across all processes (MCP, CLI, web). deduplicates events within 2-second windows and shows result counts.
 - **session diary** — quick note-taking input in the sidebar, timestamped entries.
-- **inspector panel** — right sidebar that shows memory details, entity graphs, similar memories (with similarity percentages), importance factor breakdowns (colored bar chart with 7 weighted factors), annotations, and access history.
+- **inspector panel** — right sidebar that shows memory details, entity graphs, similar memories (with similarity percentages), importance factor breakdowns (colored bar chart with 7 weighted factors), annotations with add-note input, and access history.
 - **toast notifications** — bottom-right toasts for all actions (promote, pin, copy, forget, dedup) with success/error/info styling and auto-dismiss.
-- **keyboard shortcuts** — `/` focus search, `n` neural map, `s` search, `r` remember, `a` analytics, `Esc` close inspector.
+- **keyboard shortcuts** — `/` focus search, `n` neural map, `s` search, `r` remember, `a` analytics, `c` cognition, `b` bridges, `Esc` close inspector.
 
 ### web API
 
@@ -346,17 +352,34 @@ GET  /api/stats                       system statistics
 GET  /api/events                      recent events from all processes
 GET  /api/diary                       session diary entries
 GET  /api/ingest/log                  recent file ingestions
-POST /api/remember                    store a memory
+GET  /api/pulse                       hourly activity counters + sparkline
+GET  /api/heatmap?days=30             github-style activity heatmap
+GET  /api/memories/:id/history        importance score over time
+GET  /api/retention/curves            L2/Huber/elastic curve data for chart
+GET  /api/retention/scatter           real memory age vs retention scatter data
+GET  /api/reranker/status             deep reranker training state
+GET  /api/bridges                     cross-domain bridge memories
+GET  /api/search/hints?q=...          truncated hints for cognitive scaffolding
+GET  /api/export?format=json          export memories as markdown or JSON
+POST /api/remember                    store a memory (with surprise scoring)
 POST /api/consolidate                 trigger dream cycle
 POST /api/dedup                       auto-merge duplicate memories
+POST /api/surprise/preview            compute surprise for text before storing
+POST /api/reranker/train              trigger reranker training
 POST /api/memories/:id/promote        change memory layer
+POST /api/memories/:id/demote         demote to lower layer
+POST /api/memories/:id/edit           edit content (re-embeds automatically)
+POST /api/memories/:id/annotate       add timestamped note
 POST /api/memories/:id/invalidate     mark as no longer true
 POST /api/memories/:id/forget         soft-delete
 POST /api/memories/:id/pin            pin (prevent forgetting)
 POST /api/memories/:id/unpin          unpin
+POST /api/memories/bulk               bulk promote/forget/tag/demote
 POST /api/entities/:id/alias          add entity alias
 POST /api/entities/:id/type           change entity type
 POST /api/diary                       append diary entry
+POST /api/ingest/path                 ingest a file or directory
+POST /api/ingest/sessions             ingest recent Claude Code sessions
 ```
 
 ## architecture
@@ -386,10 +409,10 @@ engram/
 ├── config.py         # yaml config with env var overrides
 └── web/
     ├── app.py        # fastapi with model warmup on startup
-    ├── routes.py     # 32 REST endpoints — search, analytics, entity mgmt, health, dedup, importance
+    ├── routes.py     # 52 REST endpoints — search, analytics, surprise, retention, reranker, bridges, bulk, export
     ├── events.py     # SSE event stream (in-process)
     └── templates/
-        └── index.html  # single-page htmx dashboard with neural canvas
+        └── index.html  # single-page dashboard with neural canvas, 14 panels, 74 JS functions
 ```
 
 ## supported formats
