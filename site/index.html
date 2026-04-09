@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>engram — cognitive memory for AI agents</title>
+<meta name="description" content="Persistent memory system for AI agents. Hybrid retrieval, surprise-based learning, retention regularization, deep reranking. One SQLite file, 55 MCP tools.">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --bg2: #12121a;
+  --bg3: #1a1a25;
+  --border: #2a2a3a;
+  --text: #c8c8d4;
+  --text2: #8888a0;
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --red: #ef4444;
+  --cyan: #06b6d4;
+  --font: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.7; }
+a { color: var(--accent2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+/* hero */
+.hero { padding: 80px 0 60px; text-align: center; }
+.hero h1 { font-size: 48px; letter-spacing: 4px; color: var(--accent2); margin-bottom: 16px; }
+.hero .tagline { font-size: 18px; color: var(--text2); margin-bottom: 32px; max-width: 600px; margin-left: auto; margin-right: auto; }
+.hero .stats { display: flex; justify-content: center; gap: 32px; margin-bottom: 40px; }
+.hero .stat { text-align: center; }
+.hero .stat .val { font-size: 28px; font-weight: 700; color: var(--accent2); }
+.hero .stat .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+
+.cta { display: inline-flex; gap: 12px; }
+.cta a { padding: 10px 24px; border-radius: 6px; font-size: 14px; font-family: var(--font); }
+.cta .primary { background: var(--accent); color: white; }
+.cta .primary:hover { background: var(--accent2); text-decoration: none; }
+.cta .secondary { background: var(--bg3); border: 1px solid var(--border); color: var(--text); }
+.cta .secondary:hover { border-color: var(--accent); text-decoration: none; }
+
+/* install block */
+.install { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 40px auto; max-width: 600px; font-size: 13px; }
+.install code { color: var(--green); }
+.install .comment { color: var(--text2); }
+
+/* pipeline */
+.pipeline { padding: 60px 0; }
+.pipeline h2 { font-size: 20px; margin-bottom: 24px; color: var(--accent2); }
+.pipeline-diagram { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; font-size: 12px; line-height: 1.8; }
+.pipeline-diagram .stage { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pipeline-diagram .arrow { color: var(--text2); font-size: 16px; text-align: center; margin: 4px 0; }
+.pipeline-diagram .stage-label { color: var(--cyan); min-width: 180px; }
+.pipeline-diagram .stage-desc { color: var(--text2); }
+
+/* features grid */
+.features { padding: 60px 0; }
+.features h2 { font-size: 20px; margin-bottom: 24px; color: var(--accent2); }
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.feature-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.feature-card h3 { font-size: 14px; margin-bottom: 8px; }
+.feature-card p { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.feature-card .badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-bottom: 8px; }
+.badge.new { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+.badge.core { background: rgba(99,102,241,0.15); color: var(--accent2); border: 1px solid rgba(99,102,241,0.3); }
+
+/* papers */
+.papers { padding: 60px 0; }
+.papers h2 { font-size: 20px; margin-bottom: 24px; color: var(--accent2); }
+.paper-list { display: flex; flex-direction: column; gap: 12px; }
+.paper { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; display: flex; gap: 16px; align-items: flex-start; }
+.paper .paper-tag { font-size: 10px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; margin-top: 2px; }
+.paper .paper-tag.titans { background: rgba(6,182,212,0.15); color: var(--cyan); }
+.paper .paper-tag.miras { background: rgba(129,140,248,0.15); color: var(--accent2); }
+.paper .paper-tag.eeg { background: rgba(234,179,8,0.15); color: var(--yellow); }
+.paper-content h4 { font-size: 13px; margin-bottom: 4px; }
+.paper-content p { font-size: 11px; color: var(--text2); }
+
+/* footer */
+.footer { padding: 40px 0; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text2); }
+
+@media (max-width: 600px) {
+  .hero h1 { font-size: 32px; }
+  .hero .stats { flex-direction: column; gap: 16px; }
+  .cta { flex-direction: column; }
+  .feature-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="hero">
+    <h1>engram</h1>
+    <p class="tagline">cognitive memory for AI agents. one SQLite file, hybrid retrieval, surprise-based learning, and a neural map that lights up when your agent thinks.</p>
+    <div class="stats">
+      <div class="stat"><div class="val">55</div><div class="label">MCP Tools</div></div>
+      <div class="stat"><div class="val">52</div><div class="label">API Endpoints</div></div>
+      <div class="stat"><div class="val">5</div><div class="label">Memory Layers</div></div>
+      <div class="stat"><div class="val">9</div><div class="label">Papers</div></div>
+    </div>
+    <div class="cta">
+      <a href="https://github.com/raya-ac/engram" class="primary">GitHub</a>
+      <a href="https://github.com/raya-ac/engram/tree/main/examples" class="secondary">Examples</a>
+    </div>
+  </div>
+
+  <div class="install">
+    <code>git clone https://github.com/raya-ac/engram.git</code><br>
+    <code>cd engram && pip install -e .</code><br>
+    <code>engram demo</code> <span class="comment"># interactive walkthrough</span><br>
+    <code>engram serve --web</code> <span class="comment"># dashboard at :8420</span>
+  </div>
+
+  <div class="pipeline">
+    <h2>the retrieval pipeline</h2>
+    <div class="pipeline-diagram">
+      <div class="stage"><span class="stage-label">dense cosine (bge-small)</span><span class="stage-desc">384-dim embeddings, normalized dot product</span></div>
+      <div class="stage"><span class="stage-label">BM25 via FTS5</span><span class="stage-desc">content + hypothetical queries (docTTTTTquery)</span></div>
+      <div class="stage"><span class="stage-label">entity graph traversal</span><span class="stage-desc">recursive SQL CTEs, no external graph DB</span></div>
+      <div class="arrow">&#x25BC; reciprocal rank fusion (k=60)</div>
+      <div class="arrow">&#x25BC; temporal + importance boosting</div>
+      <div class="arrow">&#x25BC; cross-encoder reranking (ms-marco-MiniLM)</div>
+      <div class="arrow">&#x25BC; deep MLP reranker (learned from access patterns)</div>
+      <div class="arrow" style="color:var(--green)">&#x25BC; final results</div>
+    </div>
+  </div>
+
+  <div class="features">
+    <h2>what it does</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="badge new">new</span>
+        <h3>surprise-based importance</h3>
+        <p>every new memory is compared against existing embeddings using k-NN. novel memories get importance boosted, redundant ones get flagged. inspired by the Titans paper.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge new">new</span>
+        <h3>retention regularization</h3>
+        <p>three forgetting modes: L2 (classic exponential), Huber (robust to burst-then-quiet), elastic net (sparse retention). access reinforcement adds spaced repetition.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge new">new</span>
+        <h3>deep retrieval reranker</h3>
+        <p>2-layer MLP trained on actual access patterns. learns which memories get used after being returned. persists to disk, runs automatically.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge new">new</span>
+        <h3>cross-domain synthesis</h3>
+        <p>dream cycle finds entity pairs in different domains with moderate embedding similarity. LLM confirms genuine connections. creates bridge memories.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge new">new</span>
+        <h3>cognitive scaffolding</h3>
+        <p>recall_hints returns truncated snippets + entity names to trigger recognition without replacing cognition. the agent decides when to pull full context.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge core">core</span>
+        <h3>5 memory layers</h3>
+        <p>working (ephemeral) → episodic (experiences) → semantic (permanent) → procedural (decisions, errors) → codebase (compressed code). memories promote upward when they prove useful.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge core">core</span>
+        <h3>entity graph</h3>
+        <p>auto-extracts people, tools, projects from every memory. relationship graph with co-occurrence strength. multi-hop traversal via recursive SQL CTEs.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge core">core</span>
+        <h3>dream cycle</h3>
+        <p>consolidation pass: cluster similar memories, summarize, generate entity peer cards, archive low-value old stuff. like sleep for your memory system.</p>
+      </div>
+      <div class="feature-card">
+        <span class="badge core">core</span>
+        <h3>neural visualization</h3>
+        <p>force-directed entity graph with concentric layer rings. neurons fire with traveling impulse particles when memories are accessed. polls the database across processes.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="papers">
+    <h2>built on research</h2>
+    <div class="paper-list">
+      <div class="paper">
+        <span class="paper-tag titans">Titans</span>
+        <div class="paper-content">
+          <h4>Neural Long-Term Memory (Behrouz et al., 2025)</h4>
+          <p>surprise-based memorization where memory updates are proportional to the gradient of loss. engram's k-NN novelty scoring at write time comes from this.</p>
+        </div>
+      </div>
+      <div class="paper">
+        <span class="paper-tag miras">Miras</span>
+        <div class="paper-content">
+          <h4>Unifying Framework for Sequence Models (Behrouz et al., 2025)</h4>
+          <p>shows forgetting mechanisms are retention regularization. engram's three decay modes (L2, Huber, elastic net) come from this framework.</p>
+        </div>
+      </div>
+      <div class="paper">
+        <span class="paper-tag eeg">EEG study</span>
+        <div class="paper-content">
+          <h4>Your Brain on ChatGPT (Kosmyna et al., 2025)</h4>
+          <p>LLM users develop weaker neural connectivity when given full context. engram's recall_hints returns partial context to trigger recognition, not replace it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>MIT license &middot; <a href="https://github.com/raya-ac/engram">github.com/raya-ac/engram</a></p>
+  </div>
+</div>
+
+</body>
+</html>
