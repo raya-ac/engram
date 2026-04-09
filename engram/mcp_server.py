@@ -20,6 +20,7 @@ from engram.lifecycle import compute_importance
 from engram.consolidator import consolidate
 from engram.surprise import compute_surprise, adjust_importance
 from engram.deep_retrieval import DeepReranker
+from engram.skill_select import select_skills, format_skills
 
 TOOLS = [
     # Read tools
@@ -94,6 +95,8 @@ TOOLS = [
     {"name": "reranker_status", "description": "Check if the deep reranker is trained and its model path", "inputSchema": {"type": "object", "properties": {}}},
     # Cognitive scaffolding
     {"name": "recall_hints", "description": "Search memories but return only hints (truncated snippets + entity names) to trigger recognition without replacing cognition. Use when you want to check if you know something before pulling full context. Returns memory IDs you can fetch with recall if needed.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "hint_length": {"type": "integer", "default": 60, "description": "Max characters per hint snippet"}}, "required": ["query"]}},
+    # Skill selection
+    {"name": "get_skills", "description": "Task-aware skill selection — get focused procedural guidance for a task. Returns 2-3 relevant skills only when injection would help. Skips when the task is well-covered by model pretraining or no relevant procedures exist. Based on SkillsBench finding that focused skills (+16.2pp) beat comprehensive docs (-2.9pp).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "description": "What task or problem you need procedural guidance for"}, "max_skills": {"type": "integer", "default": 3, "description": "Maximum number of skills to return (2-3 is optimal)"}, "format": {"type": "boolean", "default": True, "description": "Return formatted context block (true) or raw selection data (false)"}}, "required": ["query"]}},
 ]
 
 _session_diary: list[str] = []
@@ -192,6 +195,7 @@ class MCPServer:
             "train_reranker": self._train_reranker,
             "reranker_status": self._reranker_status,
             "recall_hints": self._recall_hints,
+            "get_skills": self._get_skills,
         }
         handler = handlers.get(name)
         if not handler:
@@ -976,6 +980,40 @@ class MCPServer:
             projects[p]["types"] = {r["type"]: r["cnt"] for r in type_rows}
 
         return {"projects": list(projects.values())}
+
+    # --- Skill selection ---
+
+    def _get_skills(self, args: dict):
+        query = args["query"]
+        max_skills = args.get("max_skills", 3)
+        should_format = args.get("format", True)
+
+        selection = select_skills(query, self.store, self.config, max_skills=max_skills)
+
+        if should_format:
+            formatted = format_skills(selection)
+            return {
+                "should_inject": selection.should_inject,
+                "confidence": round(selection.confidence, 3),
+                "task_novelty": round(selection.task_novelty, 3),
+                "domain_coverage": round(selection.domain_coverage, 3),
+                "reason": selection.reason,
+                "skill_count": len(selection.skills),
+                "context": formatted if formatted else None,
+            }
+        else:
+            return {
+                "should_inject": selection.should_inject,
+                "confidence": round(selection.confidence, 3),
+                "task_novelty": round(selection.task_novelty, 3),
+                "domain_coverage": round(selection.domain_coverage, 3),
+                "reason": selection.reason,
+                "skills": [
+                    {"id": m.id, "content": m.content, "layer": m.layer,
+                     "importance": m.importance}
+                    for m in selection.skills
+                ],
+            }
 
     # --- Deep retrieval ---
 

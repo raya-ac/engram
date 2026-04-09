@@ -22,6 +22,7 @@ from engram.web.events import event_generator, get_recent_events, push_event
 from engram.surprise import compute_surprise, adjust_importance
 from engram.lifecycle import retention_l2, retention_huber, retention_elastic, compute_retention
 from engram.deep_retrieval import DeepReranker
+from engram.skill_select import select_skills, format_skills
 
 router = APIRouter()
 
@@ -902,6 +903,29 @@ async def list_bridges(request: Request, limit: int = 20):
             "similarity": mem.metadata.get("similarity"),
         })
     return {"bridges": bridges}
+
+
+# --- Skill selection ---
+
+@router.get("/api/skills")
+async def get_skills_api(request: Request, query: str, max_skills: int = 3):
+    store = _store(request)
+    config = _config(request)
+    selection = select_skills(query, store, config, max_skills=max_skills)
+    return {
+        "should_inject": selection.should_inject,
+        "confidence": round(selection.confidence, 3),
+        "task_novelty": round(selection.task_novelty, 3),
+        "domain_coverage": round(selection.domain_coverage, 3),
+        "reason": selection.reason,
+        "skill_count": len(selection.skills),
+        "context": format_skills(selection) if selection.should_inject else None,
+        "skills": [
+            {"id": m.id, "content": m.content[:200], "layer": m.layer,
+             "importance": m.importance}
+            for m in selection.skills
+        ],
+    }
 
 
 # --- Edit & Annotate (web) ---
