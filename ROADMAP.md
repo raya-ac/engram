@@ -113,7 +113,7 @@ Use Fisher-Rao Quantization-Aware Distance (FRQAD) for mixed-precision compariso
 **Files:** `retrieval.py`
 **Effort:** High — new retrieval channel + Hopfield implementation.
 
-## Tier 3 — Transformative, High Effort
+## Tier 3 — Transformative, High Effort (DONE)
 
 ### 10. Multi-Graph Architecture (MAGMA)
 **Paper:** MAGMA (2601.03236)
@@ -147,7 +147,7 @@ Use Fisher-Rao Quantization-Aware Distance (FRQAD) for mixed-precision compariso
 **Files:** New eval/ directory
 **Effort:** Medium — setup benchmark, run eval.
 
-## Tier 4 — Research Ideas Worth Tracking
+## Tier 4 — Research Ideas Worth Tracking (DONE)
 
 ### 15. Cognitive Quantization (SuperLocalMemory V3.3)
 **Paper:** SuperLocalMemory (2604.04514)
