@@ -1353,10 +1353,14 @@ def run_mcp(config: Config):
     # warm up models in background so first recall is fast
     def _warmup():
         try:
-            from engram.embeddings import warmup
+            from engram.embeddings import warmup, set_backend, get_backend
+            # set backend from config (auto / mlx / sentence_transformers)
+            if config.embedding_backend != "auto":
+                set_backend(config.embedding_backend)
             warmup(config.embedding_model, config.cross_encoder_model)
             server.store.get_all_embeddings()
-            sys.stderr.write("engram: models warmed up\n")
+            backend = get_backend()
+            sys.stderr.write(f"engram: models warmed up (backend={backend})\n")
             sys.stderr.flush()
         except Exception as e:
             sys.stderr.write(f"engram: warmup error: {e}\n")

@@ -52,6 +52,7 @@ class Config:
     db_path: str = "~/.local/share/engram/memory.db"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    embedding_backend: str = "auto"  # auto | mlx | sentence_transformers
     embedding_dim: int = 384
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
@@ -80,7 +81,7 @@ class Config:
                 break
 
         cfg = cls()
-        for k in ("db_path", "embedding_model", "cross_encoder_model", "embedding_dim"):
+        for k in ("db_path", "embedding_model", "cross_encoder_model", "embedding_backend", "embedding_dim"):
             env = os.environ.get(f"ENGRAM_{k.upper()}")
             if env:
                 setattr(cfg, k, type(getattr(cfg, k))(env))

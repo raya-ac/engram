@@ -258,10 +258,14 @@ def _bench_latency(store: Store, config: Config) -> dict:
         search(query, store, config, top_k=10, rerank=False)
     search_no_rerank = (time.time() - t0) / 3 * 1000
 
-    # measure search with rerank
-    t0 = time.time()
-    search(query, store, config, top_k=10, rerank=True)
-    search_with_rerank = (time.time() - t0) * 1000
+    # measure search with rerank (skip if DB is large — too slow)
+    total_mems = store.conn.execute("SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0").fetchone()["cnt"]
+    if total_mems < 5000:
+        t0 = time.time()
+        search(query, store, config, top_k=10, rerank=True)
+        search_with_rerank = (time.time() - t0) * 1000
+    else:
+        search_with_rerank = None  # skipped
 
     # measure hopfield alone
     query_vec = embed_query(query, config.embedding_model)
@@ -462,14 +466,16 @@ def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict
         contents.append(content)
         memories.append(mem)
 
-    # batch embed
+    # batch embed — larger batches for speed
     print("Embedding...")
-    batch_size = 64
+    batch_size = 256
     all_embeddings = []
     for i in range(0, len(contents), batch_size):
         batch = contents[i:i+batch_size]
         embs = embed_documents(batch, config.embedding_model)
         all_embeddings.append(embs)
+        if (i // batch_size) % 10 == 0:
+            print(f"  {i}/{len(contents)}...")
     all_embeddings = np.vstack(all_embeddings)
 
     # store
