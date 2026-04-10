@@ -227,18 +227,39 @@ def _bm25_search(query: str, store: Store, limit: int) -> list[tuple[str, float]
 
 
 def _graph_search(query: str, store: Store, limit: int) -> list[tuple[str, float]]:
-    # extract potential entity names from query
+    """Entity graph search with multi-hop BFS (Graphiti/MAGMA-inspired).
+
+    1. Extract entity names from query
+    2. Get direct memories (hop 0, score 1.0)
+    3. Traverse 1-hop related entities (score 0.5)
+    4. Deduplicate, return weighted candidates
+    """
     words = query.split()
     candidates = []
+    matched_entity_ids = set()
 
-    # try capitalized words and multi-word sequences
+    # find matching entities from query words
     for word in words:
         if len(word) >= 2:
             entity = store.find_entity_by_name(word)
             if entity:
+                matched_entity_ids.add(entity.id)
+                # hop 0: direct entity memories
                 memories = store.get_entity_memories(entity.id, limit=limit)
                 for mem in memories:
                     candidates.append((mem.id, 1.0))
+
+    # hop 1: memories from related entities (graph BFS)
+    for eid in list(matched_entity_ids):
+        rels = store.get_entity_relationships(eid)
+        for rel in rels:
+            related_id = rel["target_entity_id"] if rel["source_entity_id"] == eid else rel["source_entity_id"]
+            if related_id not in matched_entity_ids:
+                related_mems = store.get_entity_memories(related_id, limit=max(3, limit // 4))
+                strength = rel.get("strength", 1.0)
+                for mem in related_mems:
+                    # score decays with hop distance, weighted by relationship strength
+                    candidates.append((mem.id, 0.5 * min(1.0, strength)))
 
     # deduplicate, keep highest score
     seen = {}

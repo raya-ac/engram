@@ -458,15 +458,32 @@ class Store:
         self.conn.execute(
             """INSERT INTO relationships
             (source_entity_id, target_entity_id, relation_type, strength,
-             evidence_count, created_at, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+             evidence_count, created_at, last_seen, valid_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_entity_id, target_entity_id, relation_type)
             DO UPDATE SET
                 strength = MAX(strength, excluded.strength),
                 evidence_count = evidence_count + 1,
                 last_seen = excluded.last_seen""",
             (rel.source_entity_id, rel.target_entity_id, rel.relation_type,
-             rel.strength, rel.evidence_count, rel.created_at, rel.last_seen),
+             rel.strength, rel.evidence_count, rel.created_at, rel.last_seen,
+             getattr(rel, 'valid_from', rel.created_at)),
+        )
+        self.conn.commit()
+
+    def invalidate_relationship(self, source_id: str, target_id: str,
+                                 relation_type: str, valid_to: float | None = None):
+        """Mark a relationship as no longer valid (Graphiti temporal invalidation).
+
+        Sets valid_to timestamp instead of deleting — preserves historical record.
+        """
+        import time as _time
+        vt = valid_to or _time.time()
+        self.conn.execute(
+            """UPDATE relationships SET valid_to = ?
+               WHERE source_entity_id = ? AND target_entity_id = ? AND relation_type = ?
+               AND valid_to IS NULL""",
+            (vt, source_id, target_id, relation_type),
         )
         self.conn.commit()
 
