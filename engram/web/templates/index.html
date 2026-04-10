@@ -1981,9 +1981,11 @@ async function loadHealth() {
     if (info.top_entities && info.top_entities.length) {
       mapHtml += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
       for (const e of info.top_entities) {
-        mapHtml += `<span class="entity-node" style="font-size:10px">${e.canonical_name} (${e.cnt})</span>`;
+        mapHtml += `<span class="entity-node" style="font-size:10px">${escapeHtml(e.canonical_name)} (${e.cnt})</span>`;
       }
       mapHtml += '</div>';
+    } else if (info.count > 0) {
+      mapHtml += '<div style="font-size:10px;color:var(--text2);font-style:italic">no entity tags</div>';
     }
     mapHtml += '</div>';
   }
