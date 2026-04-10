@@ -21,6 +21,8 @@ from engram.consolidator import consolidate
 from engram.surprise import compute_surprise, adjust_importance
 from engram.deep_retrieval import DeepReranker
 from engram.skill_select import select_skills, format_skills
+from engram.drift import run_drift_check, auto_fix_drift
+from engram.patterns import extract_patterns_from_session, store_patterns
 
 TOOLS = [
     # Read tools
@@ -97,6 +99,13 @@ TOOLS = [
     {"name": "recall_hints", "description": "Search memories but return only hints (truncated snippets + entity names) to trigger recognition without replacing cognition. Use when you want to check if you know something before pulling full context. Returns memory IDs you can fetch with recall if needed.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "hint_length": {"type": "integer", "default": 60, "description": "Max characters per hint snippet"}}, "required": ["query"]}},
     # Skill selection
     {"name": "get_skills", "description": "Task-aware skill selection — get focused procedural guidance for a task. Returns 2-3 relevant skills only when injection would help. Skips when the task is well-covered by model pretraining or no relevant procedures exist. Based on SkillsBench finding that focused skills (+16.2pp) beat comprehensive docs (-2.9pp).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "description": "What task or problem you need procedural guidance for"}, "max_skills": {"type": "integer", "default": 3, "description": "Maximum number of skills to return (2-3 is optimal)"}, "format": {"type": "boolean", "default": True, "description": "Return formatted context block (true) or raw selection data (false)"}}, "required": ["query"]}},
+    # Drift detection
+    {"name": "drift_check", "description": "Verify memories against filesystem reality — find dead paths, missing functions, stale memories. Returns a drift score (0-100) and list of issues. Zero AI cost, pure filesystem checks.", "inputSchema": {"type": "object", "properties": {"search_roots": {"type": "array", "items": {"type": "string"}, "description": "Directories to search for function/class verification (e.g. ['~/project/src'])"}, "project_root": {"type": "string", "description": "Project root for command verification (package.json, Makefile)"}, "layers": {"type": "array", "items": {"type": "string"}, "description": "Memory layers to check (default: all)"}, "check_functions": {"type": "boolean", "default": True, "description": "Whether to grep for function names (slower but more thorough)"}}}},
+    {"name": "drift_fix", "description": "Auto-fix drift issues — invalidate memories with dead paths, flag stale memories, forget invalidated-but-active memories. Use dry_run=true first to preview changes.", "inputSchema": {"type": "object", "properties": {"search_roots": {"type": "array", "items": {"type": "string"}, "description": "Directories to search for function/class verification"}, "project_root": {"type": "string", "description": "Project root for command verification"}, "dry_run": {"type": "boolean", "default": True, "description": "If true, only report what would be done"}}}},
+    # Pattern extraction
+    {"name": "extract_patterns", "description": "Extract reusable procedural patterns from recent session activity — diary entries, new memories, errors, decisions. Checks novelty against existing procedural memories and stores only what's genuinely new.", "inputSchema": {"type": "object", "properties": {"hours": {"type": "number", "default": 4.0, "description": "How far back to look for session activity"}, "novelty_threshold": {"type": "number", "default": 0.25, "description": "Minimum novelty score (0-1) to store a pattern"}, "dry_run": {"type": "boolean", "default": False, "description": "If true, extract and score patterns but don't store them"}}}},
+    # Negative knowledge
+    {"name": "remember_negative", "description": "Store explicit negative knowledge — what does NOT exist, what was deliberately excluded, what should NOT be done. Prevents future hallucinated recommendations. Examples: 'There is no caching layer in this project', 'We deliberately do not use Redux', 'The /admin endpoint was removed in v2'.", "inputSchema": {"type": "object", "properties": {"content": {"type": "string", "description": "What does NOT exist or should NOT be done"}, "context": {"type": "string", "description": "Why this negative fact matters — what mistake it prevents"}, "scope": {"type": "string", "description": "What project/system this applies to"}, "importance": {"type": "number", "default": 0.75}}, "required": ["content"]}},
 ]
 
 _session_diary: list[str] = []
@@ -196,6 +205,10 @@ class MCPServer:
             "reranker_status": self._reranker_status,
             "recall_hints": self._recall_hints,
             "get_skills": self._get_skills,
+            "drift_check": self._drift_check,
+            "drift_fix": self._drift_fix,
+            "extract_patterns": self._extract_patterns,
+            "remember_negative": self._remember_negative,
         }
         handler = handlers.get(name)
         if not handler:
@@ -1088,6 +1101,84 @@ class MCPServer:
             "hints": hints,
             "note": "Use recall with memory IDs to get full content if needed.",
         }
+
+    # --- Drift detection ---
+
+    def _drift_check(self, args: dict):
+        report = run_drift_check(
+            self.store,
+            search_roots=args.get("search_roots"),
+            project_root=args.get("project_root"),
+            layers=args.get("layers"),
+            check_functions=args.get("check_functions", True),
+        )
+        result = report.to_dict()
+        # add summary for quick reading
+        error_count = sum(1 for i in report.issues if i.severity == "error")
+        warn_count = sum(1 for i in report.issues if i.severity == "warning")
+        info_count = sum(1 for i in report.issues if i.severity == "info")
+        result["summary"] = (
+            f"Drift score: {report.score}/100 | "
+            f"{error_count} errors, {warn_count} warnings, {info_count} info | "
+            f"{report.claims_valid}/{report.claims_verified} claims valid | "
+            f"{report.stale_memories} stale memories"
+        )
+        return result
+
+    def _drift_fix(self, args: dict):
+        report = run_drift_check(
+            self.store,
+            search_roots=args.get("search_roots"),
+            project_root=args.get("project_root"),
+        )
+        dry_run = args.get("dry_run", True)
+        return auto_fix_drift(self.store, report, dry_run=dry_run)
+
+    # --- Pattern extraction ---
+
+    def _extract_patterns(self, args: dict):
+        patterns = extract_patterns_from_session(
+            self.store,
+            self.config,
+            hours=args.get("hours", 4.0),
+            novelty_threshold=args.get("novelty_threshold", 0.25),
+        )
+
+        if args.get("dry_run", False):
+            return {
+                "patterns": [
+                    {"title": p.title, "category": p.category,
+                     "novelty": p.novelty, "should_store": p.should_store,
+                     "source_events": p.source_events,
+                     "content_preview": p.content[:200]}
+                    for p in patterns
+                ],
+                "total": len(patterns),
+                "would_store": sum(1 for p in patterns if p.should_store),
+                "dry_run": True,
+            }
+
+        result = store_patterns(patterns, self.store, self.config)
+        return result
+
+    # --- Negative knowledge ---
+
+    def _remember_negative(self, args: dict):
+        parts = [f"NEGATIVE KNOWLEDGE: {args['content']}"]
+        if args.get("context"):
+            parts.append(f"Why this matters: {args['context']}")
+        if args.get("scope"):
+            parts.append(f"Scope: {args['scope']}")
+        content = "\n".join(parts)
+
+        result = self._remember({
+            "content": content,
+            "source_type": SourceType.HUMAN,
+            "layer": MemoryLayer.SEMANTIC,
+            "importance": args.get("importance", 0.75),
+        })
+        result["type"] = "negative_knowledge"
+        return result
 
     def _response(self, req_id, result):
         return {"jsonrpc": "2.0", "id": req_id, "result": result}

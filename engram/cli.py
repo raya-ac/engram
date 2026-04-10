@@ -56,6 +56,21 @@ def main():
     p_demo.add_argument("--web", action="store_true", help="Also start web dashboard")
     p_demo.add_argument("--port", type=int, default=8421, help="Web dashboard port")
 
+    # drift
+    p_drift = sub.add_parser("drift", help="Check memory drift against filesystem reality")
+    p_drift.add_argument("--search-roots", nargs="*", help="Directories to search for function verification")
+    p_drift.add_argument("--project-root", help="Project root for command verification")
+    p_drift.add_argument("--fix", action="store_true", help="Auto-fix drift issues (invalidate dead refs, flag stale)")
+    p_drift.add_argument("--dry-run", action="store_true", help="Preview fixes without applying")
+    p_drift.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+    p_drift.add_argument("--no-functions", action="store_true", help="Skip function/class name grep (faster)")
+
+    # patterns
+    p_patterns = sub.add_parser("patterns", help="Extract reusable patterns from recent session activity")
+    p_patterns.add_argument("--hours", type=float, default=4.0, help="How far back to look (hours)")
+    p_patterns.add_argument("--threshold", type=float, default=0.25, help="Minimum novelty to store")
+    p_patterns.add_argument("--dry-run", action="store_true", help="Preview patterns without storing")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
@@ -77,6 +92,10 @@ def main():
         cmd_consolidate(args, config)
     elif args.command == "status":
         cmd_status(args, config)
+    elif args.command == "drift":
+        cmd_drift(args, config)
+    elif args.command == "patterns":
+        cmd_patterns(args, config)
     elif args.command == "demo":
         from engram.demo import run_demo
         run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
@@ -363,6 +382,95 @@ def cmd_serve(args, config: Config):
         port = args.port or config.web.port
         print(f"Starting Engram web UI on http://{config.web.host}:{port}")
         uvicorn.run(app, host=config.web.host, port=port)
+
+
+def cmd_drift(args, config: Config):
+    from engram.store import Store
+    from engram.drift import run_drift_check, auto_fix_drift
+
+    store = Store(config)
+    store.init_db()
+
+    report = run_drift_check(
+        store,
+        search_roots=args.search_roots,
+        project_root=args.project_root,
+        check_functions=not args.no_functions,
+    )
+
+    if args.json_output:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        # colored summary
+        score = report.score
+        color = "\033[32m" if score >= 80 else "\033[33m" if score >= 50 else "\033[31m"
+        reset = "\033[0m"
+
+        print(f"\n{color}Drift score: {score}/100{reset}")
+        print(f"  Memories checked: {report.memories_checked}")
+        print(f"  Claims extracted: {report.claims_extracted}")
+        print(f"  Claims verified:  {report.claims_verified} ({report.claims_valid} valid)")
+        print(f"  Stale memories:   {report.stale_memories}")
+
+        if report.issues:
+            print(f"\n  Issues ({len(report.issues)}):")
+            for issue in report.issues:
+                sev_color = {"error": "\033[31m", "warning": "\033[33m", "info": "\033[36m"}.get(issue.severity, "")
+                print(f"    {sev_color}[{issue.severity.upper()}]{reset} {issue.code}: {issue.message}")
+                print(f"           Memory: {issue.memory_preview[:80]}...")
+        else:
+            print("\n  No issues found.")
+
+    if args.fix:
+        dry_run = args.dry_run
+        result = auto_fix_drift(store, report, dry_run=dry_run)
+        if dry_run:
+            print(f"\n  [DRY RUN] Would fix {result['total_actions']} issues:")
+        else:
+            print(f"\n  Fixed {result['total_actions']} issues:")
+        print(f"    Invalidated: {result['invalidated']}")
+        print(f"    Flagged stale: {result['flagged_stale']}")
+        print(f"    Forgotten: {result['forgotten']}")
+
+    store.close()
+
+
+def cmd_patterns(args, config: Config):
+    from engram.store import Store
+    from engram.patterns import extract_patterns_from_session, store_patterns
+
+    store = Store(config)
+    store.init_db()
+
+    patterns = extract_patterns_from_session(
+        store, config,
+        hours=args.hours,
+        novelty_threshold=args.threshold,
+    )
+
+    if not patterns:
+        print("No patterns found in recent session activity.")
+        store.close()
+        return
+
+    print(f"\nFound {len(patterns)} potential patterns:\n")
+    for i, p in enumerate(patterns, 1):
+        novel_color = "\033[32m" if p.should_store else "\033[33m"
+        reset = "\033[0m"
+        status = "STORE" if p.should_store else "SKIP"
+        print(f"  {i}. [{p.category}] {p.title}")
+        print(f"     {novel_color}Novelty: {p.novelty:.2f} → {status}{reset} | Sources: {p.source_events}")
+
+    if args.dry_run:
+        would_store = sum(1 for p in patterns if p.should_store)
+        print(f"\n  [DRY RUN] Would store {would_store}/{len(patterns)} patterns.")
+    else:
+        result = store_patterns(patterns, store, config)
+        print(f"\n  Stored {result['total_stored']} patterns, skipped {result['total_skipped']}.")
+        for s in result["stored"]:
+            print(f"    + {s['title']} (novelty={s['novelty']:.2f}, importance={s['importance']:.2f})")
+
+    store.close()
 
 
 if __name__ == "__main__":

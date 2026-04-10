@@ -186,6 +186,22 @@ CREATE TABLE IF NOT EXISTS events (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS diary_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    session_id TEXT,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_diary_created ON diary_entries(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS importance_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id TEXT NOT NULL,
+    score REAL NOT NULL,
+    recorded_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_imp_hist_memory ON importance_history(memory_id);
 """
 
 
@@ -527,6 +543,42 @@ class Store:
     def get_recent_events(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(
             "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --- Diary ---
+
+    def write_diary(self, text: str, session_id: str | None = None):
+        self.conn.execute(
+            "INSERT INTO diary_entries (text, session_id, created_at) VALUES (?, ?, ?)",
+            (text, session_id, time.time()),
+        )
+        self.conn.commit()
+
+    def get_diary(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
+        if session_id:
+            rows = self.conn.execute(
+                "SELECT * FROM diary_entries WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (session_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM diary_entries ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --- Importance history ---
+
+    def record_importance(self, memory_id: str, score: float):
+        self.conn.execute(
+            "INSERT INTO importance_history (memory_id, score, recorded_at) VALUES (?, ?, ?)",
+            (memory_id, round(score, 4), time.time()),
+        )
+
+    def get_importance_history(self, memory_id: str, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT score, recorded_at FROM importance_history WHERE memory_id = ? ORDER BY recorded_at ASC LIMIT ?",
+            (memory_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

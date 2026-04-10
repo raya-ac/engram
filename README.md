@@ -22,7 +22,13 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
-**56 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**drift detection** — memories reference file paths, function names, commands, and dependencies. those references go stale when the codebase changes. `drift_check` extracts verifiable claims from memory content and validates them against the actual filesystem — dead paths, missing functions, broken npm scripts. returns a drift score (0-100) with per-issue breakdown. zero AI cost, pure filesystem checks. `drift_fix` auto-invalidates dead references and flags stale memories. inspired by [mex](https://github.com/theDakshJaitly/mex)'s claim verification approach.
+
+**pattern extraction** — after a session, `extract_patterns` analyzes recent activity (diary entries, new memories, events) and distills reusable procedural knowledge. classifies work into categories (workflow, gotcha, decision, integration, debug), checks novelty against existing procedural memories via embedding distance, and only stores patterns that are genuinely new. the GROW step from mex, automated.
+
+**negative knowledge** — `remember_negative` stores explicit "what does NOT exist" claims: no caching layer, no Redux, the /admin endpoint was removed. these prevent future hallucinated recommendations. stored in the semantic layer with a NEGATIVE KNOWLEDGE prefix so they surface when you search for the thing that doesn't exist.
+
+**60 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -167,6 +173,21 @@ engram status
 engram entity Ari --graph
 ```
 
+### check memory drift
+```bash
+engram drift                                    # full drift report
+engram drift --search-roots ~/project/src       # also verify function names
+engram drift --fix --dry-run                    # preview what would be fixed
+engram drift --fix                              # auto-invalidate dead refs, flag stale
+```
+
+### extract patterns from session
+```bash
+engram patterns                                 # extract from last 4 hours
+engram patterns --hours 24 --dry-run            # preview from last 24 hours
+engram patterns --threshold 0.5                 # only store highly novel patterns
+```
+
 ### run the dream cycle
 ```bash
 engram consolidate
@@ -198,7 +219,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 55 tools:
+restart claude code. you get 60 tools:
 
 **recall & search**
 
@@ -226,6 +247,7 @@ restart claude code. you get 55 tools:
 | `remember_error` | error pattern + prevention → procedural layer |
 | `remember_interaction` | Q+A pair → episodic layer |
 | `remember_project` | structured project info → semantic layer |
+| `remember_negative` | store explicit negative knowledge — what does NOT exist, what should NOT be done |
 | `edit_memory` | edit content of an existing memory (re-embeds automatically) |
 | `annotate` | add a note to a memory without changing its content |
 | `pin` / `unpin` | pin a memory so it never gets forgotten by the dream cycle |
@@ -253,6 +275,14 @@ restart claude code. you get 55 tools:
 | `scan_codebase` | extract compressed code knowledge from a project directory |
 | `recall_code` | search the codebase layer specifically |
 | `list_projects` | show all scanned projects with memory counts |
+
+**drift detection**
+
+| tool | what it does |
+|------|-------------|
+| `drift_check` | verify memories against filesystem reality — dead paths, missing functions, stale memories. returns drift score 0-100 |
+| `drift_fix` | auto-fix drift issues — invalidate dead refs, flag stale memories. use dry_run=true first |
+| `extract_patterns` | extract reusable procedural patterns from recent session activity — only stores what's genuinely novel |
 
 **dedup & maintenance**
 
@@ -409,7 +439,9 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 56-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── drift.py          # memory drift detection — claim extraction, filesystem verification, drift scoring
+├── patterns.py       # session pattern extraction — distill procedural knowledge from work
+├── mcp_server.py     # 60-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
