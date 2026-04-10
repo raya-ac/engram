@@ -2,7 +2,7 @@
 
 a cognitive memory system that actually remembers things. built because flat markdown files don't scale and every "memory" tool i tried was either too simple (just embeddings) or too complex (needs redis + neo4j + a PhD).
 
-engram sits in the middle. one sqlite file, hybrid retrieval that fuses three signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time.
+engram sits in the middle. one sqlite file, hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time. **95.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — second only to MemPalace's verbatim storage, ahead of every RAG and hierarchical memory system benchmarked.
 
 ## what it does
 
@@ -422,7 +422,36 @@ restart claude code. you get 63 tools:
 
 recall@10 accuracy: 100% (20/20 queries, ANN vs brute-force exact match)
 
-### retrieval quality
+### LongMemEval (ICLR 2025)
+
+[LongMemEval](https://arxiv.org/abs/2410.10813) — 500 questions testing 5 long-term memory abilities (information extraction, multi-session reasoning, knowledge updates, temporal reasoning, abstention) across ~40 conversation sessions per question (~115k tokens). the standard benchmark for chat assistant memory.
+
+engram uses HNSW + BM25 + RRF fusion against per-question session haystacks. no entity graph or Hopfield (those need persistent memory, not ephemeral per-question corpora). run with `benchmarks/longmemeval/run_engram.py`.
+
+| system | R@5 | method |
+|--------|-----|--------|
+| MemPalace (raw) | 96.6% | ChromaDB cosine, verbatim storage |
+| **engram (all turns)** | **95.1%** | HNSW + BM25 + RRF |
+| **engram (user only)** | **94.7%** | HNSW + BM25 + RRF |
+| Emergence AI | 86.0% | RAG |
+| MemPalace (AAAK) | 84.2% | compressed storage |
+| EverMemOS | 83.0% | — |
+| TiMem | 76.9% | temporal hierarchical |
+
+per question type (user-only mode, 470 non-abstention questions):
+
+| type | n | R@5 | R@10 |
+|------|---|-----|------|
+| knowledge-update | 72 | 100.0% | 100.0% |
+| single-session-user | 64 | 98.4% | 100.0% |
+| multi-session | 121 | 96.7% | 99.2% |
+| temporal-reasoning | 127 | 92.9% | 97.6% |
+| single-session-assistant | 56 | 89.3% | 92.9% |
+| single-session-preference | 30 | 83.3% | 93.3% |
+
+indexing assistant turns closes the gap on `single-session-assistant` (89.3% → 100%) but adds noise that slightly hurts other categories. net: +0.4% overall.
+
+### retrieval quality (synthetic)
 
 tested on synthetic memories with template-varied content (different topics, people, tools). queries use the first line of each memory verbatim — a strict exact-match test.
 
@@ -433,7 +462,7 @@ tested on synthetic memories with template-varied content (different topics, peo
 | recall@10 | 95% | 95% | 40% |
 | coverage (top 20) | 100% | 100% | 60% |
 
-recall drops at 100k because all synthetic memories use similar templates — finding one exact match among 100k near-duplicates is adversarially hard. real-world diverse content scores much higher (80% recall@10 on the live database).
+recall drops at 100k because all synthetic memories use similar templates — finding one exact match among 100k near-duplicates is adversarially hard. real-world diverse content scores much higher.
 
 ### intent classification
 
