@@ -909,21 +909,36 @@ let constellationEdges = null; // edges in the subgraph
 
 // layer config — concentric rings
 const LAYER_CONFIG = {
-  semantic:   { ring: 0.15, color: {r:34,g:197,b:94},  label: 'SEMANTIC' },   // inner core — permanent
-  procedural: { ring: 0.35, color: {r:129,g:140,b:248}, label: 'PROCEDURAL' }, // mid ring
-  episodic:   { ring: 0.60, color: {r:6,g:182,b:212},   label: 'EPISODIC' },   // outer ring
-  working:    { ring: 0.80, color: {r:234,g:179,b:8},    label: 'WORKING' },    // outermost — ephemeral
+  semantic:   { ring: 0.15, color: {r:52,g:211,b:153},  label: 'SEMANTIC' },   // inner core — emerald
+  procedural: { ring: 0.35, color: {r:167,g:139,b:250}, label: 'PROCEDURAL' }, // mid ring — violet
+  episodic:   { ring: 0.60, color: {r:34,g:211,b:238},  label: 'EPISODIC' },   // outer ring — cyan
+  working:    { ring: 0.80, color: {r:251,g:191,b:36},   label: 'WORKING' },    // outermost — amber
 };
 
 const TYPE_COLORS = {
-  person:  {r:6,g:182,b:212}, tool:{r:34,g:197,b:94}, concept:{r:234,g:179,b:8},
-  email:{r:129,g:140,b:248}, url:{r:129,g:140,b:248}, path:{r:99,g:102,b:241},
-  date:{r:239,g:68,b:68}, default:{r:129,g:140,b:248},
+  person:  {r:34,g:211,b:238}, tool:{r:52,g:211,b:153}, concept:{r:251,g:191,b:36},
+  email:{r:167,g:139,b:250}, url:{r:167,g:139,b:250}, path:{r:124,g:58,b:237},
+  date:{r:248,g:113,b:113}, default:{r:167,g:139,b:250},
 };
 const FIRE_COLORS = {
-  read:  {r:6,g:182,b:212},    // cyan — cool recall
-  write: {r:251,g:191,b:36},   // amber/gold — warm creation
+  read:  {r:34,g:211,b:238},    // cyan — cool recall
+  write: {r:251,g:191,b:36},    // amber/gold — warm creation
 };
+
+// ambient floating particles for atmosphere
+let ambientParticles = [];
+function initAmbient(W, H) {
+  ambientParticles = [];
+  for (let i = 0; i < 40; i++) {
+    ambientParticles.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.15, vy: (Math.random() - 0.5) * 0.15,
+      r: 0.5 + Math.random() * 1.5,
+      alpha: 0.05 + Math.random() * 0.1,
+      color: [LAYER_CONFIG.semantic, LAYER_CONFIG.procedural, LAYER_CONFIG.episodic][Math.floor(Math.random() * 3)].color,
+    });
+  }
+}
 
 // traveling impulse particles
 let impulses = [];
@@ -1076,24 +1091,54 @@ function animate() {
   const maxR = Math.min(W, H) * 0.45;
   nCtx.clearRect(0, 0, W, H);
 
-  // draw layer rings
+  // ambient particles
+  if (!ambientParticles.length) initAmbient(W, H);
+  for (const p of ambientParticles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    nCtx.beginPath();
+    nCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    nCtx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${p.alpha})`;
+    nCtx.fill();
+  }
+
+  // draw layer rings — glowing gradient rings
   for (const [layer, cfg] of Object.entries(LAYER_CONFIG)) {
     const r = cfg.ring * maxR;
     const c = cfg.color;
-    // dashed ring
+    // outer glow ring
     nCtx.beginPath();
-    nCtx.setLineDash([4, 8]);
     nCtx.arc(cx, cy, r, 0, Math.PI * 2);
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b}, 0.12)`;
-    nCtx.lineWidth = 1;
+    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b}, 0.06)`;
+    nCtx.lineWidth = 6;
     nCtx.stroke();
-    nCtx.setLineDash([]);
-    // layer label at top
-    nCtx.font = '10px ' + getComputedStyle(document.body).fontFamily;
-    nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b}, 0.3)`;
+    // crisp inner ring
+    nCtx.beginPath();
+    nCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b}, 0.15)`;
+    nCtx.lineWidth = 0.5;
+    nCtx.stroke();
+    // layer label at top with glow
+    nCtx.font = '600 9px Inter, sans-serif';
+    nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b}, 0.35)`;
     nCtx.textAlign = 'center';
-    nCtx.fillText(cfg.label, cx, cy - r - 6);
+    nCtx.fillText(cfg.label, cx, cy - r - 8);
+    // subtle label glow
+    nCtx.shadowColor = `rgba(${c.r},${c.g},${c.b}, 0.3)`;
+    nCtx.shadowBlur = 6;
+    nCtx.fillText(cfg.label, cx, cy - r - 8);
+    nCtx.shadowBlur = 0;
   }
+
+  // center glow — core indicator
+  const coreGrad = nCtx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.08);
+  coreGrad.addColorStop(0, 'rgba(124,58,237,0.12)');
+  coreGrad.addColorStop(1, 'rgba(124,58,237,0)');
+  nCtx.beginPath();
+  nCtx.arc(cx, cy, maxR * 0.08, 0, Math.PI * 2);
+  nCtx.fillStyle = coreGrad;
+  nCtx.fill();
 
   // physics — mild force-directed within layers
   const repulsion = 400;
@@ -1140,32 +1185,42 @@ function animate() {
     n.pulsePhase += 0.015;
   }
 
-  // draw edges (dim non-constellation edges)
+  // draw edges
   const inConstellation = constellationSet !== null;
   for (const e of neuralEdges) {
     const edgeInSubgraph = inConstellation && constellationSet.has(e.source.id) && constellationSet.has(e.target.id);
     const basealpha = 0.04 + e.strength * 0.02;
-    const alpha = inConstellation ? (edgeInSubgraph ? Math.max(0.15, basealpha * 4) : basealpha * 0.15) : basealpha;
-    nCtx.beginPath();
-    nCtx.moveTo(e.source.x, e.source.y);
-    nCtx.lineTo(e.target.x, e.target.y);
+    const alpha = inConstellation ? (edgeInSubgraph ? Math.max(0.18, basealpha * 4) : basealpha * 0.1) : basealpha;
+
     if (edgeInSubgraph) {
+      // gradient edge for constellation
       const cn = constellationNode;
       const other = e.source === cn ? e.target : e.target === cn ? e.source : null;
-      const c = other ? (TYPE_COLORS[other.type] || TYPE_COLORS.default) : {r:100,g:110,b:140};
-      nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${alpha})`;
+      const c = other ? (TYPE_COLORS[other.type] || TYPE_COLORS.default) : {r:120,g:120,b:160};
+      const grad = nCtx.createLinearGradient(e.source.x, e.source.y, e.target.x, e.target.y);
+      const sc = TYPE_COLORS[e.source.type] || TYPE_COLORS.default;
+      const tc = TYPE_COLORS[e.target.type] || TYPE_COLORS.default;
+      grad.addColorStop(0, `rgba(${sc.r},${sc.g},${sc.b},${alpha})`);
+      grad.addColorStop(1, `rgba(${tc.r},${tc.g},${tc.b},${alpha})`);
+      nCtx.beginPath();
+      nCtx.moveTo(e.source.x, e.source.y);
+      nCtx.lineTo(e.target.x, e.target.y);
+      nCtx.strokeStyle = grad;
       nCtx.lineWidth = 1.5;
     } else {
-      nCtx.strokeStyle = `rgba(100,110,140,${alpha})`;
+      nCtx.beginPath();
+      nCtx.moveTo(e.source.x, e.source.y);
+      nCtx.lineTo(e.target.x, e.target.y);
+      nCtx.strokeStyle = `rgba(120,120,160,${alpha})`;
       nCtx.lineWidth = 0.4;
     }
     nCtx.stroke();
-    // draw relationship label on constellation edges
+    // relationship label on constellation edges
     if (edgeInSubgraph && e.relation_type) {
       const mx = (e.source.x + e.target.x) / 2;
       const my = (e.source.y + e.target.y) / 2;
-      nCtx.font = '8px ' + getComputedStyle(document.body).fontFamily;
-      nCtx.fillStyle = 'rgba(200,200,212,0.5)';
+      nCtx.font = '500 8px Inter, sans-serif';
+      nCtx.fillStyle = 'rgba(224,224,236,0.45)';
       nCtx.textAlign = 'center';
       nCtx.fillText(e.relation_type, mx, my - 3);
     }
@@ -1327,45 +1382,60 @@ function animate() {
     const isFocusNode = inConstellation && n === constellationNode;
     const dimFactor = nodeInSubgraph ? 1 : 0.12;
 
-    // glow halo
-    if ((n.glow > 0.03 || isHovered || isFocusNode) && nodeInSubgraph) {
-      const glowR = n.r * (3 + n.glow * 8 + (isFocusNode ? 4 : 0));
-      const grad = nCtx.createRadialGradient(n.x, n.y, n.r*0.3, n.x, n.y, glowR);
-      const ga = isFocusNode ? 0.5 : isHovered ? 0.3 : n.glow * 0.8;
-      grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${ga})`);
-      grad.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},${ga*0.3})`);
+    // outer glow halo — always present for subgraph nodes, stronger when fired
+    if (nodeInSubgraph) {
+      const baseGlow = isFocusNode ? 0.35 : isHovered ? 0.2 : 0.04 + breathe * 0.02;
+      const glowR = n.r * (3 + n.glow * 10 + (isFocusNode ? 5 : 0));
+      const ga = Math.min(0.8, baseGlow + n.glow * 0.6);
+      const grad = nCtx.createRadialGradient(n.x, n.y, n.r * 0.2, n.x, n.y, glowR);
+      grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${ga * dimFactor})`);
+      grad.addColorStop(0.4, `rgba(${c.r},${c.g},${c.b},${ga * 0.2 * dimFactor})`);
       grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
       nCtx.beginPath();
-      nCtx.arc(n.x, n.y, glowR, 0, Math.PI*2);
+      nCtx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
       nCtx.fillStyle = grad;
       nCtx.fill();
     }
 
-    // neuron body
+    // neuron body — glass orb effect
     const bodyAlpha = (isHovered ? 1 : (0.5 + n.glow * 0.5)) * dimFactor;
+    const bodyR = n.r * breathe;
+    // filled body with gradient
+    const bodyGrad = nCtx.createRadialGradient(n.x - bodyR * 0.3, n.y - bodyR * 0.3, 0, n.x, n.y, bodyR);
+    bodyGrad.addColorStop(0, `rgba(${Math.min(255,c.r+60)},${Math.min(255,c.g+60)},${Math.min(255,c.b+60)},${bodyAlpha * 0.4})`);
+    bodyGrad.addColorStop(0.6, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.2})`);
+    bodyGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.05})`);
     nCtx.beginPath();
-    nCtx.arc(n.x, n.y, n.r * breathe, 0, Math.PI*2);
-    nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.25})`;
+    nCtx.arc(n.x, n.y, bodyR, 0, Math.PI * 2);
+    nCtx.fillStyle = bodyGrad;
     nCtx.fill();
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha})`;
-    nCtx.lineWidth = isFocusNode ? 2.5 : isHovered ? 2 : 1;
+    // crisp edge
+    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.7})`;
+    nCtx.lineWidth = isFocusNode ? 2 : isHovered ? 1.5 : 0.8;
     nCtx.stroke();
 
-    // nucleus
+    // nucleus — bright core dot
+    const nucR = n.r * (isFocusNode ? 0.35 : 0.3);
+    const nucAlpha = (0.7 + n.glow * 0.3) * dimFactor;
     nCtx.beginPath();
-    nCtx.arc(n.x, n.y, n.r * 0.25, 0, Math.PI*2);
-    const nucAlpha = (0.6 + n.glow * 0.4) * dimFactor;
-    nCtx.fillStyle = `rgba(${Math.min(255,c.r+100)},${Math.min(255,c.g+100)},${Math.min(255,c.b+100)},${nucAlpha})`;
+    nCtx.arc(n.x, n.y, nucR, 0, Math.PI * 2);
+    nCtx.fillStyle = `rgba(${Math.min(255,c.r+120)},${Math.min(255,c.g+120)},${Math.min(255,c.b+120)},${nucAlpha})`;
     nCtx.fill();
 
-    // label — always show in constellation subgraph, otherwise normal rules
+    // label
     const showLabel = (inConstellation && nodeInSubgraph) || isHovered || n.r > 7;
     if (showLabel) {
-      const labelAlpha = nodeInSubgraph ? (isHovered || isFocusNode ? 0.95 : 0.7) : 0.15;
-      nCtx.font = `${isHovered || isFocusNode ? 11 : 9}px ${getComputedStyle(document.body).fontFamily}`;
-      nCtx.fillStyle = `rgba(200,200,212,${labelAlpha})`;
+      const labelAlpha = nodeInSubgraph ? (isHovered || isFocusNode ? 0.95 : 0.65) : 0.12;
+      nCtx.font = `${isHovered || isFocusNode ? '600 11' : '500 9'}px Inter, sans-serif`;
+      nCtx.fillStyle = `rgba(224,224,236,${labelAlpha})`;
       nCtx.textAlign = 'center';
-      nCtx.fillText(n.name, n.x, n.y + n.r + 13);
+      // text shadow for readability
+      if (labelAlpha > 0.5) {
+        nCtx.shadowColor = `rgba(0,0,0,0.6)`;
+        nCtx.shadowBlur = 4;
+      }
+      nCtx.fillText(n.name, n.x, n.y + n.r + 14);
+      nCtx.shadowBlur = 0;
     }
   }
 
