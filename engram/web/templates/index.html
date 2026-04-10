@@ -283,6 +283,8 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       <a class="nav-item" href="#" onclick="showView('dedup')">Dedup</a>
       <a class="nav-item" href="#" onclick="showView('cognition')">Cognition</a>
       <a class="nav-item" href="#" onclick="showView('bridges')">Bridges</a>
+      <a class="nav-item" href="#" onclick="showView('drift')">Drift</a>
+      <a class="nav-item" href="#" onclick="showView('patterns')">Patterns</a>
     </div>
 
     <div class="section">
@@ -576,10 +578,41 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
       </div>
     </div>
 
-    <!-- Bridges view (NEW) -->
+    <!-- Bridges view -->
     <div id="view-bridges" class="view-panel" style="display:none">
       <div class="section-title">Cross-Domain Bridges</div>
       <div id="bridges-list"></div>
+    </div>
+
+    <!-- Drift view -->
+    <div id="view-drift" class="view-panel" style="display:none">
+      <div class="section-title">Memory Drift Detection</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <button onclick="loadDrift()">Run Drift Check</button>
+        <button class="secondary" onclick="runDriftFix(true)">Preview Fix</button>
+        <button class="secondary" onclick="runDriftFix(false)" style="background:var(--red);color:#fff">Fix Now</button>
+      </div>
+      <div id="drift-score" style="margin-bottom:16px"></div>
+      <div id="drift-stats" class="health-grid" style="margin-bottom:16px"></div>
+      <div id="drift-issues"></div>
+    </div>
+
+    <!-- Patterns view -->
+    <div id="view-patterns" class="view-panel" style="display:none">
+      <div class="section-title">Pattern Extraction</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <span style="font-size:11px;color:var(--text2)">Hours:</span>
+        <select id="patterns-hours" style="font-size:11px">
+          <option value="2">2h</option>
+          <option value="4" selected>4h</option>
+          <option value="8">8h</option>
+          <option value="24">24h</option>
+          <option value="72">3 days</option>
+        </select>
+        <button onclick="loadPatterns()">Scan</button>
+        <button class="secondary" onclick="extractPatterns()">Extract &amp; Store</button>
+      </div>
+      <div id="patterns-list"></div>
     </div>
   </div>
 
@@ -2222,6 +2255,128 @@ async function loadBridges() {
   }
 }
 
+// --- Drift detection ---
+async function loadDrift() {
+  document.getElementById('drift-score').innerHTML = '<div class="empty">Running drift check...</div>';
+  document.getElementById('drift-stats').innerHTML = '';
+  document.getElementById('drift-issues').innerHTML = '';
+
+  const data = await fetchJSON('/api/drift');
+  const score = data.score || 0;
+  const color = score >= 80 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--red)';
+
+  // score display
+  document.getElementById('drift-score').innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px">
+      <div style="font-size:48px;font-weight:700;color:${color}">${score}</div>
+      <div>
+        <div style="font-size:14px;color:var(--text)">/ 100</div>
+        <div style="font-size:11px;color:var(--text2)">${data.summary || ''}</div>
+      </div>
+    </div>`;
+
+  // stats cards
+  const cards = [
+    {label:'Memories Checked', value: data.memories_checked||0, status:'ok'},
+    {label:'Claims Extracted', value: data.claims_extracted||0, status:'ok'},
+    {label:'Claims Valid', value: `${data.claims_valid||0}/${data.claims_verified||0}`, status: (data.claims_valid||0) >= (data.claims_verified||0)*0.8 ? 'ok' : 'warn'},
+    {label:'Stale Memories', value: data.stale_memories||0, status: (data.stale_memories||0) === 0 ? 'ok' : 'warn'},
+  ];
+  document.getElementById('drift-stats').innerHTML = cards.map(c =>
+    `<div class="health-card ${c.status}"><div class="hc-value">${c.value}</div><div class="hc-label">${c.label}</div></div>`
+  ).join('');
+
+  // issues list
+  const issues = data.issues || [];
+  if (!issues.length) {
+    document.getElementById('drift-issues').innerHTML = '<div class="empty" style="color:var(--green)">No drift issues found</div>';
+    return;
+  }
+
+  const grouped = {};
+  for (const i of issues) {
+    const key = i.memory_id;
+    if (!grouped[key]) grouped[key] = {preview: i.memory_preview, issues: [], severity: i.severity};
+    grouped[key].issues.push(i);
+    if (i.severity === 'error') grouped[key].severity = 'error';
+  }
+
+  const issueColors = {error: 'var(--red)', warning: 'var(--yellow)', info: 'var(--cyan)'};
+  document.getElementById('drift-issues').innerHTML =
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">${issues.length} issues across ${Object.keys(grouped).length} memories</div>` +
+    Object.entries(grouped).map(([mid, g]) =>
+      `<div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${issueColors[g.severity]};border-radius:6px;padding:10px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${escapeHtml(g.preview.slice(0,120))}...</div>
+        ${g.issues.map(i => `<div style="font-size:11px;margin-top:4px">
+          <span style="color:${issueColors[i.severity]};font-weight:600">${i.severity.toUpperCase()}</span>
+          <span style="color:var(--text2)">${i.code}</span>:
+          <span>${escapeHtml(i.claim)}</span>
+        </div>`).join('')}
+        <div style="margin-top:6px"><span class="tag" style="font-size:9px;cursor:pointer" onclick="navigator.clipboard.writeText('${mid}');toast('Copied ID','info')">${mid.slice(0,8)}...</span></div>
+      </div>`
+    ).join('');
+}
+
+async function runDriftFix(dryRun) {
+  const label = dryRun ? 'Previewing drift fix...' : 'Fixing drift issues...';
+  toast(label, 'info');
+  const data = await postJSON('/api/drift/fix', {dry_run: dryRun});
+  if (!data.total_actions) {
+    toast('No drift issues to fix', 'info');
+    return;
+  }
+  const msg = dryRun
+    ? `Would fix ${data.total_actions} issues (${data.invalidated} invalidate, ${data.flagged_stale} flag, ${data.forgotten} forget)`
+    : `Fixed ${data.total_actions} issues (${data.invalidated} invalidated, ${data.flagged_stale} flagged, ${data.forgotten} forgotten)`;
+  toast(msg, dryRun ? 'info' : 'success');
+  if (!dryRun) loadDrift();
+}
+
+// --- Pattern extraction ---
+async function loadPatterns() {
+  const hours = document.getElementById('patterns-hours').value;
+  document.getElementById('patterns-list').innerHTML = '<div class="empty">Scanning for patterns...</div>';
+  const data = await fetchJSON(`/api/patterns?hours=${hours}`);
+  const patterns = data.patterns || [];
+
+  if (!patterns.length) {
+    document.getElementById('patterns-list').innerHTML = '<div class="empty">No patterns found in recent activity</div>';
+    return;
+  }
+
+  const catColors = {workflow:'var(--cyan)', gotcha:'var(--red)', decision:'var(--accent2)', integration:'var(--yellow)', debug:'var(--accent)'};
+  document.getElementById('patterns-list').innerHTML =
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">${patterns.length} patterns found, ${data.would_store} novel enough to store</div>` +
+    patterns.map(p => {
+      const color = catColors[p.category] || 'var(--text2)';
+      const noveltyColor = p.novelty >= 0.5 ? 'var(--green)' : p.novelty >= 0.25 ? 'var(--yellow)' : 'var(--red)';
+      return `<div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${color};border-radius:6px;padding:10px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600">${escapeHtml(p.title.slice(0,80))}</span>
+          <span class="tag" style="color:${color}">${p.category}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${escapeHtml(p.content_preview.slice(0,200))}</div>
+        <div style="display:flex;gap:8px;font-size:10px">
+          <span style="color:${noveltyColor}">novelty: ${(p.novelty*100).toFixed(0)}%</span>
+          <span style="color:var(--text2)">sources: ${p.source_events}</span>
+          <span style="color:${p.should_store ? 'var(--green)' : 'var(--text2)'}">${p.should_store ? 'WILL STORE' : 'skip'}</span>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+async function extractPatterns() {
+  const hours = document.getElementById('patterns-hours').value;
+  toast('Extracting patterns...', 'info');
+  const data = await postJSON('/api/patterns/extract', {hours: parseFloat(hours)});
+  if (data.total_stored === 0) {
+    toast('No novel patterns to store', 'info');
+    return;
+  }
+  toast(`Stored ${data.total_stored} patterns, skipped ${data.total_skipped}`, 'success');
+  loadPatterns();
+}
+
 // --- Export ---
 function toggleExportForm() {
   document.getElementById('export-form').classList.toggle('open');
@@ -2319,6 +2474,8 @@ function showView(name) {
   if (name === 'heatmap') loadHeatmap();
   if (name === 'cognition') { loadRerankerStatus(); drawRetentionCurves(); drawSurpriseGauge(0); }
   if (name === 'bridges') loadBridges();
+  if (name === 'drift') loadDrift();
+  if (name === 'patterns') loadPatterns();
 }
 
 // --- Keyboard shortcuts ---
