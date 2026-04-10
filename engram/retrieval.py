@@ -205,7 +205,7 @@ def search(query: str, store: Store, config: Config | None = None,
             graph_candidates=graph_candidates,
             rrf_scores=list(rrf_scores.items()),
             boosted_scores=boosted,
-            reranked=[(valid_ids[i], s) for i, s in reranked[:k]] if candidate_memories else [],
+            reranked=[(valid_ids[i], s) for i, s in reranked[:k]] if (rerank and candidate_memories) else [],
             final_results=results,
             latency_ms=latency,
         )

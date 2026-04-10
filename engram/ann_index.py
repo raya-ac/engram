@@ -51,9 +51,8 @@ class ANNIndex:
 
     @property
     def count(self) -> int:
-        if self._index is None:
-            return 0
-        return self._index.get_current_count()
+        """Active (non-deleted) vectors in the index."""
+        return len(self._id_to_label)
 
     def build(self, ids: list[str], vecs: np.ndarray):
         """Build index from scratch. ids and vecs must be aligned."""
