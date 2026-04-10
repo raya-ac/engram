@@ -468,8 +468,18 @@ button.secondary { background: var(--bg3); border: 1px solid var(--border); colo
     <div id="view-health" class="view-panel" style="display:none">
       <div class="section-title">System Health</div>
       <div id="health-grid" class="health-grid"></div>
-      <div class="section-title" style="margin-top:16px">Memory Map</div>
+
+      <div class="section-title" style="margin-top:20px">Drift Score</div>
+      <div id="health-drift"></div>
+
+      <div class="section-title" style="margin-top:20px">Memory Map</div>
       <div id="memory-map-content"></div>
+
+      <div class="section-title" style="margin-top:20px">Activity (last 24h)</div>
+      <div id="health-pulse"></div>
+
+      <div class="section-title" style="margin-top:20px">Subsystems</div>
+      <div id="health-subsystems" class="health-grid"></div>
     </div>
 
     <!-- Dedup view -->
@@ -1944,8 +1954,18 @@ async function showImportance(id) {
 
 // --- Health dashboard ---
 async function loadHealth() {
-  const data = await fetchJSON('/api/health');
+  // fetch all data in parallel
+  const [data, map, pulse, drift, reranker] = await Promise.all([
+    fetchJSON('/api/health'),
+    fetchJSON('/api/memory-map'),
+    fetchJSON('/api/pulse'),
+    fetchJSON('/api/drift').catch(() => null),
+    fetchJSON('/api/reranker/status').catch(() => null),
+  ]);
+
+  // --- Top stats grid ---
   const mems = data.memories || {};
+  const layerColors = {working:'var(--yellow)',episodic:'var(--cyan)',semantic:'var(--green)',procedural:'var(--accent2)',codebase:'var(--accent)'};
   const cards = [
     {label:'Total Memories', value: mems.total||0, status: mems.total > 0 ? 'ok' : 'warn'},
     {label:'Episodic', value: mems.episodic||0, status: 'ok'},
@@ -1955,33 +1975,62 @@ async function loadHealth() {
     {label:'Working', value: mems.working||0, status: (mems.working||0) === 0 ? 'ok' : 'warn'},
     {label:'Entities', value: data.entities||0, status: 'ok'},
     {label:'Relationships', value: data.relationships||0, status: 'ok'},
-    {label:'DB Size', value: (data.db_size_mb||0)+'MB', status: data.db_size_mb < 100 ? 'ok' : 'warn'},
-    {label:'Embedding Cache', value: data.embedding_cache_loaded ? 'loaded' : 'cold', status: data.embedding_cache_loaded ? 'ok' : 'warn'},
-    {label:'Cache Vectors', value: data.embedding_cache_size||0, status: 'ok'},
-    {label:'FTS Indexed', value: data.fts_indexed||0, status: 'ok'},
-    {label:'Orphaned Entities', value: data.orphaned_entities||0, status: (data.orphaned_entities||0) === 0 ? 'ok' : 'warn'},
-    {label:'Stale Working', value: data.stale_working||0, status: (data.stale_working||0) === 0 ? 'ok' : 'warn'},
-    {label:'No Embedding', value: data.no_embedding||0, status: (data.no_embedding||0) === 0 ? 'ok' : 'bad'},
+    {label:'DB Size', value: (data.db_size_mb||0).toFixed(1)+'MB', status: data.db_size_mb < 100 ? 'ok' : 'warn'},
   ];
   document.getElementById('health-grid').innerHTML = cards.map(c =>
     `<div class="health-card ${c.status}"><div class="hc-value">${c.value}</div><div class="hc-label">${c.label}</div></div>`
   ).join('');
 
-  // memory map
-  const map = await fetchJSON('/api/memory-map');
+  // --- Drift score ---
+  const driftEl = document.getElementById('health-drift');
+  if (drift) {
+    const ds = drift.score ?? 0;
+    const dc = ds >= 80 ? 'var(--green)' : ds >= 50 ? 'var(--yellow)' : 'var(--red)';
+    const errors = (drift.issues||[]).filter(i => i.severity==='error').length;
+    const warns = (drift.issues||[]).filter(i => i.severity==='warning').length;
+    const pct = Math.max(0, Math.min(100, ds));
+    driftEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px">
+        <div style="font-size:36px;font-weight:700;color:${dc}">${ds}</div>
+        <div style="flex:1">
+          <div style="background:var(--bg3);border-radius:4px;height:8px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${dc};border-radius:4px;transition:width 0.5s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--text2)">
+            <span>${drift.claims_valid||0}/${drift.claims_verified||0} claims valid</span>
+            <span>${errors} errors, ${warns} warnings</span>
+          </div>
+        </div>
+        <a href="#" onclick="showView('drift');return false" style="font-size:10px;color:var(--accent)">details →</a>
+      </div>`;
+  } else {
+    driftEl.innerHTML = '<div style="font-size:11px;color:var(--text2)">Drift check unavailable</div>';
+  }
+
+  // --- Memory map with bars ---
   const layers = map.layers || {};
-  let mapHtml = `<div style="margin-bottom:12px;font-size:11px;color:var(--text2)">Date range: ${map.oldest||'?'} → ${map.newest||'?'}</div>`;
+  const totalMems = mems.total || 1;
+  let mapHtml = `<div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:11px;color:var(--text2)">
+    <span>Date range: ${map.oldest||'—'} → ${map.newest||'—'}</span>
+    <span>Last hour: ${map.last_hour?.writes||0} writes, ${map.last_hour?.reads||0} reads</span>
+  </div>`;
+
   for (const [layer, info] of Object.entries(layers)) {
-    const colors = {working:'var(--yellow)',episodic:'var(--cyan)',semantic:'var(--green)',procedural:'var(--accent2)',codebase:'var(--accent)'};
-    mapHtml += `<div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="color:${colors[layer]||'var(--text)'};font-weight:600;font-size:12px">${layer}</span>
-        <span style="color:var(--text2);font-size:11px">${info.count} memories</span>
+    if (layer === 'working' && info.count === 0) continue;
+    const color = layerColors[layer] || 'var(--text)';
+    const barPct = Math.max(2, (info.count / totalMems) * 100);
+    mapHtml += `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <span style="color:${color};font-weight:600;font-size:12px">${layer}</span>
+        <span style="font-size:20px;font-weight:700;color:${color}">${info.count}</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:3px;height:6px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${barPct}%;height:100%;background:${color};border-radius:3px"></div>
       </div>`;
     if (info.top_entities && info.top_entities.length) {
       mapHtml += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
       for (const e of info.top_entities) {
-        mapHtml += `<span class="entity-node" style="font-size:10px">${escapeHtml(e.canonical_name)} (${e.cnt})</span>`;
+        mapHtml += `<span class="entity-node" style="font-size:10px;cursor:pointer" onclick="inspectEntity('${e.id||''}')">${escapeHtml(e.canonical_name)} <span style="color:var(--text2)">${e.cnt}</span></span>`;
       }
       mapHtml += '</div>';
     } else if (info.count > 0) {
@@ -1990,6 +2039,45 @@ async function loadHealth() {
     mapHtml += '</div>';
   }
   document.getElementById('memory-map-content').innerHTML = mapHtml;
+
+  // --- Activity pulse ---
+  const pulseEl = document.getElementById('health-pulse');
+  const sparkline = pulse.sparkline || [];
+  const maxSpark = Math.max(1, ...sparkline);
+  const barW = Math.max(4, Math.floor(300 / Math.max(1, sparkline.length)));
+  let pulseHtml = `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <span class="tag" style="color:var(--green)">created: ${pulse.created||0}</span>
+    <span class="tag" style="color:var(--cyan)">recalled: ${pulse.recalled||0}</span>
+    <span class="tag" style="color:var(--accent2)">promoted: ${pulse.promoted||0}</span>
+    <span class="tag" style="color:var(--red)">forgotten: ${pulse.forgotten||0}</span>
+    <span class="tag" style="color:var(--text2)">total: ${pulse.total_events||0}</span>
+  </div>`;
+  if (sparkline.length > 0) {
+    pulseHtml += '<div style="display:flex;align-items:end;gap:1px;height:40px">';
+    for (const v of sparkline) {
+      const h = Math.max(1, (v / maxSpark) * 38);
+      const opacity = v === 0 ? 0.15 : 0.4 + (v / maxSpark) * 0.6;
+      pulseHtml += `<div style="width:${barW}px;height:${h}px;background:var(--accent);opacity:${opacity};border-radius:1px" title="${v} events"></div>`;
+    }
+    pulseHtml += '</div>';
+    pulseHtml += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);margin-top:2px"><span>24h ago</span><span>now</span></div>';
+  }
+  pulseEl.innerHTML = pulseHtml;
+
+  // --- Subsystems ---
+  const subCards = [
+    {label:'Embedding Cache', value: data.embedding_cache_loaded ? 'loaded' : 'cold', status: data.embedding_cache_loaded ? 'ok' : 'warn'},
+    {label:'Cache Vectors', value: data.embedding_cache_size||0, status: data.embedding_cache_size > 0 ? 'ok' : 'warn'},
+    {label:'FTS Indexed', value: data.fts_indexed||0, status: data.fts_indexed > 0 ? 'ok' : 'warn'},
+    {label:'No Embedding', value: data.no_embedding||0, status: (data.no_embedding||0) === 0 ? 'ok' : 'bad'},
+    {label:'Orphaned Entities', value: data.orphaned_entities||0, status: (data.orphaned_entities||0) === 0 ? 'ok' : 'warn'},
+    {label:'Stale Working', value: data.stale_working||0, status: (data.stale_working||0) === 0 ? 'ok' : 'warn'},
+    {label:'Deep Reranker', value: reranker?.trained ? 'trained' : 'untrained', status: reranker?.trained ? 'ok' : 'warn'},
+    {label:'Reranker Size', value: reranker?.model_size_kb ? reranker.model_size_kb+'KB' : '—', status: 'ok'},
+  ];
+  document.getElementById('health-subsystems').innerHTML = subCards.map(c =>
+    `<div class="health-card ${c.status}"><div class="hc-value">${c.value}</div><div class="hc-label">${c.label}</div></div>`
+  ).join('');
 }
 
 // --- Dedup viewer ---
