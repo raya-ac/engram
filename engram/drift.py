@@ -131,7 +131,16 @@ class DriftReport:
 
 def extract_claims(memory: Memory) -> list[Claim]:
     """Extract verifiable claims from a single memory."""
+    # skip codebase-layer memories — their paths are relative to the scanned
+    # project root, not to cwd, so we can't verify them without that context
+    if memory.layer == "codebase":
+        return []
+
+    # skip codebase scan artifacts that got promoted to other layers
+    # they start with "[project-name] relative/path"
     content = memory.content
+    if re.match(r'^\[[\w\-]+\]\s+\S+', content):
+        return []
     claims = []
     seen = set()
 
@@ -230,11 +239,24 @@ def _expand_path(path: str) -> str:
 
 def _is_likely_filesystem_path(path: str) -> bool:
     """Distinguish real filesystem paths from URL routes, API paths, etc."""
-    # Must start with / ~/ or ./ to be a filesystem path, or contain a file extension
+    has_extension = any(path.endswith(ext) for ext in KNOWN_EXTENSIONS)
+    has_relative_root = path.startswith('./')
+
+    # /home/ is a filesystem root on Linux but often appears as a URL route
+    # (/home/credits, /home/earn). Only treat as filesystem if deep or has extension.
+    if path.startswith('/home/'):
+        segments = [s for s in path.split('/') if s]
+        if len(segments) <= 2 and not has_extension:
+            return False
+
     has_root = path.startswith(('/Users/', '/home/', '/tmp/', '/var/', '/etc/',
                                 '/opt/', '~/'))
-    has_relative_root = path.startswith(('./'))
-    has_extension = any(path.endswith(ext) for ext in KNOWN_EXTENSIONS)
+
+    # Web paths that look like file paths but aren't filesystem
+    WEB_PATH_PREFIXES = ('/css/', '/js/', '/static/', '/assets/', '/swagger',
+                          '/sslvpn/', '/actuator/', '/api/', '/graphql')
+    if any(path.startswith(p) for p in WEB_PATH_PREFIXES):
+        return False
 
     # URL routes: /api/foo, /agents/spawn, /overlay — short, no extension, no deep path
     if path.startswith('/') and not has_root:
@@ -252,6 +274,10 @@ def _is_likely_filesystem_path(path: str) -> bool:
     return has_root or has_relative_root or has_extension
 
 
+# Placeholder patterns in paths — these aren't real paths
+_TEMPLATE_VARS = re.compile(r'(USERNAME|YYYY|MM|DD|<[^>]+>|\{[^}]+\}|\[.*\])')
+
+
 def verify_path_claim(claim: Claim) -> DriftIssue | None:
     """Check if a claimed file path exists."""
     path = _expand_path(claim.value)
@@ -260,14 +286,34 @@ def verify_path_claim(claim: Claim) -> DriftIssue | None:
     if any(c in path for c in '<>[]{}'):
         return None
 
+    # skip paths with template variables (USERNAME, YYYY, etc.)
+    if _TEMPLATE_VARS.search(claim.value):
+        return None
+
     # skip things that aren't actually filesystem paths
     if not _is_likely_filesystem_path(claim.value):
         return None
 
+    # handle paths that might be truncated at a space boundary
+    # e.g. "~/Library/Application" is really "~/Library/Application Support/..."
     if not os.path.exists(path):
+        # check if a path starting with this prefix exists (space-truncated)
+        parent = os.path.dirname(path)
+        basename = os.path.basename(path)
+        if os.path.isdir(parent):
+            try:
+                entries = os.listdir(parent)
+                if any(e.startswith(basename + ' ') for e in entries):
+                    return None  # truncated at space, real path exists
+            except OSError:
+                pass
+
+        # relative paths (no ~ or / prefix) might be valid in their project
+        # context — demote to warning since we can't resolve them
+        is_relative = not claim.value.startswith(('/', '~'))
         return DriftIssue(
             code="DEAD_PATH",
-            severity="error",
+            severity="warning" if is_relative else "error",
             memory_id=claim.memory_id,
             claim=claim.value,
             message=f"Path does not exist: {claim.value}",
