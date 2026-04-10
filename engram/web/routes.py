@@ -23,6 +23,8 @@ from engram.surprise import compute_surprise, adjust_importance
 from engram.lifecycle import retention_l2, retention_huber, retention_elastic, compute_retention
 from engram.deep_retrieval import DeepReranker
 from engram.skill_select import select_skills, format_skills
+from engram.drift import run_drift_check, auto_fix_drift
+from engram.patterns import extract_patterns_from_session, store_patterns
 
 router = APIRouter()
 
@@ -635,6 +637,65 @@ async def health_check(request: Request):
     no_emb = store.conn.execute("SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NULL AND forgotten=0").fetchone()["cnt"]
     return {**stats, "embedding_cache_loaded": cache_loaded, "embedding_cache_size": cache_size,
             "orphaned_entities": orphaned, "stale_working": stale, "fts_indexed": fts, "no_embedding": no_emb}
+
+
+@router.get("/api/drift")
+async def drift_check(request: Request,
+                       check_functions: bool = False,
+                       search_roots: str = Query(None)):
+    store = _store(request)
+    roots = search_roots.split(",") if search_roots else None
+    report = run_drift_check(store, search_roots=roots, check_functions=check_functions)
+    result = report.to_dict()
+    error_count = sum(1 for i in report.issues if i.severity == "error")
+    warn_count = sum(1 for i in report.issues if i.severity == "warning")
+    result["summary"] = (
+        f"Drift score: {report.score}/100 | "
+        f"{error_count} errors, {warn_count} warnings | "
+        f"{report.claims_valid}/{report.claims_verified} claims valid"
+    )
+    return result
+
+
+@router.post("/api/drift/fix")
+async def drift_fix(request: Request):
+    store = _store(request)
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    dry_run = body.get("dry_run", False)
+    report = run_drift_check(store, check_functions=False)
+    result = auto_fix_drift(store, report, dry_run=dry_run)
+    push_event("drift_fix", {"total": result["total_actions"], "dry_run": dry_run})
+    return result
+
+
+@router.get("/api/patterns")
+async def get_patterns(request: Request, hours: float = 4.0):
+    store = _store(request)
+    config = _config(request)
+    patterns = extract_patterns_from_session(store, config, hours=hours)
+    return {
+        "patterns": [
+            {"title": p.title, "category": p.category, "novelty": p.novelty,
+             "should_store": p.should_store, "source_events": p.source_events,
+             "content_preview": p.content[:300]}
+            for p in patterns
+        ],
+        "total": len(patterns),
+        "would_store": sum(1 for p in patterns if p.should_store),
+    }
+
+
+@router.post("/api/patterns/extract")
+async def extract_and_store_patterns(request: Request):
+    store = _store(request)
+    config = _config(request)
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    hours = body.get("hours", 4.0)
+    threshold = body.get("novelty_threshold", 0.25)
+    patterns = extract_patterns_from_session(store, config, hours=hours, novelty_threshold=threshold)
+    result = store_patterns(patterns, store, config)
+    push_event("patterns_extracted", {"stored": result["total_stored"]})
+    return result
 
 
 @router.get("/api/memory-map")

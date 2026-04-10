@@ -11,6 +11,7 @@ from engram.config import Config
 from engram.embeddings import embed_documents
 from engram.llm import query_llm, extract_json_from_response
 from engram.lifecycle import apply_forgetting_curve
+from engram.drift import run_drift_check, auto_fix_drift
 from engram.store import Store, Memory, MemoryLayer, SourceType
 
 SUMMARIZE_SYSTEM = """You are a memory consolidation system. Given a cluster of related memories, produce a single consolidated summary that preserves all important information while removing redundancy.
@@ -88,7 +89,20 @@ def consolidate(store: Store, config: Config | None = None) -> dict:
     bridges = _cross_domain_synthesis(store, config)
     stats["cross_domain_bridges"] = bridges
 
-    # Step 5: Prune old access_log and events entries (>90 days)
+    # Step 5: Drift detection — validate memories against filesystem
+    try:
+        drift_report = run_drift_check(store, check_functions=False)
+        stats["drift_score"] = drift_report.score
+        stats["drift_issues"] = len(drift_report.issues)
+        # auto-fix errors (invalidate dead paths, forget invalidated-but-active)
+        if drift_report.issues:
+            fix_result = auto_fix_drift(store, drift_report, dry_run=False)
+            stats["drift_invalidated"] = fix_result["invalidated"]
+            stats["drift_forgotten"] = fix_result["forgotten"]
+    except Exception:
+        stats["drift_score"] = -1  # signal that drift check failed
+
+    # Step 6: Prune old access_log and events entries (>90 days)
     cutoff = time.time() - 90 * 86400
     pruned_access = store.conn.execute(
         "DELETE FROM access_log WHERE accessed_at < ?", (cutoff,)
