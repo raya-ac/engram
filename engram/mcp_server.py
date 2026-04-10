@@ -23,6 +23,7 @@ from engram.deep_retrieval import DeepReranker
 from engram.skill_select import select_skills, format_skills
 from engram.drift import run_drift_check, auto_fix_drift
 from engram.patterns import extract_patterns_from_session, store_patterns
+from engram.evolution import enrich_memory, evolve_neighbors, check_confirmation, get_source_trust
 
 TOOLS = [
     # Read tools
@@ -105,6 +106,7 @@ TOOLS = [
     # Pattern extraction
     {"name": "extract_patterns", "description": "Extract reusable procedural patterns from recent session activity — diary entries, new memories, errors, decisions. Checks novelty against existing procedural memories and stores only what's genuinely new.", "inputSchema": {"type": "object", "properties": {"hours": {"type": "number", "default": 4.0, "description": "How far back to look for session activity"}, "novelty_threshold": {"type": "number", "default": 0.25, "description": "Minimum novelty score (0-1) to store a pattern"}, "dry_run": {"type": "boolean", "default": False, "description": "If true, extract and score patterns but don't store them"}}}},
     # Negative knowledge
+    {"name": "quality_metrics", "description": "Memory system quality metrics — storage quality ratio (what % of stored memories get recalled), curation ratio (active maintenance vs passive accumulation), retrieval relevance. Based on AgeMem reward decomposition.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "remember_negative", "description": "Store explicit negative knowledge — what does NOT exist, what was deliberately excluded, what should NOT be done. Prevents future hallucinated recommendations. Examples: 'There is no caching layer in this project', 'We deliberately do not use Redux', 'The /admin endpoint was removed in v2'.", "inputSchema": {"type": "object", "properties": {"content": {"type": "string", "description": "What does NOT exist or should NOT be done"}, "context": {"type": "string", "description": "Why this negative fact matters — what mistake it prevents"}, "scope": {"type": "string", "description": "What project/system this applies to"}, "importance": {"type": "number", "default": 0.75}}, "required": ["content"]}},
 ]
 
@@ -209,6 +211,7 @@ class MCPServer:
             "drift_fix": self._drift_fix,
             "extract_patterns": self._extract_patterns,
             "remember_negative": self._remember_negative,
+            "quality_metrics": self._quality_metrics,
         }
         handler = handlers.get(name)
         if not handler:
@@ -303,18 +306,51 @@ class MCPServer:
             layer=args.get("layer", MemoryLayer.EPISODIC),
             importance=args.get("importance", 0.7),
         )
-        emb = embed_documents([mem.content], self.config.embedding_model)
+
+        # enriched embeddings (A-Mem): generate keywords+tags+summary, embed concatenation
+        enrichment = {}
+        try:
+            enrichment = enrich_memory(mem.content, self.config)
+            embed_text = enrichment.get("enriched_text", mem.content)
+            if enrichment.get("keywords"):
+                mem.metadata["keywords"] = enrichment["keywords"]
+            if enrichment.get("tags"):
+                mem.metadata["tags"] = enrichment["tags"]
+            if enrichment.get("summary"):
+                mem.metadata["enrichment_summary"] = enrichment["summary"]
+        except Exception:
+            embed_text = mem.content
+
+        emb = embed_documents([embed_text], self.config.embedding_model)
         if emb.size > 0:
             mem.embedding = emb[0]
 
         # surprise gate: compute novelty before storing
         surprise_info = {}
+        evolved_ids = []
         if mem.embedding is not None:
             surprise_info = compute_surprise(mem.embedding, self.store)
             mem.importance = adjust_importance(mem.importance, surprise_info)
             mem.metadata["surprise"] = surprise_info["surprise"]
             if surprise_info["is_duplicate"] and surprise_info["nearest_id"]:
                 mem.metadata["duplicate_of"] = surprise_info["nearest_id"]
+                # check confirmation (SuperLocalMemory) — if near-duplicate, confirm the neighbor
+                neighbor = self.store.get_memory(surprise_info["nearest_id"])
+                if neighbor:
+                    check_confirmation(mem.content, neighbor, self.store)
+
+            # memory evolution (A-Mem): check if neighbors should be updated
+            if surprise_info.get("nearest_ids"):
+                neighbors = [self.store.get_memory(nid) for nid in surprise_info["nearest_ids"][:3]]
+                neighbors = [n for n in neighbors if n is not None]
+                if neighbors:
+                    try:
+                        evolved_ids = evolve_neighbors(mem, neighbors, self.store, self.config)
+                    except Exception:
+                        pass
+
+        # source trust tracking
+        mem.metadata["source_trust"] = get_source_trust(mem.source_type)
 
         hqs = []
         try:
@@ -330,6 +366,10 @@ class MCPServer:
             if surprise_info["is_duplicate"]:
                 result["warning"] = "near-duplicate detected"
                 result["duplicate_of"] = surprise_info["nearest_id"]
+        if evolved_ids:
+            result["evolved"] = evolved_ids
+        if enrichment.get("tags"):
+            result["tags"] = enrichment["tags"]
         return result
 
     def _remember_interaction(self, args: dict):
@@ -1160,6 +1200,65 @@ class MCPServer:
 
         result = store_patterns(patterns, self.store, self.config)
         return result
+
+    # --- Quality metrics (AgeMem-inspired) ---
+
+    def _quality_metrics(self, args: dict):
+        """Compute memory system quality metrics from access patterns."""
+        # storage quality: what fraction of stored memories ever get recalled?
+        total = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0"
+        ).fetchone()["cnt"]
+        accessed = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND access_count > 0"
+        ).fetchone()["cnt"]
+        storage_quality = round(accessed / max(1, total), 3)
+
+        # curation ratio: how many memories have been actively curated?
+        curated = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
+            "(json_extract(metadata, '$.invalidated') = 1 OR "
+            " json_extract(metadata, '$.evolution_count') > 0 OR "
+            " json_extract(metadata, '$.confirmations') > 0)"
+        ).fetchone()["cnt"]
+        curation_ratio = round(curated / max(1, total), 3)
+
+        # retrieval relevance: average access count of recently accessed memories
+        recent_accessed = self.store.conn.execute(
+            "SELECT AVG(access_count) as avg_access FROM memories WHERE forgotten=0 AND access_count > 0"
+        ).fetchone()["avg_access"] or 0
+
+        # enrichment coverage: how many memories have enriched metadata?
+        enriched = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
+            "json_extract(metadata, '$.keywords') IS NOT NULL"
+        ).fetchone()["cnt"]
+        enrichment_ratio = round(enriched / max(1, total), 3)
+
+        # evolved memories count
+        evolved = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
+            "json_extract(metadata, '$.evolution_count') > 0"
+        ).fetchone()["cnt"]
+
+        # confirmed memories count
+        confirmed = self.store.conn.execute(
+            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
+            "json_extract(metadata, '$.confirmations') > 0"
+        ).fetchone()["cnt"]
+
+        return {
+            "storage_quality": storage_quality,
+            "curation_ratio": curation_ratio,
+            "avg_access_count": round(recent_accessed, 2),
+            "enrichment_ratio": enrichment_ratio,
+            "total_memories": total,
+            "accessed_memories": accessed,
+            "curated_memories": curated,
+            "enriched_memories": enriched,
+            "evolved_memories": evolved,
+            "confirmed_memories": confirmed,
+        }
 
     # --- Negative knowledge ---
 

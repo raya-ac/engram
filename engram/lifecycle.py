@@ -23,10 +23,15 @@ import time
 
 from engram.config import Config
 from engram.store import Store, Memory, MemoryLayer
+from engram.evolution import get_source_trust
 
 
 def compute_importance(mem: Memory) -> float:
-    """7-factor composite importance score."""
+    """9-factor composite importance score.
+
+    Factors: base, access frequency, recency, emotional valence, stability,
+    layer boost, trust, confirmation count, ACT-R base-level activation.
+    """
     base = mem.importance
 
     # access frequency (log scale, capped)
@@ -54,13 +59,22 @@ def compute_importance(mem: Memory) -> float:
         MemoryLayer.PROCEDURAL: 0.2,
     }.get(mem.layer, 0.0)
 
+    # trust factor (SuperLocalMemory V3.3) — source-based trust
+    trust = get_source_trust(mem.source_type)
+
+    # confirmation count (SuperLocalMemory V3.3) — independently corroborated
+    confirmations = mem.metadata.get("confirmations", 0)
+    confirmation_boost = min(0.2, 0.05 * math.log(1 + confirmations))
+
     score = (
-        base * 0.30
-        + access_factor * 0.15
-        + recency * 0.15
-        + emotion * 0.10
-        + stability * 0.10
-        + layer_boost * 0.20
+        base * 0.25
+        + access_factor * 0.12
+        + recency * 0.12
+        + emotion * 0.08
+        + stability * 0.08
+        + layer_boost * 0.15
+        + trust * 0.10
+        + confirmation_boost * 0.10
     )
     return min(1.0, max(0.0, score))
 
@@ -126,10 +140,19 @@ def retention_elastic(age_days: float, half_life: float,
 def compute_retention(mem: Memory, config: Config) -> float:
     """Compute retention score using the configured regularization mode.
 
+    Trust-weighted: low-trust sources decay faster (SuperLocalMemory V3.3).
+    λ_eff = λ · (1 + κ·(1 - trust)), κ=2.0
+
     Returns a value in [0, 1] where 1 = full retention, 0 = fully decayed.
     """
     age_days = (time.time() - mem.last_accessed) / 86400
     half_life = config.lifecycle.forgetting_half_life_days
+
+    # trust-weighted decay: low-trust memories decay up to 3x faster
+    trust = get_source_trust(mem.source_type)
+    kappa = 2.0
+    half_life = half_life / (1.0 + kappa * (1.0 - trust))
+
     mode = getattr(config.lifecycle, 'retention_mode', 'l2')
 
     if mode == 'huber':

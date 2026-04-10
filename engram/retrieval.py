@@ -1,8 +1,13 @@
-"""4-stage hybrid retrieval pipeline: dense + BM25 + graph → RRF → temporal boost → cross-encoder."""
+"""5-stage hybrid retrieval pipeline: intent → dense + BM25 + graph → RRF → temporal boost → cross-encoder.
+
+Intent-aware routing (MAGMA): classify query intent and dynamically weight signals.
+Retrieval threshold (ACT-R): gate results by minimum score, don't always return top-k.
+"""
 
 from __future__ import annotations
 
 import math
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -12,6 +17,38 @@ import numpy as np
 from engram.config import Config
 from engram.embeddings import embed_query, cosine_similarity_search, cross_encoder_rerank
 from engram.store import Store, Memory
+
+
+# --- Intent classification (MAGMA-inspired) ---
+
+INTENT_PATTERNS = {
+    "why": re.compile(r'\b(why|because|reason|cause|led to|resulted in)\b', re.I),
+    "when": re.compile(r'\b(when|date|time|before|after|during|timeline|history)\b', re.I),
+    "who": re.compile(r'\b(who|person|people|team|built|created|wrote)\b', re.I),
+    "how": re.compile(r'\b(how to|steps|procedure|process|workflow|debug|fix)\b', re.I),
+}
+
+# intent → signal weight adjustments
+INTENT_WEIGHTS = {
+    "why":   {"dense": 1.0, "bm25": 0.8, "graph": 1.5},  # boost graph for causal
+    "when":  {"dense": 0.8, "bm25": 1.2, "graph": 0.8},  # boost BM25 for date matching
+    "who":   {"dense": 0.8, "bm25": 0.8, "graph": 1.8},  # boost graph for entity lookup
+    "how":   {"dense": 1.2, "bm25": 1.0, "graph": 0.8},  # boost dense for procedural
+    "what":  {"dense": 1.0, "bm25": 1.0, "graph": 1.0},  # default balanced
+}
+
+def classify_intent(query: str) -> str:
+    """Classify query intent for adaptive retrieval weighting."""
+    scores = {}
+    for intent, pattern in INTENT_PATTERNS.items():
+        scores[intent] = len(pattern.findall(query))
+    if max(scores.values()) == 0:
+        return "what"
+    return max(scores, key=scores.get)
+
+
+# retrieval noise scale (ACT-R inspired) — small logistic noise for beneficial variation
+RETRIEVAL_NOISE_SCALE = 0.02
 
 
 @dataclass
@@ -45,15 +82,20 @@ def search(query: str, store: Store, config: Config | None = None,
     k = top_k or rc.top_k
     t0 = time.time()
 
+    # --- Stage 0: Intent classification (MAGMA-inspired) ---
+    intent = classify_intent(query)
+    weights = INTENT_WEIGHTS.get(intent, INTENT_WEIGHTS["what"])
+
     # --- Stage 1: Parallel candidate generation ---
     dense_candidates = _dense_search(query, store, config, k * rc.dense_multiplier)
     bm25_candidates = _bm25_search(query, store, k * rc.bm25_multiplier)
     graph_candidates = _graph_search(query, store, k)
 
-    # --- Stage 2: RRF fusion ---
+    # --- Stage 2: RRF fusion with intent-weighted signals ---
     rrf_scores = _rrf_fuse(
         [dense_candidates, bm25_candidates, graph_candidates],
         k=rc.rrf_k,
+        signal_weights=[weights["dense"], weights["bm25"], weights["graph"]],
     )
     rrf_top = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:rc.rerank_candidates]
 
@@ -130,6 +172,18 @@ def search(query: str, store: Store, config: Config | None = None,
             new_results.append(r)
         results = new_results
 
+    # --- Retrieval noise (ACT-R inspired) — beneficial variation ---
+    if results and RETRIEVAL_NOISE_SCALE > 0:
+        for r in results:
+            noise = random.gauss(0, RETRIEVAL_NOISE_SCALE)
+            r.score = max(0, r.score + noise)
+        results.sort(key=lambda r: r.score, reverse=True)
+
+    # --- Retrieval threshold gate (ACT-R) — don't return garbage ---
+    min_threshold = getattr(rc, 'min_confidence', 0.0)
+    if min_threshold > 0 and results:
+        results = [r for r in results if r.score >= min_threshold]
+
     # record access — one event per search, not per result
     if results:
         result_ids = [r.memory.id for r in results]
@@ -194,13 +248,16 @@ def _graph_search(query: str, store: Store, limit: int) -> list[tuple[str, float
     return list(seen.items())[:limit]
 
 
-def _rrf_fuse(rankings: list[list[tuple[str, float]]], k: int = 60) -> dict[str, float]:
+def _rrf_fuse(rankings: list[list[tuple[str, float]]], k: int = 60,
+              signal_weights: list[float] | None = None) -> dict[str, float]:
     scores: dict[str, float] = {}
-    for ranking in rankings:
+    if signal_weights is None:
+        signal_weights = [1.0] * len(rankings)
+    for ranking, weight in zip(rankings, signal_weights):
         for rank, (doc_id, _) in enumerate(ranking):
             if doc_id not in scores:
                 scores[doc_id] = 0.0
-            scores[doc_id] += 1.0 / (k + rank + 1)
+            scores[doc_id] += weight * (1.0 / (k + rank + 1))
     return scores
 
 

@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS relationships (
     evidence_count INTEGER DEFAULT 1,
     created_at REAL NOT NULL,
     last_seen REAL NOT NULL,
+    valid_from REAL,
+    valid_to REAL,
     PRIMARY KEY (source_entity_id, target_entity_id, relation_type)
 );
 
