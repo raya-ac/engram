@@ -282,7 +282,7 @@ def _bench_latency(store: Store, config: Config) -> dict:
 
     return {
         "search_no_rerank_ms": round(search_no_rerank, 1),
-        "search_with_rerank_ms": round(search_with_rerank, 1),
+        "search_with_rerank_ms": round(search_with_rerank, 1) if search_with_rerank is not None else "skipped",
         "hopfield_ms": round(hopfield_ms, 2),
         "embed_ms": round(embed_ms, 1),
     }
@@ -399,7 +399,7 @@ def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict
     # create temp DB
     tmp_dir = tempfile.mkdtemp(prefix="engram_bench_")
     tmp_db = os.path.join(tmp_dir, "bench.db")
-    config._db_path_override = tmp_db
+    config.db_path = tmp_db
 
     store = Store(config)
     store.init_db()
@@ -466,30 +466,56 @@ def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict
         contents.append(content)
         memories.append(mem)
 
-    # batch embed — larger batches for speed
+    # batch embed
+    import sys
     print("Embedding...")
-    batch_size = 256
+    batch_size = 512
     all_embeddings = []
+    t_embed = time.time()
     for i in range(0, len(contents), batch_size):
         batch = contents[i:i+batch_size]
         embs = embed_documents(batch, config.embedding_model)
         all_embeddings.append(embs)
-        if (i // batch_size) % 10 == 0:
-            print(f"  {i}/{len(contents)}...")
+        if i > 0 and i % 5000 == 0:
+            rate = i / (time.time() - t_embed)
+            eta = (len(contents) - i) / max(1, rate)
+            print(f"  {i}/{len(contents)} ({rate:.0f}/sec, ETA {eta:.0f}s)")
+            sys.stdout.flush()
     all_embeddings = np.vstack(all_embeddings)
+    print(f"  Embedded {len(contents)} in {time.time()-t_embed:.1f}s ({len(contents)/(time.time()-t_embed):.0f}/sec)")
 
-    # store
+    # bulk store — bypass save_memory for speed (no FTS, no entity extraction)
+    import json as _json
     print("Storing...")
+    t_store = time.time()
+    store.conn.execute("PRAGMA synchronous = OFF")
+    store.conn.execute("PRAGMA journal_mode = MEMORY")
     for i, mem in enumerate(memories):
-        if i < len(all_embeddings):
-            mem.embedding = all_embeddings[i]
-        store.save_memory(mem)
-        # extract entities for a small subset (uses regex, not LLM)
-        if i < 50:
-            try:
-                process_entities_for_memory(store, mem.id, mem.content)
-            except Exception:
-                pass
+        emb_blob = all_embeddings[i].astype(np.float32).tobytes() if i < len(all_embeddings) else None
+        store.conn.execute(
+            """INSERT INTO memories
+            (id, content, source_type, layer, embedding, importance,
+             access_count, created_at, last_accessed, emotional_valence,
+             chunk_hash, metadata, forgotten)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+            (mem.id, mem.content, mem.source_type, mem.layer, emb_blob,
+             mem.importance, mem.access_count, mem.created_at, mem.last_accessed,
+             mem.emotional_valence, mem.chunk_hash, _json.dumps(mem.metadata)),
+        )
+        # FTS for a subset only (bulk FTS is slow)
+        if i < 10000:
+            row = store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (mem.id,)).fetchone()
+            if row:
+                store.conn.execute(
+                    "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, '')",
+                    (row[0], mem.content),
+                )
+        if i > 0 and i % 10000 == 0:
+            store.conn.commit()
+            print(f"  {i}/{len(memories)} stored ({i/(time.time()-t_store):.0f}/sec)")
+    store.conn.commit()
+    store.invalidate_embedding_cache()
+    print(f"  Stored {len(memories)} in {time.time()-t_store:.1f}s")
 
     print(f"Created {n_memories} memories, running benchmark...\n")
 

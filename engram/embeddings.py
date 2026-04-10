@@ -99,155 +99,43 @@ def _embed_st(texts: list[str], model_name: str, is_query: bool, normalize: bool
     return np.array(embeddings, dtype=np.float32)
 
 
-# --- MLX backend (Apple Silicon GPU) ---
+# --- MLX backend (Apple Silicon GPU via mlx-embeddings) ---
 
 def _get_mlx_model(model_name: str = "BAAI/bge-small-en-v1.5"):
-    """Load a sentence-transformers model into MLX for GPU inference."""
+    """Load model via mlx-embeddings for native GPU inference."""
     global _mlx_model, _mlx_tokenizer
     if _mlx_model is not None:
         return _mlx_model, _mlx_tokenizer
 
-    import mlx.core as mx
-    import mlx.nn as nn
-    from transformers import AutoTokenizer, AutoModel
-    import torch
-
+    from mlx_embeddings.utils import load
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        torch_model = AutoModel.from_pretrained(model_name)
-
-    # extract weights and convert to MLX
-    state_dict = torch_model.state_dict()
-    mlx_weights = {}
-    for k, v in state_dict.items():
-        arr = v.detach().cpu().numpy()
-        mlx_weights[k] = mx.array(arr)
-
-    _mlx_model = mlx_weights
-    _mlx_tokenizer = tokenizer
+        _mlx_model, _mlx_tokenizer = load(model_name)
     return _mlx_model, _mlx_tokenizer
 
 
-def _mlx_mean_pool(hidden_states, attention_mask):
-    """Mean pooling over token embeddings, respecting attention mask."""
-    import mlx.core as mx
-    mask_expanded = mx.expand_dims(attention_mask, -1)  # (B, T, 1)
-    masked = hidden_states * mask_expanded
-    summed = mx.sum(masked, axis=1)
-    counts = mx.maximum(mx.sum(mask_expanded, axis=1), mx.array(1e-8))
-    return summed / counts
-
-
-def _mlx_forward(tokens, weights):
-    """Minimal BERT forward pass in MLX — enough for embedding extraction."""
-    import mlx.core as mx
-
-    input_ids = tokens["input_ids"]
-    attention_mask = tokens["attention_mask"]
-    token_type_ids = tokens.get("token_type_ids", mx.zeros_like(input_ids))
-
-    # embeddings
-    word_emb = mx.take(weights["embeddings.word_embeddings.weight"], input_ids, axis=0)
-    pos_ids = mx.arange(input_ids.shape[1])
-    pos_emb = mx.take(weights["embeddings.position_embeddings.weight"], pos_ids, axis=0)
-    tok_emb = mx.take(weights["embeddings.token_type_embeddings.weight"], token_type_ids, axis=0)
-
-    hidden = word_emb + pos_emb + tok_emb
-
-    # layer norm
-    ln_w = weights["embeddings.LayerNorm.weight"]
-    ln_b = weights["embeddings.LayerNorm.bias"]
-    eps = 1e-12
-    mean = mx.mean(hidden, axis=-1, keepdims=True)
-    var = mx.var(hidden, axis=-1, keepdims=True)
-    hidden = (hidden - mean) / mx.sqrt(var + eps) * ln_w + ln_b
-
-    # transformer layers
-    n_layers = 0
-    while f"encoder.layer.{n_layers}.attention.self.query.weight" in weights:
-        n_layers += 1
-
-    for i in range(n_layers):
-        prefix = f"encoder.layer.{i}"
-
-        # self-attention
-        q = hidden @ weights[f"{prefix}.attention.self.query.weight"].T + weights[f"{prefix}.attention.self.query.bias"]
-        k = hidden @ weights[f"{prefix}.attention.self.key.weight"].T + weights[f"{prefix}.attention.self.key.bias"]
-        v = hidden @ weights[f"{prefix}.attention.self.value.weight"].T + weights[f"{prefix}.attention.self.value.bias"]
-
-        d = q.shape[-1]
-        n_heads = 12 if d >= 384 else 6
-        head_dim = d // n_heads
-        B, T, _ = q.shape
-
-        q = q.reshape(B, T, n_heads, head_dim).transpose(0, 2, 1, 3)
-        k = k.reshape(B, T, n_heads, head_dim).transpose(0, 2, 1, 3)
-        v = v.reshape(B, T, n_heads, head_dim).transpose(0, 2, 1, 3)
-
-        scores = (q @ k.transpose(0, 1, 3, 2)) / mx.sqrt(mx.array(float(head_dim)))
-        # attention mask
-        mask = mx.expand_dims(mx.expand_dims(attention_mask, 1), 1)  # (B,1,1,T)
-        scores = scores + (1 - mask) * (-1e9)
-        attn = mx.softmax(scores, axis=-1)
-        ctx = (attn @ v).transpose(0, 2, 1, 3).reshape(B, T, d)
-
-        # attention output projection
-        ctx = ctx @ weights[f"{prefix}.attention.output.dense.weight"].T + weights[f"{prefix}.attention.output.dense.bias"]
-        hidden = hidden + ctx
-        # layer norm
-        ln_w = weights[f"{prefix}.attention.output.LayerNorm.weight"]
-        ln_b = weights[f"{prefix}.attention.output.LayerNorm.bias"]
-        mean = mx.mean(hidden, axis=-1, keepdims=True)
-        var = mx.var(hidden, axis=-1, keepdims=True)
-        hidden = (hidden - mean) / mx.sqrt(var + eps) * ln_w + ln_b
-
-        # FFN
-        ff = hidden @ weights[f"{prefix}.intermediate.dense.weight"].T + weights[f"{prefix}.intermediate.dense.bias"]
-        # GELU activation
-        ff = ff * 0.5 * (1.0 + mx.tanh(0.7978845608 * (ff + 0.044715 * ff * ff * ff)))
-        ff = ff @ weights[f"{prefix}.output.dense.weight"].T + weights[f"{prefix}.output.dense.bias"]
-        hidden = hidden + ff
-        # layer norm
-        ln_w = weights[f"{prefix}.output.LayerNorm.weight"]
-        ln_b = weights[f"{prefix}.output.LayerNorm.bias"]
-        mean = mx.mean(hidden, axis=-1, keepdims=True)
-        var = mx.var(hidden, axis=-1, keepdims=True)
-        hidden = (hidden - mean) / mx.sqrt(var + eps) * ln_w + ln_b
-
-    return hidden
-
-
 def _embed_mlx(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
-    """Embed via MLX (Apple Silicon GPU)."""
-    import mlx.core as mx
+    """Embed via mlx-embeddings (Apple Silicon GPU). ~2000 texts/sec."""
+    from mlx_embeddings.utils import generate
 
-    weights, tokenizer = _get_mlx_model(model_name)
+    model, tokenizer = _get_mlx_model(model_name)
 
     if is_query:
         texts = [QUERY_PREFIX + t for t in texts]
 
-    batch_size = 512
+    # mlx-embeddings handles batching internally
+    batch_size = 1024
     all_embeddings = []
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i+batch_size]
-        encoded = tokenizer(batch, padding=True, truncation=True, max_length=512, return_tensors="np")
-
-        input_ids = mx.array(encoded["input_ids"])
-        attention_mask = mx.array(encoded["attention_mask"])
-        token_type_ids = mx.array(encoded.get("token_type_ids", np.zeros_like(encoded["input_ids"])))
-
-        tokens = {"input_ids": input_ids, "attention_mask": attention_mask, "token_type_ids": token_type_ids}
-        hidden = _mlx_forward(tokens, weights)
-        pooled = _mlx_mean_pool(hidden, attention_mask)
-
+        result = generate(model, tokenizer, batch)
+        embs = np.array(result.text_embeds)
         if normalize:
-            norms = mx.sqrt(mx.sum(pooled * pooled, axis=-1, keepdims=True))
-            pooled = pooled / mx.maximum(norms, mx.array(1e-8))
-
-        mx.eval(pooled)
-        all_embeddings.append(np.array(pooled))
+            norms = np.linalg.norm(embs, axis=-1, keepdims=True)
+            norms = np.maximum(norms, 1e-8)
+            embs = embs / norms
+        all_embeddings.append(embs)
 
     return np.vstack(all_embeddings).astype(np.float32)
 

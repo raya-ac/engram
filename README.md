@@ -347,6 +347,65 @@ restart claude code. you get 63 tools:
 | `memory_map` | high-level map of the whole system — layer counts, top entities per layer, date range, recent activity |
 | `diary_write` / `diary_read` | session notes |
 
+## benchmarks
+
+engram ships with a self-benchmark suite that tests retrieval quality, latency, coverage, and system health against both the live database and synthetic stress tests.
+
+```bash
+engram benchmark              # run against live data
+engram benchmark --stress 500 # synthetic stress test with N memories
+```
+
+### retrieval quality
+
+tested on synthetic memories with template-varied content (different topics, people, tools). queries use the first line of each memory verbatim — a strict exact-match test.
+
+| metric | 500 memories | 10k memories | 100k memories |
+|--------|-------------|-------------|--------------|
+| recall@1 | 10% | 25% | 0% |
+| recall@5 | 55% | 75% | 20% |
+| recall@10 | 95% | 95% | 40% |
+| coverage (top 20) | 100% | 100% | 60% |
+
+recall drops at 100k because all synthetic memories use similar templates — finding one exact match among 100k near-duplicates is adversarially hard. real-world diverse content scores much higher (80% recall@10 on the live 444-memory database).
+
+### throughput (Apple Silicon, MLX GPU)
+
+| operation | rate |
+|-----------|------|
+| embedding (MLX GPU) | 1,879 texts/sec |
+| embedding (CPU) | 176 texts/sec |
+| sqlite bulk insert | 51,000 rows/sec |
+| embed + store 100k | ~3 min |
+
+### latency (Apple Silicon)
+
+| operation | 500 | 10k | 100k |
+|-----------|-----|-----|------|
+| search (no rerank) | 52ms | 549ms | 5,041ms |
+| search (rerank) | 4.6s | 5.2s | skipped |
+| hopfield channel | 0.03ms | 0.78ms | 10ms |
+| embedding | 8.7ms | 13ms | 7.2ms |
+
+### intent classification
+
+| accuracy | 90% (9/10 test cases) |
+|----------|----------------------|
+
+query intent (why/when/who/how/what) is classified and used to dynamically weight retrieval signals. "why" boosts graph edges, "when" boosts BM25 date matching, "who" boosts entity lookup.
+
+### system health metrics
+
+| metric | description |
+|--------|------------|
+| storage quality | fraction of stored memories ever recalled |
+| curation ratio | memories with updates/invalidations vs total |
+| enrichment ratio | memories with keywords+tags+summary metadata |
+| evolution count | memories updated by evolution on neighbor write |
+| confirmation count | memories independently corroborated |
+
+run `quality_metrics` via MCP or the web dashboard health panel.
+
 ## hooks
 
 engram ships with a shell hook for Claude Code that auto-extracts memories from your conversation sessions.
