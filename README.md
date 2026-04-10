@@ -6,7 +6,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 ## what it does
 
-**hybrid retrieval** — most memory tools just do cosine similarity and call it a day. engram runs three retrieval signals in parallel (BM25 keywords, dense embeddings, entity graph traversal), fuses them with reciprocal rank fusion (k=60, from [cormack et al. 2009](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)), then optionally reranks with a cross-encoder. the RRF paper showed this beats any individual signal by 4-5% on average, and that's held up in practice.
+**hybrid retrieval** — most memory tools just do cosine similarity and call it a day. engram runs four retrieval channels in parallel (BM25 keywords, dense embeddings, entity graph BFS with 1-hop traversal, Hopfield associative pattern completion), fuses them with intent-weighted reciprocal rank fusion (k=60, weights vary by query type — why/when/who/how/what), then applies temporal + importance boosting, cross-encoder reranking, deep MLP reranking, gaussian noise for beneficial variation, and a minimum score threshold gate. the full pipeline: dense + BM25 + graph + Hopfield → intent-weighted RRF → boost → cross-encoder → MLP reranker → noise + threshold.
 
 **memory layers** — five layers modeled after atkinson-shiffrin: working (ephemeral, auto-promotes to episodic after 30 min), episodic (events, experiences), semantic (permanent knowledge), procedural (decisions, error patterns, how-to), and codebase (compressed code knowledge — file trees, function signatures, dependency graphs). memories promote upward when they prove useful and decay if nobody accesses them. 30-day half-life on episodic, infinite on semantic.
 
@@ -40,21 +40,26 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **adversarial belief probing** — during the dream cycle, randomly sample old semantic/procedural memories and challenge them: "is this still true?" beliefs that fail the probe get importance reduced. prevents fossilized false beliefs. from the March 2026 survey on [autonomous agent memory](https://arxiv.org/abs/2603.07670).
 
-**61 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**63 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
-five stages — three parallel signals, fused, boosted, and reranked:
+eight stages — four parallel channels, intent-weighted fusion, boosted, reranked, gated:
 
 ```
 query
-  ├── dense cosine similarity (bge-small-en-v1.5, 384-dim)  → top 3k candidates
-  ├── BM25 via sqlite FTS5 (content + hypothetical queries)  → top 3k candidates
-  └── entity graph traversal (extracted entities → memories)  → top k candidates
+  │
+  ├── intent classification (why/when/who/how/what)
+  │         → dynamic signal weights per intent type
+  │
+  ├── dense cosine similarity (bge-small-en-v1.5, 384-dim)     → top 3k candidates
+  ├── BM25 via sqlite FTS5 (content + hypothetical queries)     → top 3k candidates
+  ├── entity graph BFS (1-hop traversal, strength-weighted)     → top k candidates
+  └── Hopfield associative (pattern completion, β=8.0)          → top k candidates
            │
            ▼
-     reciprocal rank fusion (k=60)
-     score = Σ 1/(60 + rank) across all signals
+     intent-weighted reciprocal rank fusion (k=60)
+     score = Σ w_intent · 1/(60 + rank) across 4 channels
            │
            ▼
      temporal + importance boosting
@@ -69,10 +74,14 @@ query
      learned relevance from historical access patterns, <1ms
            │
            ▼
+     gaussian noise (ACT-R, σ=0.02) + threshold gate
+     beneficial variation + minimum score cutoff
+           │
+           ▼
      final top-k results
 ```
 
-**deep retrieval** — optional 5th stage: a learned 2-layer MLP reranker trained on actual access patterns. which memories get accessed after being returned in search results? that signal teaches the reranker what's useful vs what's just semantically similar. takes 10 features (cosine similarity, importance, access count, age, layer one-hot, retention score) and outputs a relevance prediction. train with `train_reranker`, model persists to disk next to the database. runs automatically on every `recall` once trained. lightweight — adds <1ms per query.
+**deep retrieval** — optional 7th stage: a learned 2-layer MLP reranker trained on actual access patterns. which memories get accessed after being returned in search results? that signal teaches the reranker what's useful vs what's just semantically similar. takes 10 features (cosine similarity, importance, access count, age, layer one-hot, retention score) and outputs a relevance prediction. train with `train_reranker`, model persists to disk next to the database. runs automatically on every `recall` once trained. lightweight — adds <1ms per query. after the MLP, a small gaussian noise term (σ=0.02, [ACT-R](https://dl.acm.org/doi/10.1145/3765766.3765803) inspired) provides beneficial retrieval variation, and a configurable minimum score threshold gates out garbage results.
 
 **task-aware skill selection** — `get_skills` decides whether to inject procedural knowledge and which 2-3 items to surface. three-stage gate: (1) need assessment via query surprise + domain coverage, (2) selection of top procedural memories by adaptive relevance threshold, (3) calibration with confidence scoring that filters borderline matches. based on [SkillsBench](https://arxiv.org/abs/2602.12670) finding that focused skills (+16.2pp) beat comprehensive docs (-2.9pp), and the [AGENTS.md evaluation](https://arxiv.org/abs/2602.11988) showing static context files reduce performance. the system knows when to inject (unfamiliar domain + relevant procedures = high confidence) and when to shut up (model already knows + no specific procedures = skip).
 
@@ -84,13 +93,15 @@ memories aren't static. they move between layers based on how useful they turn o
 
 **surprise-based importance** — at write time, every new memory is compared against existing embeddings using k-NN cosine distance (k=5). novel memories (far from anything stored) get their importance boosted up to +0.3. redundant memories (close to existing) get importance reduced and are flagged as potential duplicates. the surprise score is stored in metadata so you can audit it later. this is inspired by the [Titans paper](https://arxiv.org/abs/2501.00663) (Behrouz et al., Google) where memory updates are proportional to surprise — the gradient of the loss function. the `remember` tool now returns a `surprise` field (0-1) and warns when near-duplicates are detected.
 
-**importance scoring** uses 7 factors:
+**importance scoring** uses 9 factors:
 - base importance (set at creation, 0.0-1.0, adjusted by surprise at write time)
 - access frequency (log scale, how often it's been recalled)
-- recency (exponential decay, 30-day half-life)
+- recency (exponential decay, trust-weighted half-life)
 - emotional valence (strong emotions = more memorable)
 - stability (accessed consistently over time vs burst)
 - layer boost (semantic memories weighted higher)
+- source trust (human=1.0, AI=0.7, interaction=0.6, ingest=0.5, dream=0.4)
+- confirmation count (independently corroborated facts get boosted)
 - combined into a weighted composite score
 
 **promotion** — episodic memories that hit importance >= 0.7 and access count >= 5 get promoted to semantic (permanent). working memories auto-promote to episodic after 30 minutes or 2 accesses. the sweep runs on every `recall` call so it's basically free.
@@ -102,9 +113,11 @@ memories aren't static. they move between layers based on how useful they turn o
 - `huber` (default): matches L2 near-term, transitions to linear for old memories. robust to burst-then-quiet access patterns — old-but-once-hot memories get a gentler transition instead of an infinite long tail. `huber_delta` controls the transition point.
 - `elastic` (L1+L2): sparse retention. strongly-held memories stay near full strength, weakly-held ones decay faster. produces cleaner separation between keepers and forgettables. `elastic_l1_ratio` controls the L1/L2 blend.
 
-all modes include access reinforcement — each recall strengthens retention (spaced repetition effect, log-scaled, capped at +0.3). after 90 days, if retention < 0.15, importance < 0.3, and access count < 3, the memory gets soft-deleted. semantic, procedural, and pinned memories don't decay.
+all modes include access reinforcement — each recall strengthens retention (spaced repetition effect, log-scaled, capped at +0.3). **trust-weighted**: low-trust sources (auto-extracted, dream-generated) decay up to 3x faster than human-authored memories (`λ_eff = λ · (1 + κ·(1 - trust))`, κ=2.0, from [SuperLocalMemory V3.3](https://arxiv.org/abs/2604.04514)). after 90 days, if retention < 0.15, importance < 0.3, and access count < 3, the memory gets soft-deleted. semantic, procedural, and pinned memories don't decay.
 
-**consolidation** (dream cycle) — clusters similar memories by embedding distance, summarizes clusters of 5+, generates peer cards for entities with enough data, archives low-value old memories. now includes cross-domain synthesis: finds entity pairs in different contexts that aren't directly linked but share moderate embedding similarity (0.75-0.90), then uses an LLM to check for genuine non-obvious connections. confirmed bridges become semantic memories linking both entities with a SYNTHESIZED_WITH relationship. run manually with `engram consolidate` or the MCP `consolidate` tool.
+**embedding compression** — as memories age and retention drops, their embeddings can be quantized to save storage: active (R>0.8) = 32-bit float, warm = 8-bit (3.9x compression, 0.9999 cosine fidelity), cold = 4-bit (7.6x, 0.97 fidelity), archive = 2-bit (14.6x, 0.59 fidelity). uses Fisher-Rao Quantization-Aware Distance (FRQAD) for mixed-precision comparison — inflates variance proportional to quantization loss to prevent false similarity. run with `compress_embeddings`.
+
+**consolidation** (dream cycle) — 7-step pipeline: (1) apply forgetting curve with trust-weighted retention, (2) cluster similar memories by embedding distance and merge clusters of 5+, (3) generate peer cards for entities with enough data, (4) cross-domain synthesis — find entity pairs in different contexts with moderate embedding similarity (0.75-0.90), LLM-confirm genuine connections, create SYNTHESIZED_WITH bridges, (5) adversarial belief probing — randomly sample old semantic/procedural memories and challenge them ("is this still true?"), reduce importance on invalidated beliefs, (6) drift detection — validate memory claims against filesystem, auto-invalidate dead references, (7) prune old access logs and events. run manually with `engram consolidate` or the MCP `consolidate` tool.
 
 ## entity graph
 
@@ -231,7 +244,7 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 60 tools:
+restart claude code. you get 63 tools:
 
 **recall & search**
 
@@ -306,6 +319,9 @@ restart claude code. you get 60 tools:
 | `batch_tag` | add tags to all memories matching a search query |
 | `train_reranker` | train the deep MLP reranker on access patterns |
 | `reranker_status` | check if the deep reranker is trained |
+| `compress_embeddings` | lifecycle-aware quantization (32/8/4/2-bit) with FRQAD distance metric |
+| `detect_communities` | label propagation over entity graph, optional LLM summaries |
+| `quality_metrics` | storage quality ratio, curation ratio, enrichment coverage |
 
 **conversations & sessions**
 
@@ -451,10 +467,13 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── evolution.py      # memory enrichment, evolution, CRUD classification, trust scoring, canonicalization
+├── evolution.py      # memory enrichment, evolution, CRUD classification, trust scoring, canonicalization, causal parents
 ├── drift.py          # memory drift detection — claim extraction, filesystem verification, drift scoring
 ├── patterns.py       # session pattern extraction — distill procedural knowledge from work
-├── mcp_server.py     # 61-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── quantize.py       # lifecycle embedding compression (32/8/4/2-bit) with FRQAD distance metric
+├── communities.py    # label propagation community detection + LLM summaries over entity graph
+├── hopfield.py       # Hopfield associative retrieval channel — pattern completion via modern Hopfield network
+├── mcp_server.py     # 63-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
