@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS memories (
     emotional_valence REAL DEFAULT 0.0,
     chunk_hash TEXT NOT NULL,
     metadata TEXT DEFAULT '{}',
-    forgotten INTEGER DEFAULT 0
+    forgotten INTEGER DEFAULT 0,
+    previous_memory_id TEXT DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer);
@@ -159,8 +160,9 @@ CREATE TABLE IF NOT EXISTS relationships (
     evidence_count INTEGER DEFAULT 1,
     created_at REAL NOT NULL,
     last_seen REAL NOT NULL,
-    valid_from REAL,
-    valid_to REAL,
+    valid_from REAL DEFAULT NULL,
+    valid_to REAL DEFAULT NULL,
+    embedding BLOB DEFAULT NULL,
     PRIMARY KEY (source_entity_id, target_entity_id, relation_type)
 );
 
@@ -237,8 +239,10 @@ class Store:
     def _migrate(self):
         """Add new columns to existing databases without breaking them."""
         migrations = [
-            ("memories", "previous_memory_id", "TEXT"),
-            ("relationships", "embedding", "BLOB"),
+            ("memories", "previous_memory_id", "TEXT DEFAULT NULL"),
+            ("relationships", "embedding", "BLOB DEFAULT NULL"),
+            ("relationships", "valid_from", "REAL DEFAULT NULL"),
+            ("relationships", "valid_to", "REAL DEFAULT NULL"),
         ]
         for table, column, coltype in migrations:
             try:

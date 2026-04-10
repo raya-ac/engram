@@ -379,6 +379,141 @@ def _bench_graph(store: Store) -> dict:
     }
 
 
+def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict:
+    """Run benchmark on a fresh temp DB with synthetic data.
+
+    Creates n_memories across all layers with realistic content,
+    then runs the full benchmark suite against it.
+    """
+    import tempfile
+    import uuid
+    import os
+
+    if config is None:
+        config = Config.load()
+
+    # create temp DB
+    tmp_dir = tempfile.mkdtemp(prefix="engram_bench_")
+    tmp_db = os.path.join(tmp_dir, "bench.db")
+    config._db_path_override = tmp_db
+
+    store = Store(config)
+    store.init_db()
+
+    print(f"Creating {n_memories} synthetic memories in {tmp_db}...")
+
+    # synthetic content pools
+    TOPICS = [
+        "authentication", "database", "deployment", "testing", "API design",
+        "caching", "logging", "monitoring", "security", "performance",
+        "React components", "TypeScript", "Python", "Docker", "Kubernetes",
+        "CI/CD pipeline", "error handling", "user onboarding", "payments",
+        "search indexing", "file uploads", "webhooks", "rate limiting",
+        "session management", "email notifications", "background jobs",
+    ]
+    PEOPLE = ["Ari", "Alex", "Sam", "Jordan", "Taylor", "Morgan", "Casey"]
+    TOOLS = ["Flask", "Next.js", "PostgreSQL", "Redis", "Stripe", "AWS", "Vercel", "Docker"]
+    ACTIONS = [
+        "implemented", "fixed a bug in", "refactored", "debugged", "deployed",
+        "reviewed", "documented", "optimized", "tested", "migrated",
+    ]
+    LAYERS = ["episodic", "episodic", "episodic", "semantic", "procedural"]
+    SOURCES = ["remember:human", "remember:human", "remember:ai", "ingest", "interaction"]
+
+    from engram.store import Memory, MemoryLayer, SourceType
+    from engram.embeddings import embed_documents
+    from engram.entities import process_entities_for_memory
+
+    # batch embed for speed
+    contents = []
+    memories = []
+    for i in range(n_memories):
+        topic = random.choice(TOPICS)
+        person = random.choice(PEOPLE)
+        tool = random.choice(TOOLS)
+        action = random.choice(ACTIONS)
+        layer = random.choice(LAYERS)
+        source = random.choice(SOURCES)
+
+        # generate varied content
+        templates = [
+            f"{person} {action} the {topic} system using {tool}. This involved changes to the core module and required updating the configuration.",
+            f"Decision: use {tool} for {topic} instead of alternatives. Rationale: better ecosystem support, {person} has experience with it.",
+            f"Error in {topic}: {tool} connection timeout after deploy. Fix: increase pool size and add retry logic. Prevention: always test with production-like load.",
+            f"The {topic} architecture uses {tool} as the primary backend. Key constraint: all writes must go through the service layer, never direct DB access.",
+            f"Meeting with {person} about {topic} roadmap. Agreed to prioritize {tool} integration before the next release. Timeline: 2 weeks.",
+            f"{person} discovered that {topic} performance degrades when {tool} cache is cold. Added warmup step to deployment pipeline.",
+        ]
+        content = random.choice(templates)
+        # add some unique identifier so we can find it
+        content += f" [ref:{i}]"
+
+        mem = Memory(
+            id=str(uuid.uuid4()),
+            content=content,
+            source_type=source,
+            layer=layer,
+            importance=0.3 + random.random() * 0.5,
+            created_at=time.time() - random.randint(0, 90) * 86400,
+            emotional_valence=random.uniform(-0.3, 0.3),
+        )
+        mem.last_accessed = mem.created_at + random.randint(0, 30) * 86400
+        mem.access_count = random.randint(0, 20)
+        contents.append(content)
+        memories.append(mem)
+
+    # batch embed
+    print("Embedding...")
+    batch_size = 64
+    all_embeddings = []
+    for i in range(0, len(contents), batch_size):
+        batch = contents[i:i+batch_size]
+        embs = embed_documents(batch, config.embedding_model)
+        all_embeddings.append(embs)
+    all_embeddings = np.vstack(all_embeddings)
+
+    # store
+    print("Storing...")
+    for i, mem in enumerate(memories):
+        if i < len(all_embeddings):
+            mem.embedding = all_embeddings[i]
+        store.save_memory(mem)
+        # extract entities for a small subset (uses regex, not LLM)
+        if i < 50:
+            try:
+                process_entities_for_memory(store, mem.id, mem.content)
+            except Exception:
+                pass
+
+    print(f"Created {n_memories} memories, running benchmark...\n")
+
+    # override the store for benchmark
+    results = {}
+    results["retrieval"] = _bench_retrieval(store, config)
+    results["channels"] = _bench_channels(store, config)
+    results["intent"] = _bench_intent()
+    results["importance"] = _bench_importance(store, config)
+    results["retention"] = _bench_retention(store, config)
+    results["trust"] = _bench_trust(store)
+    results["latency"] = _bench_latency(store, config)
+    results["coverage"] = _bench_coverage(store, config)
+    results["enrichment"] = _bench_enrichment(store)
+    results["graph"] = _bench_graph(store)
+    results["db_path"] = tmp_db
+    results["n_memories"] = n_memories
+
+    store.close()
+
+    # cleanup
+    try:
+        os.remove(tmp_db)
+        os.rmdir(tmp_dir)
+    except Exception:
+        pass
+
+    return results
+
+
 def print_benchmark(results: dict):
     """Pretty-print benchmark results."""
     print("\n\033[1m=== ENGRAM BENCHMARK ===\033[0m\n")
