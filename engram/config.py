@@ -66,7 +66,7 @@ class Config:
     db_path: str = "~/.local/share/engram/memory.db"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    embedding_backend: str = "auto"  # auto | mlx | sentence_transformers
+    embedding_backend: str = "auto"  # auto | mlx | sentence_transformers | voyage | openai | gemini
     embedding_dim: int = 384
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)

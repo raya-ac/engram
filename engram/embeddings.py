@@ -1,13 +1,17 @@
 """Multi-backend embedding and cross-encoder reranking.
 
 Backends:
-  - sentence_transformers (default): CPU, works everywhere
-  - mlx: Apple Silicon GPU via MLX, 10-50x faster for batch operations
+  - auto: picks mlx > sentence_transformers for local models
+  - mlx: Apple Silicon GPU via MLX (local models only)
+  - sentence_transformers: CPU (local models only)
+  - voyage: Voyage AI API (voyage-3.5, voyage-3.5-lite, voyage-code-3, etc.)
+  - openai: OpenAI API (text-embedding-3-small, text-embedding-3-large)
+  - gemini: Google Gemini API (gemini-embedding-001)
 
 Configurable via config.yaml:
-  embedding_backend: sentence_transformers | mlx
-  embedding_model: BAAI/bge-small-en-v1.5  (or any sentence-transformers model)
-  cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  embedding_backend: auto | mlx | sentence_transformers | voyage | openai | gemini
+  embedding_model: BAAI/bge-small-en-v1.5  (local) | voyage-3.5 (API) | text-embedding-3-small (API)
+  embedding_dim: 384  (auto-detected from model if not set)
 """
 
 from __future__ import annotations
@@ -31,13 +35,59 @@ _bi_encoder = None
 _cross_encoder = None
 _mlx_model = None
 _mlx_tokenizer = None
-_backend = None  # auto-detected or set via config
+_backend = None
 _models_warmed = False
 
+# known model → dim mappings (so we don't need a probe call)
+MODEL_DIMS = {
+    # local
+    "BAAI/bge-small-en-v1.5": 384,
+    "BAAI/bge-base-en-v1.5": 768,
+    "BAAI/bge-large-en-v1.5": 1024,
+    "BAAI/bge-m3": 1024,
+    "nomic-ai/nomic-embed-text-v1.5": 768,
+    # voyage
+    "voyage-3.5": 1024,
+    "voyage-3.5-lite": 1024,
+    "voyage-3-large": 1024,
+    "voyage-3-lite": 512,
+    "voyage-code-3": 1024,
+    "voyage-finance-2": 1024,
+    "voyage-law-2": 1024,
+    # openai
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    # gemini
+    "gemini-embedding-001": 768,
+    "text-embedding-004": 768,
+}
 
-def _detect_backend() -> str:
+# which backend a model needs
+MODEL_BACKENDS = {
+    "voyage-3.5": "voyage", "voyage-3.5-lite": "voyage",
+    "voyage-3-large": "voyage", "voyage-3-lite": "voyage",
+    "voyage-code-3": "voyage", "voyage-finance-2": "voyage",
+    "voyage-law-2": "voyage",
+    "text-embedding-3-small": "openai", "text-embedding-3-large": "openai",
+    "text-embedding-ada-002": "openai",
+    "gemini-embedding-001": "gemini", "text-embedding-004": "gemini",
+}
+
+
+def get_model_dim(model_name: str) -> int | None:
+    """Get embedding dimension for a known model. Returns None if unknown."""
+    return MODEL_DIMS.get(model_name)
+
+
+def _detect_backend(model_name: str | None = None) -> str:
     """Auto-detect best available backend."""
     global _backend
+
+    # if model implies a specific backend, use it
+    if model_name and model_name in MODEL_BACKENDS:
+        return MODEL_BACKENDS[model_name]
+
     if _backend:
         return _backend
     try:
@@ -49,10 +99,11 @@ def _detect_backend() -> str:
 
 
 def set_backend(backend: str):
-    """Override the embedding backend. Call before any embedding operations."""
+    """Override the embedding backend."""
     global _backend, _bi_encoder, _mlx_model, _mlx_tokenizer
-    if backend not in ("sentence_transformers", "mlx"):
-        raise ValueError(f"Unknown backend: {backend}. Use 'sentence_transformers' or 'mlx'")
+    valid = ("sentence_transformers", "mlx", "voyage", "openai", "gemini")
+    if backend not in valid:
+        raise ValueError(f"Unknown backend: {backend}. Use one of: {valid}")
     _backend = backend
     _bi_encoder = None
     _mlx_model = None
@@ -60,24 +111,25 @@ def set_backend(backend: str):
 
 
 def get_backend() -> str:
-    """Return the current embedding backend."""
     return _detect_backend()
 
 
 def warmup(bi_model: str = "BAAI/bge-small-en-v1.5",
-           ce_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+           ce_model: str | None = None):
     """Pre-load models so first query isn't slow."""
     global _models_warmed
-    backend = _detect_backend()
+    backend = _detect_backend(bi_model)
     if backend == "mlx":
         _get_mlx_model(bi_model)
-    else:
+    elif backend == "sentence_transformers":
         _get_bi_encoder(bi_model)
-    _get_cross_encoder(ce_model)
+    # API backends don't need warmup
+    if ce_model:
+        _get_cross_encoder(ce_model)
     _models_warmed = True
 
 
-# --- Sentence Transformers backend (CPU) ---
+# ── Sentence Transformers backend (CPU) ──────────────────────────
 
 def _get_bi_encoder(model_name: str = "BAAI/bge-small-en-v1.5"):
     global _bi_encoder
@@ -90,7 +142,6 @@ def _get_bi_encoder(model_name: str = "BAAI/bge-small-en-v1.5"):
 
 
 def _embed_st(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
-    """Embed via sentence-transformers (CPU)."""
     model = _get_bi_encoder(model_name)
     if is_query:
         texts = [QUERY_PREFIX + t for t in texts]
@@ -99,10 +150,9 @@ def _embed_st(texts: list[str], model_name: str, is_query: bool, normalize: bool
     return np.array(embeddings, dtype=np.float32)
 
 
-# --- MLX backend (Apple Silicon GPU via mlx-embeddings) ---
+# ── MLX backend (Apple Silicon GPU) ─────────────────────────────
 
 def _get_mlx_model(model_name: str = "BAAI/bge-small-en-v1.5"):
-    """Load model via mlx-embeddings for native GPU inference."""
     global _mlx_model, _mlx_tokenizer
     if _mlx_model is not None:
         return _mlx_model, _mlx_tokenizer
@@ -115,7 +165,6 @@ def _get_mlx_model(model_name: str = "BAAI/bge-small-en-v1.5"):
 
 
 def _embed_mlx(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
-    """Embed via mlx-embeddings (Apple Silicon GPU). ~2000 texts/sec."""
     from mlx_embeddings.utils import generate
 
     model, tokenizer = _get_mlx_model(model_name)
@@ -123,7 +172,6 @@ def _embed_mlx(texts: list[str], model_name: str, is_query: bool, normalize: boo
     if is_query:
         texts = [QUERY_PREFIX + t for t in texts]
 
-    # mlx-embeddings handles batching internally
     batch_size = 1024
     all_embeddings = []
 
@@ -140,7 +188,110 @@ def _embed_mlx(texts: list[str], model_name: str, is_query: bool, normalize: boo
     return np.vstack(all_embeddings).astype(np.float32)
 
 
-# --- Public API ---
+# ── Voyage AI backend ───────────────────────────────────────────
+
+def _embed_voyage(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
+    """Embed via Voyage AI API. Requires VOYAGE_API_KEY env var."""
+    try:
+        import voyageai
+    except ImportError:
+        raise ImportError("voyageai not installed: pip install voyageai")
+
+    api_key = os.environ.get("VOYAGE_API_KEY")
+    if not api_key:
+        raise ValueError("VOYAGE_API_KEY environment variable not set. Get one at https://dash.voyageai.com/")
+
+    vo = voyageai.Client(api_key=api_key)
+    input_type = "query" if is_query else "document"
+
+    # voyage API limit: 128 texts per call, 320k tokens total
+    batch_size = 128
+    all_embeddings = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        result = vo.embed(batch, model=model_name, input_type=input_type)
+        all_embeddings.extend(result.embeddings)
+
+    vecs = np.array(all_embeddings, dtype=np.float32)
+    if normalize:
+        norms = np.linalg.norm(vecs, axis=-1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        vecs = vecs / norms
+    return vecs
+
+
+# ── OpenAI backend ──────────────────────────────────────────────
+
+def _embed_openai(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
+    """Embed via OpenAI API. Requires OPENAI_API_KEY env var."""
+    try:
+        import openai
+    except ImportError:
+        raise ImportError("openai not installed: pip install openai")
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable not set")
+
+    client = openai.OpenAI(api_key=api_key)
+
+    # openai limit: 2048 texts per call
+    batch_size = 2048
+    all_embeddings = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        response = client.embeddings.create(input=batch, model=model_name)
+        batch_embs = [item.embedding for item in response.data]
+        all_embeddings.extend(batch_embs)
+
+    vecs = np.array(all_embeddings, dtype=np.float32)
+    if normalize:
+        norms = np.linalg.norm(vecs, axis=-1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        vecs = vecs / norms
+    return vecs
+
+
+# ── Gemini backend ──────────────────────────────────────────────
+
+def _embed_gemini(texts: list[str], model_name: str, is_query: bool, normalize: bool) -> np.ndarray:
+    """Embed via Google Gemini API. Requires GEMINI_API_KEY env var."""
+    try:
+        from google import genai
+    except ImportError:
+        raise ImportError("google-genai not installed: pip install google-genai")
+
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable not set")
+
+    client = genai.Client(api_key=api_key)
+    task = "RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT"
+
+    # gemini limit: 100 texts per call
+    batch_size = 100
+    all_embeddings = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        result = client.models.embed_content(
+            model=model_name,
+            contents=batch,
+            config={"task_type": task},
+        )
+        all_embeddings.extend([e.values for e in result.embeddings])
+
+    vecs = np.array(all_embeddings, dtype=np.float32)
+    if normalize:
+        norms = np.linalg.norm(vecs, axis=-1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        vecs = vecs / norms
+    return vecs
+
+
+# ── Public API ───────────────────────────────────────────────────
 
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
@@ -149,8 +300,14 @@ def embed_texts(texts: list[str], model_name: str = "BAAI/bge-small-en-v1.5",
                 is_query: bool = False, normalize: bool = True) -> np.ndarray:
     if not texts:
         return np.array([])
-    backend = _detect_backend()
-    if backend == "mlx":
+    backend = _detect_backend(model_name)
+    if backend == "voyage":
+        return _embed_voyage(texts, model_name, is_query, normalize)
+    elif backend == "openai":
+        return _embed_openai(texts, model_name, is_query, normalize)
+    elif backend == "gemini":
+        return _embed_gemini(texts, model_name, is_query, normalize)
+    elif backend == "mlx":
         return _embed_mlx(texts, model_name, is_query, normalize)
     return _embed_st(texts, model_name, is_query, normalize)
 

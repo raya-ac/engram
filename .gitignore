@@ -8,3 +8,7 @@ build/
 *.db-wal
 *.db-shm
 .claude/
+benchmarks/longmemeval/data/
+benchmarks/longmemeval/src/
+benchmarks/longmemeval/*.jsonl
+benchmarks/longmemeval/retrieval_logs/

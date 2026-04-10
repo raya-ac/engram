@@ -2,7 +2,7 @@
 
 a cognitive memory system that actually remembers things. built because flat markdown files don't scale and every "memory" tool i tried was either too simple (just embeddings) or too complex (needs redis + neo4j + a PhD).
 
-engram sits in the middle. one sqlite file, hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time. **95.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — second only to MemPalace's verbatim storage, ahead of every RAG and hierarchical memory system benchmarked.
+engram sits in the middle. one sqlite file, hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time. **98.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — highest published score, beating MemPalace (96.6%), Emergence AI (86%), and every other memory system benchmarked.
 
 ## what it does
 
@@ -164,6 +164,47 @@ pip install -e .
 needs python 3.11+. first run will download two small models (~100MB total):
 - `BAAI/bge-small-en-v1.5` (33MB) — embeddings
 - `cross-encoder/ms-marco-MiniLM-L-6-v2` (22MB) — reranking
+
+### optional: API embedding backends
+
+use cloud embedding APIs instead of (or alongside) local models:
+
+```bash
+pip install -e ".[voyage]"   # voyage-3.5, voyage-3.5-lite, voyage-code-3
+pip install -e ".[openai]"   # text-embedding-3-small, text-embedding-3-large
+pip install -e ".[gemini]"   # gemini-embedding-001
+pip install -e ".[api]"      # all three
+```
+
+set the API key and model in config.yaml or env vars:
+
+```bash
+export VOYAGE_API_KEY="your-key"    # get at https://dash.voyageai.com/
+export OPENAI_API_KEY="your-key"
+export GEMINI_API_KEY="your-key"
+```
+
+```yaml
+# config.yaml
+embedding_model: voyage-3.5         # auto-detects backend from model name
+embedding_dim: 1024                 # auto-detected if model is known
+```
+
+engram auto-detects the backend from the model name — `voyage-*` uses the Voyage API, `text-embedding-*` uses OpenAI, `gemini-*` uses Gemini. or set `embedding_backend` explicitly.
+
+supported models:
+
+| model | provider | dim | price/1M tokens | notes |
+|-------|----------|-----|-----------------|-------|
+| `BAAI/bge-small-en-v1.5` | local | 384 | free | default, runs on CPU or Apple GPU |
+| `voyage-3.5` | Voyage AI | 1024 | $0.18 | best retrieval quality, Anthropic recommended |
+| `voyage-3.5-lite` | Voyage AI | 1024 | $0.02 | 94% of 3.5 quality, budget option |
+| `voyage-code-3` | Voyage AI | 1024 | $0.18 | optimized for code |
+| `text-embedding-3-small` | OpenAI | 1536 | $0.02 | cheapest API option |
+| `text-embedding-3-large` | OpenAI | 3072 | $0.13 | highest dim |
+| `gemini-embedding-001` | Google | 768 | free tier | top MTEB retrieval score |
+
+switching models requires re-embedding existing memories (`engram index rebuild` after changing the model).
 
 ## quick start
 
@@ -430,26 +471,26 @@ engram uses HNSW + BM25 + RRF fusion against per-question session haystacks. no 
 
 | system | R@5 | method |
 |--------|-----|--------|
+| **engram v2** | **98.1%** | HNSW + BM25 + assistant BM25 + temporal boost + cross-encoder |
 | MemPalace (raw) | 96.6% | ChromaDB cosine, verbatim storage |
-| **engram (all turns)** | **95.1%** | HNSW + BM25 + RRF |
-| **engram (user only)** | **94.7%** | HNSW + BM25 + RRF |
+| engram v1 | 94.7% | HNSW + BM25 + RRF |
 | Emergence AI | 86.0% | RAG |
 | MemPalace (AAAK) | 84.2% | compressed storage |
 | EverMemOS | 83.0% | — |
 | TiMem | 76.9% | temporal hierarchical |
 
-per question type (user-only mode, 470 non-abstention questions):
+per question type (470 non-abstention questions):
 
 | type | n | R@5 | R@10 |
 |------|---|-----|------|
 | knowledge-update | 72 | 100.0% | 100.0% |
-| single-session-user | 64 | 98.4% | 100.0% |
-| multi-session | 121 | 96.7% | 99.2% |
-| temporal-reasoning | 127 | 92.9% | 97.6% |
-| single-session-assistant | 56 | 89.3% | 92.9% |
-| single-session-preference | 30 | 83.3% | 93.3% |
+| single-session-user | 64 | 100.0% | 100.0% |
+| multi-session | 121 | 99.2% | 99.2% |
+| temporal-reasoning | 127 | 96.9% | 97.6% |
+| single-session-assistant | 56 | 96.4% | 96.4% |
+| single-session-preference | 30 | 93.3% | 96.7% |
 
-indexing assistant turns closes the gap on `single-session-assistant` (89.3% → 100%) but adds noise that slightly hurts other categories. net: +0.4% overall.
+v2 adds three channels over v1: assistant-turn BM25 (weight 0.5), timestamp proximity boost, and cross-encoder reranking on top-20 candidates. the assistant channel catches answers in assistant responses without polluting the dense index. the temporal boost favors sessions closer to the question date. the cross-encoder rescores the top candidates jointly against the query.
 
 ### retrieval quality (synthetic)
 
@@ -588,7 +629,7 @@ everything lives in one sqlite file (`~/.local/share/engram/memory.db`). no exte
 engram/
 ├── store.py          # sqlite schema, CRUD, FTS5, entity graph (recursive CTEs), ANN lifecycle
 ├── ann_index.py      # HNSW approximate nearest neighbor index (hnswlib wrapper)
-├── embeddings.py     # bge-small-en-v1.5 + ms-marco cross-encoder, lazy loading
+├── embeddings.py     # multi-backend embeddings (mlx, sentence-transformers, voyage, openai, gemini) + cross-encoder
 ├── retrieval.py      # 5-stage hybrid pipeline (HNSW dense + BM25 + graph → RRF → boost → rerank → deep)
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
@@ -675,9 +716,10 @@ lives at `config.yaml` or `~/.config/engram/config.yaml`. env vars override ever
 
 ```yaml
 db_path: ~/.local/share/engram/memory.db
-embedding_model: BAAI/bge-small-en-v1.5
+embedding_model: BAAI/bge-small-en-v1.5   # or: voyage-3.5, text-embedding-3-small, gemini-embedding-001
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
-embedding_dim: 384
+embedding_backend: auto                   # auto | mlx | sentence_transformers | voyage | openai | gemini
+embedding_dim: 384                        # auto-detected from model name if known
 
 retrieval:
   top_k: 10
