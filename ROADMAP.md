@@ -68,9 +68,50 @@ Based on analysis of 15 recent papers (2025-2026) on AI agent memory systems.
 **What:** Replace or supplement importance scoring with ACT-R's base-level activation:
 `B_i = ln(Σ t_j^(-d))` where t_j is time since jth access and d=0.5 is decay.
 Also: spreading activation — when entity X is activated, boost connected entities by `S_ji * W_j`.
-**Impact:** Produces more human-like recall patterns than flat importance scores.
+Add probabilistic noise term ε (logistic, tunable scale) for beneficial retrieval variation.
+**Impact:** Produces more human-like recall patterns than flat importance scores. Noise term paradoxically improves dialogue naturalness.
 **Files:** `lifecycle.py`, `retrieval.py`
 **Effort:** Medium — new scoring function.
+
+### 9b. Trust-Weighted Decay (SuperLocalMemory V3.3)
+**Paper:** SuperLocalMemory (2604.04514)
+**What:** Different sources decay at different rates: `λ_eff = λ · (1 + κ·(1 - τ_source))`. Human-authored memories = high trust (slow decay). Auto-extracted = low trust (3x faster decay with κ=2.0). Also: confirmation count — memories corroborated by multiple independent sources get importance boost.
+**Formula:** `S(m) = max(S_min, α·log(1+access) + β·importance + γ·confirmations + δ·emotional_salience)`
+**Files:** `lifecycle.py` (retention), `store.py` (add confirmation_count column)
+**Effort:** Medium — source trust mapping + new column.
+
+### 9c. Reflection-Based Procedure Update (Mem^p)
+**Paper:** Mem^p (2508.06433)
+**What:** When a procedure fails (error stored via `remember_error`), don't just append — find and revise the existing procedure that led to it. Failed trajectories trigger in-place revision. Beats append-only by +0.7% on later tasks. Also: dual representation — store both concrete trajectory traces AND abstract scripts for each procedure.
+**Files:** `patterns.py`, `mcp_server.py` (remember_error)
+**Effort:** Medium — LLM call to find + revise existing procedure.
+
+### 9d. Retrieval Threshold Gate (ACT-R)
+**Paper:** ACT-R Inspired Memory (HAI 2025)
+**What:** Don't always return top-k. Gate by minimum activation score — if nothing exceeds threshold τ, return empty. Prevents returning stale/weak memories when nothing good matches.
+**Files:** `retrieval.py`
+**Effort:** Low — add threshold check after scoring.
+
+### 9e. Lifecycle-Aware Embedding Compression (SuperLocalMemory V3.3)
+**Paper:** SuperLocalMemory (2604.04514)
+**What:** As memories decay, quantize their embeddings to save storage:
+- Active (R > 0.8): 32-bit float
+- Warm (0.5 < R ≤ 0.8): 8-bit
+- Cold (0.2 < R ≤ 0.5): 4-bit
+- Archive (0.05 < R ≤ 0.2): 2-bit
+- Forgotten (R ≤ 0.05): deleted
+
+Use Fisher-Rao Quantization-Aware Distance (FRQAD) for mixed-precision comparison:
+`σ²_eff = σ²_obs · (32/bits)^κ` — inflate variance proportional to quantization loss.
+100% precision at distinguishing f32 from 4-bit (vs 85.6% for raw cosine).
+**Files:** `store.py`, `embeddings.py`, `lifecycle.py`
+**Effort:** High — quantization pipeline + FRQAD distance metric.
+
+### 9f. Hopfield Associative Channel (SuperLocalMemory V3.3)
+**Paper:** SuperLocalMemory (2604.04514)
+**What:** Content-addressable pattern completion: `ξ_new = X^T · softmax(β · X · ξ)`. Given a fragment, reconstruct the most likely full memory pattern. Different from vector similarity — it does pattern *completion* not just pattern *matching*. 7th retrieval channel alongside dense, BM25, graph, temporal, spreading activation, consolidation gists.
+**Files:** `retrieval.py`
+**Effort:** High — new retrieval channel + Hopfield implementation.
 
 ## Tier 3 — Transformative, High Effort
 
