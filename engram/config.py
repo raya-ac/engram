@@ -42,6 +42,20 @@ class LLMConfig:
 
 
 @dataclass
+class ANNConfig:
+    enabled: bool = True
+    m: int = 32
+    ef_construction: int = 200
+    ef_search: int = 100
+    max_elements: int = 500_000
+    index_path: str = "~/.local/share/engram/hnsw.index"
+
+    @property
+    def resolved_index_path(self) -> Path:
+        return Path(os.path.expanduser(self.index_path))
+
+
+@dataclass
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8420
@@ -58,6 +72,7 @@ class Config:
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    ann: ANNConfig = field(default_factory=ANNConfig)
 
     @property
     def resolved_db_path(self) -> Path:
@@ -104,5 +119,9 @@ class Config:
             for k, v in raw["web"].items():
                 if hasattr(cfg.web, k):
                     setattr(cfg.web, k, v)
+        if "ann" in raw:
+            for k, v in raw["ann"].items():
+                if hasattr(cfg.ann, k):
+                    setattr(cfg.ann, k, v)
 
         return cfg

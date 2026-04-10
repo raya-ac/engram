@@ -215,6 +215,7 @@ class Store:
         self.db_path = config.resolved_db_path
         self._conn: sqlite3.Connection | None = None
         self._embedding_cache: tuple[list[str], np.ndarray] | None = None
+        self.ann_index = None  # initialized in init_ann_index()
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -251,7 +252,55 @@ class Store:
             except Exception:
                 pass  # column already exists
 
+    def init_ann_index(self, background: bool = True):
+        """Initialize the ANN index — load from disk or rebuild."""
+        if not self.config.ann.enabled:
+            return
+        try:
+            from engram.ann_index import ANNIndex, HAS_HNSWLIB
+            if not HAS_HNSWLIB:
+                return
+        except ImportError:
+            return
+
+        ann = ANNIndex(
+            dim=self.config.embedding_dim,
+            m=self.config.ann.m,
+            ef_construction=self.config.ann.ef_construction,
+            ef_search=self.config.ann.ef_search,
+            max_elements=self.config.ann.max_elements,
+            index_path=str(self.config.ann.resolved_index_path),
+        )
+
+        if ann.load():
+            self.ann_index = ann
+        elif background:
+            import threading
+            self.ann_index = ann  # set now so it's available (not ready yet)
+            t = threading.Thread(target=self._rebuild_ann_blocking, daemon=True)
+            t.start()
+        else:
+            self.ann_index = ann
+            self._rebuild_ann_blocking()
+
+    def _rebuild_ann_blocking(self):
+        """Rebuild ANN index from all embeddings in DB."""
+        if self.ann_index is None:
+            return
+        ids, vecs = self.get_all_embeddings()
+        if len(ids) == 0:
+            self.ann_index._ready = True
+            return
+        self.ann_index.build(ids, vecs)
+        self.ann_index.save()
+
+    def rebuild_ann_index(self):
+        """Public API: full synchronous rebuild + save."""
+        self._rebuild_ann_blocking()
+
     def close(self):
+        if self.ann_index and self.ann_index.ready:
+            self.ann_index.save()
         if self._conn:
             self._conn.close()
             self._conn = None
@@ -309,6 +358,8 @@ class Store:
         )
 
         self._embedding_cache = None  # invalidate cache
+        if self.ann_index and self.ann_index.ready and mem.embedding is not None:
+            self.ann_index.add(mem.id, mem.embedding)
         self._emit_event("memory_write", memory_id=mem.id,
                          detail=f"layer={mem.layer} source={mem.source_type}")
         self.conn.commit()
@@ -385,6 +436,8 @@ class Store:
 
     def forget_memory(self, memory_id: str):
         self.conn.execute("UPDATE memories SET forgotten = 1 WHERE id = ?", (memory_id,))
+        if self.ann_index and self.ann_index.ready:
+            self.ann_index.remove(memory_id)
         self._emit_event("memory_forget", memory_id=memory_id)
         self.conn.commit()
 

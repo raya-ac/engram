@@ -30,12 +30,15 @@ def create_app(config: Config | None = None) -> FastAPI:
     from engram.web.routes import router
     app.include_router(router)
 
-    # warm up models in background thread so first query is fast
+    # warm up models + ANN index in background thread so first query is fast
     def _warmup():
         from engram.embeddings import warmup
         warmup(config.embedding_model, config.cross_encoder_model)
-        # also prime the embedding cache
-        store.get_all_embeddings()
+        # init ANN index (loads from disk or rebuilds)
+        store.init_ann_index(background=False)
+        # prime embedding cache as fallback
+        if not (store.ann_index and store.ann_index.ready):
+            store.get_all_embeddings()
 
     threading.Thread(target=_warmup, daemon=True).start()
 

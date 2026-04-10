@@ -30,51 +30,54 @@ def compute_surprise(embedding: np.ndarray, store: Store,
             "importance_modifier": float (-0.3 to +0.3, additive adjustment),
         }
     """
-    ids, vecs = store.get_all_embeddings()
+    # fast path: ANN index
+    if store.ann_index and store.ann_index.ready and store.ann_index.count > 0:
+        hits = store.ann_index.search(embedding, top_k=k)
+        if not hits:
+            return {
+                "surprise": 1.0, "nearest_distance": 1.0,
+                "nearest_id": None, "is_duplicate": False,
+                "k_distances": [], "importance_modifier": 0.15,
+            }
 
-    # no existing memories → maximum surprise
-    if len(ids) == 0:
-        return {
-            "surprise": 1.0,
-            "nearest_distance": 1.0,
-            "nearest_id": None,
-            "is_duplicate": False,
-            "k_distances": [],
-            "importance_modifier": 0.15,
-        }
+        k_similarities = [sim for _, sim in hits]
+        k_distances = [1.0 - s for s in k_similarities]
+        nearest_id = hits[0][0]
+        nearest_sim = k_similarities[0]
+        nearest_dist = k_distances[0]
+        nearest_ids = [mid for mid, _ in hits]
+    else:
+        # fallback: brute-force
+        ids, vecs = store.get_all_embeddings()
 
-    # cosine similarity (vectors are pre-normalized)
-    similarities = vecs @ embedding
-    k_actual = min(k, len(ids))
-    top_indices = np.argsort(similarities)[::-1][:k_actual]
+        if len(ids) == 0:
+            return {
+                "surprise": 1.0, "nearest_distance": 1.0,
+                "nearest_id": None, "is_duplicate": False,
+                "k_distances": [], "importance_modifier": 0.15,
+            }
 
-    k_similarities = [float(similarities[i]) for i in top_indices]
-    k_distances = [1.0 - s for s in k_similarities]
+        similarities = vecs @ embedding
+        k_actual = min(k, len(ids))
+        top_indices = np.argsort(similarities)[::-1][:k_actual]
 
-    nearest_idx = top_indices[0]
-    nearest_sim = k_similarities[0]
-    nearest_dist = k_distances[0]
+        k_similarities = [float(similarities[i]) for i in top_indices]
+        k_distances = [1.0 - s for s in k_similarities]
+        nearest_id = ids[top_indices[0]]
+        nearest_sim = k_similarities[0]
+        nearest_dist = k_distances[0]
+        nearest_ids = [ids[i] for i in top_indices]
 
-    # surprise = mean distance to k nearest neighbors
-    # high mean distance = novel content = high surprise
     mean_distance = float(np.mean(k_distances))
-
-    # map to 0-1 range with sigmoid-like curve
-    # most memories cluster around 0.2-0.5 distance
-    # we want surprise=0.5 at distance=0.35, steep around that
     surprise = _sigmoid(mean_distance, midpoint=0.35, steepness=10.0)
-
-    # importance modifier: -0.3 (very redundant) to +0.3 (very novel)
-    # linear map from surprise
     importance_modifier = (surprise - 0.5) * 0.6
-
     is_duplicate = nearest_sim >= dedup_threshold
 
     return {
         "surprise": round(surprise, 4),
         "nearest_distance": round(nearest_dist, 4),
-        "nearest_id": ids[nearest_idx],
-        "nearest_ids": [ids[i] for i in top_indices],
+        "nearest_id": nearest_id,
+        "nearest_ids": nearest_ids,
         "is_duplicate": is_duplicate,
         "k_distances": [round(d, 4) for d in k_distances],
         "importance_modifier": round(importance_modifier, 4),

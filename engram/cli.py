@@ -71,6 +71,10 @@ def main():
     p_patterns.add_argument("--threshold", type=float, default=0.25, help="Minimum novelty to store")
     p_patterns.add_argument("--dry-run", action="store_true", help="Preview patterns without storing")
 
+    # index
+    p_index = sub.add_parser("index", help="Manage ANN index")
+    p_index.add_argument("action", choices=["rebuild", "status"], help="Action to perform")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
@@ -96,6 +100,8 @@ def main():
         cmd_drift(args, config)
     elif args.command == "patterns":
         cmd_patterns(args, config)
+    elif args.command == "index":
+        cmd_index(args, config)
     elif args.command == "demo":
         from engram.demo import run_demo
         run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
@@ -360,6 +366,61 @@ def cmd_status(args, config: Config):
         print(f"  {layer}: {count}")
     print(f"\nEntities: {stats['entities']}")
     print(f"Relationships: {stats['relationships']}")
+
+    # ANN index status
+    index_path = config.ann.resolved_index_path
+    if index_path.exists():
+        size_mb = index_path.stat().st_size / (1024 * 1024)
+        print(f"\nANN Index: {index_path}")
+        print(f"  Size: {size_mb:.1f} MB")
+        meta_path = index_path.with_suffix(".meta.json")
+        if meta_path.exists():
+            import json as _json
+            meta = _json.loads(meta_path.read_text())
+            print(f"  Vectors: {meta.get('count', '?')}")
+            saved_at = meta.get("saved_at")
+            if saved_at:
+                import datetime
+                dt = datetime.datetime.fromtimestamp(saved_at)
+                print(f"  Last built: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    else:
+        print(f"\nANN Index: not built (run 'engram index rebuild')")
+
+    store.close()
+
+
+def cmd_index(args, config: Config):
+    from engram.store import Store
+
+    store = Store(config)
+    store.init_db()
+
+    if args.action == "rebuild":
+        print("Rebuilding ANN index...")
+        store.init_ann_index(background=False)
+        if store.ann_index and store.ann_index.ready:
+            print(f"  Indexed {store.ann_index.count} vectors")
+            print(f"  Saved to {config.ann.resolved_index_path}")
+        else:
+            print("  Failed — is hnswlib installed?")
+    elif args.action == "status":
+        index_path = config.ann.resolved_index_path
+        if index_path.exists():
+            meta_path = index_path.with_suffix(".meta.json")
+            if meta_path.exists():
+                import json as _json
+                meta = _json.loads(meta_path.read_text())
+                size_mb = index_path.stat().st_size / (1024 * 1024)
+                print(f"ANN Index: {index_path}")
+                print(f"  Vectors: {meta.get('count', '?')}")
+                print(f"  Size: {size_mb:.1f} MB")
+                print(f"  Next label: {meta.get('next_label', '?')}")
+            else:
+                print(f"ANN Index file exists but metadata missing")
+        else:
+            print("ANN Index: not built")
+            print(f"  Run: engram index rebuild")
+
     store.close()
 
 

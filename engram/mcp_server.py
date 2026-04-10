@@ -122,6 +122,7 @@ class MCPServer:
         self.config = config
         self.store = Store(config)
         self.store.init_db()
+        self.store.init_ann_index(background=True)
         self._session_id = str(uuid.uuid4())[:8]
         # deep reranker — persists model next to db
         model_path = config.resolved_db_path.parent / "reranker.npz"

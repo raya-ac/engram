@@ -6,7 +6,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 ## what it does
 
-**hybrid retrieval** — most memory tools just do cosine similarity and call it a day. engram runs four retrieval channels in parallel (BM25 keywords, dense embeddings, entity graph BFS with 1-hop traversal, Hopfield associative pattern completion), fuses them with intent-weighted reciprocal rank fusion (k=60, weights vary by query type — why/when/who/how/what), then applies temporal + importance boosting, cross-encoder reranking, deep MLP reranking, gaussian noise for beneficial variation, and a minimum score threshold gate. the full pipeline: dense + BM25 + graph + Hopfield → intent-weighted RRF → boost → cross-encoder → MLP reranker → noise + threshold.
+**hybrid retrieval** — most memory tools just do cosine similarity and call it a day. engram runs four retrieval channels in parallel (BM25 keywords, dense embeddings via HNSW approximate nearest neighbors, entity graph BFS with 1-hop traversal, Hopfield associative pattern completion), fuses them with intent-weighted reciprocal rank fusion (k=60, weights vary by query type — why/when/who/how/what), then applies temporal + importance boosting, cross-encoder reranking, deep MLP reranking, gaussian noise for beneficial variation, and a minimum score threshold gate. the full pipeline: dense (HNSW) + BM25 + graph + Hopfield → intent-weighted RRF → boost → cross-encoder → MLP reranker → noise + threshold.
 
 **memory layers** — five layers modeled after atkinson-shiffrin: working (ephemeral, auto-promotes to episodic after 30 min), episodic (events, experiences), semantic (permanent knowledge), procedural (decisions, error patterns, how-to), and codebase (compressed code knowledge — file trees, function signatures, dependency graphs). memories promote upward when they prove useful and decay if nobody accesses them. 30-day half-life on episodic, infinite on semantic.
 
@@ -52,7 +52,7 @@ query
   ├── intent classification (why/when/who/how/what)
   │         → dynamic signal weights per intent type
   │
-  ├── dense cosine similarity (bge-small-en-v1.5, 384-dim)     → top 3k candidates
+  ├── dense HNSW search (bge-small-en-v1.5, 384-dim, hnswlib)  → top 3k candidates
   ├── BM25 via sqlite FTS5 (content + hypothetical queries)     → top 3k candidates
   ├── entity graph BFS (1-hop traversal, strength-weighted)     → top k candidates
   └── Hopfield associative (pattern completion, β=8.0)          → top k candidates
@@ -186,6 +186,12 @@ engram search "apple sandbox bypass" --rerank      # enables cross-encoder (slow
 ```bash
 engram remember "Ari prefers casual tone, swearing when it fits"
 engram remember "deploy command: npm run build && rsync" --layer procedural
+```
+
+### manage ANN index
+```bash
+engram index rebuild     # full rebuild from all embeddings
+engram index status      # check index size, vector count, last built
 ```
 
 ### check status
@@ -380,12 +386,27 @@ recall drops at 100k because all synthetic memories use similar templates — fi
 
 ### latency (Apple Silicon)
 
-| operation | 500 | 10k | 100k |
-|-----------|-----|-----|------|
-| search (no rerank) | 52ms | 549ms | 5,041ms |
-| search (rerank) | 4.6s | 5.2s | skipped |
-| hopfield channel | 0.03ms | 0.78ms | 10ms |
-| embedding | 8.7ms | 13ms | 7.2ms |
+| operation | brute-force | ANN (HNSW) |
+|-----------|------------|------------|
+| dense search (446 vecs) | 0.04ms | 0.11ms |
+| full pipeline (no rerank) | — | 20ms avg |
+| full pipeline (+ cross-encoder) | — | 320ms avg |
+| surprise gate (k-NN) | 0.20ms | 0.16ms |
+| ANN insert | — | 0.22ms |
+| ANN index save/load | — | 1.7ms / 9.1ms |
+| embedding | 9.5ms avg | — |
+
+scaling projection (dense search only):
+
+| vectors | brute-force | ANN (HNSW) | speedup |
+|---------|------------|------------|---------|
+| 1k | 0.1ms | 0.12ms | 1x |
+| 10k | 0.9ms | 0.16ms | 5x |
+| 100k | 8.7ms | 0.20ms | 45x |
+| 500k | 43.7ms | 0.22ms | 198x |
+| 1M | 87.3ms | 0.23ms | 377x |
+
+recall@10 accuracy: 100% (20/20 queries, ANN vs brute-force exact match)
 
 ### intent classification
 
@@ -509,9 +530,10 @@ everything lives in one sqlite file (`~/.local/share/engram/memory.db`). no exte
 
 ```
 engram/
-├── store.py          # sqlite schema, CRUD, FTS5, entity graph (recursive CTEs)
+├── store.py          # sqlite schema, CRUD, FTS5, entity graph (recursive CTEs), ANN lifecycle
+├── ann_index.py      # HNSW approximate nearest neighbor index (hnswlib wrapper)
 ├── embeddings.py     # bge-small-en-v1.5 + ms-marco cross-encoder, lazy loading
-├── retrieval.py      # 5-stage hybrid pipeline (dense + BM25 + graph → RRF → boost → rerank → deep)
+├── retrieval.py      # 5-stage hybrid pipeline (HNSW dense + BM25 + graph → RRF → boost → rerank → deep)
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
 ├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
@@ -630,6 +652,14 @@ llm:
 web:
   host: 127.0.0.1
   port: 8420
+
+ann:
+  enabled: true
+  m: 32                        # HNSW graph connectivity (higher = better recall, more memory)
+  ef_construction: 200         # build-time search depth (higher = better index quality)
+  ef_search: 100               # query-time search depth (higher = better recall, slower)
+  max_elements: 500000         # pre-allocated capacity
+  index_path: ~/.local/share/engram/hnsw.index
 ```
 
 ## license

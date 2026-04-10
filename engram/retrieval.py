@@ -216,6 +216,12 @@ def search(query: str, store: Store, config: Config | None = None,
 
 def _dense_search(query: str, store: Store, config: Config, limit: int) -> list[tuple[str, float]]:
     query_vec = embed_query(query, config.embedding_model)
+
+    # fast path: ANN index
+    if store.ann_index and store.ann_index.ready:
+        return store.ann_index.search(query_vec, top_k=limit)
+
+    # fallback: brute-force
     ids, vecs = store.get_all_embeddings()
     if not ids:
         return []
