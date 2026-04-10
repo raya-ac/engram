@@ -16,6 +16,7 @@ import numpy as np
 
 from engram.config import Config
 from engram.embeddings import embed_query, cosine_similarity_search, cross_encoder_rerank
+from engram.hopfield import hopfield_retrieve
 from engram.store import Store, Memory
 
 
@@ -86,16 +87,18 @@ def search(query: str, store: Store, config: Config | None = None,
     intent = classify_intent(query)
     weights = INTENT_WEIGHTS.get(intent, INTENT_WEIGHTS["what"])
 
-    # --- Stage 1: Parallel candidate generation ---
+    # --- Stage 1: Parallel candidate generation (4 channels) ---
     dense_candidates = _dense_search(query, store, config, k * rc.dense_multiplier)
     bm25_candidates = _bm25_search(query, store, k * rc.bm25_multiplier)
     graph_candidates = _graph_search(query, store, k)
+    hopfield_candidates = _hopfield_search(query, store, config, k)
 
     # --- Stage 2: RRF fusion with intent-weighted signals ---
     rrf_scores = _rrf_fuse(
-        [dense_candidates, bm25_candidates, graph_candidates],
+        [dense_candidates, bm25_candidates, graph_candidates, hopfield_candidates],
         k=rc.rrf_k,
-        signal_weights=[weights["dense"], weights["bm25"], weights["graph"]],
+        signal_weights=[weights["dense"], weights["bm25"], weights["graph"],
+                        weights.get("hopfield", 0.6)],
     )
     rrf_top = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:rc.rerank_candidates]
 
@@ -267,6 +270,15 @@ def _graph_search(query: str, store: Store, limit: int) -> list[tuple[str, float
         if mid not in seen or score > seen[mid]:
             seen[mid] = score
     return list(seen.items())[:limit]
+
+
+def _hopfield_search(query: str, store: Store, config: Config, limit: int) -> list[tuple[str, float]]:
+    """Hopfield associative channel — pattern completion from partial cue."""
+    try:
+        query_vec = embed_query(query, config.embedding_model)
+        return hopfield_retrieve(query_vec, store, beta=8.0, top_k=limit)
+    except Exception:
+        return []
 
 
 def _rrf_fuse(rankings: list[list[tuple[str, float]]], k: int = 60,

@@ -108,6 +108,8 @@ TOOLS = [
     # Pattern extraction
     {"name": "extract_patterns", "description": "Extract reusable procedural patterns from recent session activity — diary entries, new memories, errors, decisions. Checks novelty against existing procedural memories and stores only what's genuinely new.", "inputSchema": {"type": "object", "properties": {"hours": {"type": "number", "default": 4.0, "description": "How far back to look for session activity"}, "novelty_threshold": {"type": "number", "default": 0.25, "description": "Minimum novelty score (0-1) to store a pattern"}, "dry_run": {"type": "boolean", "default": False, "description": "If true, extract and score patterns but don't store them"}}}},
     # Negative knowledge
+    {"name": "compress_embeddings", "description": "Compress old memory embeddings based on retention — active=32bit, warm=8bit, cold=4bit, archive=2bit. Uses FRQAD for mixed-precision comparison. Saves storage without losing retrievability.", "inputSchema": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": True, "description": "Preview what would be compressed"}}}},
+    {"name": "detect_communities", "description": "Run label propagation over the entity graph to discover clusters. Generates community summaries for higher-level retrieval.", "inputSchema": {"type": "object", "properties": {"min_size": {"type": "integer", "default": 3, "description": "Minimum community size"}, "generate_summaries": {"type": "boolean", "default": False, "description": "Generate LLM summaries for communities"}}}},
     {"name": "quality_metrics", "description": "Memory system quality metrics — storage quality ratio (what % of stored memories get recalled), curation ratio (active maintenance vs passive accumulation), retrieval relevance. Based on AgeMem reward decomposition.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "remember_negative", "description": "Store explicit negative knowledge — what does NOT exist, what was deliberately excluded, what should NOT be done. Prevents future hallucinated recommendations. Examples: 'There is no caching layer in this project', 'We deliberately do not use Redux', 'The /admin endpoint was removed in v2'.", "inputSchema": {"type": "object", "properties": {"content": {"type": "string", "description": "What does NOT exist or should NOT be done"}, "context": {"type": "string", "description": "Why this negative fact matters — what mistake it prevents"}, "scope": {"type": "string", "description": "What project/system this applies to"}, "importance": {"type": "number", "default": 0.75}}, "required": ["content"]}},
 ]
@@ -214,6 +216,8 @@ class MCPServer:
             "extract_patterns": self._extract_patterns,
             "remember_negative": self._remember_negative,
             "quality_metrics": self._quality_metrics,
+            "compress_embeddings": self._compress_embeddings,
+            "detect_communities": self._detect_communities,
         }
         handler = handlers.get(name)
         if not handler:
@@ -1297,6 +1301,23 @@ class MCPServer:
             "evolved_memories": evolved,
             "confirmed_memories": confirmed,
         }
+
+    # --- Embedding compression ---
+
+    def _compress_embeddings(self, args: dict):
+        from engram.quantize import compress_old_embeddings
+        return compress_old_embeddings(self.store, self.config,
+                                        dry_run=args.get("dry_run", True))
+
+    # --- Community detection ---
+
+    def _detect_communities(self, args: dict):
+        from engram.communities import detect_communities, generate_community_summaries
+        result = detect_communities(self.store, min_community_size=args.get("min_size", 3))
+        if args.get("generate_summaries") and result.get("communities", 0) > 0:
+            summaries = generate_community_summaries(self.store, self.config)
+            result["summaries_generated"] = summaries
+        return result
 
     # --- Negative knowledge ---
 

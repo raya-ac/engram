@@ -231,6 +231,21 @@ class Store:
             if stmt:
                 self.conn.execute(stmt)
         self.conn.commit()
+        # migrations — add new columns if missing (safe for existing DBs)
+        self._migrate()
+
+    def _migrate(self):
+        """Add new columns to existing databases without breaking them."""
+        migrations = [
+            ("memories", "previous_memory_id", "TEXT"),
+            ("relationships", "embedding", "BLOB"),
+        ]
+        for table, column, coltype in migrations:
+            try:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+                self.conn.commit()
+            except Exception:
+                pass  # column already exists
 
     def close(self):
         if self._conn:
@@ -241,17 +256,30 @@ class Store:
 
     def save_memory(self, mem: Memory, hypothetical_queries: list[str] | None = None):
         emb_blob = _pack_embedding(mem.embedding) if mem.embedding is not None else None
+
+        # temporal backbone: link to the most recent memory
+        prev_id = None
+        try:
+            prev_row = self.conn.execute(
+                "SELECT id FROM memories WHERE forgotten=0 AND id != ? ORDER BY created_at DESC LIMIT 1",
+                (mem.id,),
+            ).fetchone()
+            if prev_row:
+                prev_id = prev_row["id"]
+        except Exception:
+            pass
+
         self.conn.execute(
             """INSERT OR REPLACE INTO memories
             (id, content, source_file, source_type, layer, embedding, importance,
              access_count, created_at, last_accessed, fact_date, fact_date_end,
-             emotional_valence, chunk_hash, metadata, forgotten)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             emotional_valence, chunk_hash, metadata, forgotten, previous_memory_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mem.id, mem.content, mem.source_file, mem.source_type, mem.layer,
              emb_blob, mem.importance, mem.access_count, mem.created_at,
              mem.last_accessed, mem.fact_date, mem.fact_date_end,
              mem.emotional_valence, mem.chunk_hash, json.dumps(mem.metadata),
-             int(mem.forgotten)),
+             int(mem.forgotten), prev_id),
         )
 
         # get the rowid for FTS

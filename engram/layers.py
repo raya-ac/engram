@@ -74,21 +74,37 @@ def get_context_layers(store: Store, query: str | None = None,
         seen_ids.add(m.id)
     layers["l2"] = "\n".join(l2_parts)
 
-    # L3: Query-driven deep search
+    # L3: Query-driven deep search with salience-based token budgeting (MAGMA)
     if query:
-        results = search(query, store, config, top_k=15)
+        results = search(query, store, config, top_k=20)
+        remaining = max_tokens - sum(len(layers[lk].split()) * 1.3 for lk in layers)
+
+        # salience budgeting: high-score results get full content,
+        # low-score results get compressed to one-liners
         l3_parts = []
         token_count = 0
-        for r in results:
-            if r.memory.id in seen_ids:
-                continue
-            est_tokens = len(r.memory.content.split()) * 1.3
-            remaining = max_tokens - sum(len(layers[k].split()) * 1.3 for k in layers)
-            if token_count + est_tokens > remaining:
-                break
-            l3_parts.append(r.memory.content)
-            token_count += est_tokens
-            seen_ids.add(r.memory.id)
+        if results:
+            max_score = results[0].score if results else 1.0
+            for r in results:
+                if r.memory.id in seen_ids:
+                    continue
+                salience = r.score / max(0.01, max_score)
+                content = r.memory.content
+
+                if salience < 0.3:
+                    # low salience — compress to first line only
+                    first_line = content.split('\n')[0][:120]
+                    content = f"[{r.memory.layer}] {first_line}"
+                elif salience < 0.6:
+                    # medium salience — truncate to 200 chars
+                    content = content[:200] + ("..." if len(content) > 200 else "")
+
+                est_tokens = len(content.split()) * 1.3
+                if token_count + est_tokens > remaining:
+                    break
+                l3_parts.append(content)
+                token_count += est_tokens
+                seen_ids.add(r.memory.id)
         layers["l3"] = "\n".join(l3_parts)
     else:
         layers["l3"] = ""
