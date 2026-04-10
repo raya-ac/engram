@@ -1,7 +1,8 @@
 db_path: ~/.local/share/engram/memory.db
-embedding_model: BAAI/bge-small-en-v1.5
+embedding_model: BAAI/bge-small-en-v1.5  # or: voyage-3.5, text-embedding-3-small, gemini-embedding-001
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
-embedding_dim: 384
+embedding_backend: auto  # auto | mlx | sentence_transformers | voyage | openai | gemini
+embedding_dim: 384       # auto-detected from model name if known
 
 retrieval:
   top_k: 10
@@ -29,3 +30,11 @@ llm:
 web:
   host: 127.0.0.1
   port: 8420
+
+ann:
+  enabled: true
+  m: 32
+  ef_construction: 200
+  ef_search: 100
+  max_elements: 500000
+  index_path: ~/.local/share/engram/hnsw.index
