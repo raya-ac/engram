@@ -183,9 +183,12 @@ def search(query: str, store: Store, config: Config | None = None,
         results.sort(key=lambda r: r.score, reverse=True)
 
     # --- Retrieval threshold gate (ACT-R) — don't return garbage ---
-    min_threshold = getattr(rc, 'min_confidence', 0.0)
-    if min_threshold > 0 and results:
-        results = [r for r in results if r.score >= min_threshold]
+    # only apply when cross-encoder reranking is active (scores in 0-1 range)
+    # RRF scores are much smaller (~0.01-0.05) so threshold doesn't apply
+    if rerank and results:
+        min_threshold = getattr(rc, 'min_confidence', 0.0)
+        if min_threshold > 0:
+            results = [r for r in results if r.score >= min_threshold]
 
     # record access — one event per search, not per result
     if results:
