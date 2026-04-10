@@ -22,7 +22,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
-**55 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**56 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -55,6 +55,8 @@ query
 ```
 
 **deep retrieval** — optional 5th stage: a learned 2-layer MLP reranker trained on actual access patterns. which memories get accessed after being returned in search results? that signal teaches the reranker what's useful vs what's just semantically similar. takes 10 features (cosine similarity, importance, access count, age, layer one-hot, retention score) and outputs a relevance prediction. train with `train_reranker`, model persists to disk next to the database. runs automatically on every `recall` once trained. lightweight — adds <1ms per query.
+
+**task-aware skill selection** — `get_skills` decides whether to inject procedural knowledge and which 2-3 items to surface. three-stage gate: (1) need assessment via query surprise + domain coverage, (2) selection of top procedural memories by adaptive relevance threshold, (3) calibration with confidence scoring that filters borderline matches. based on [SkillsBench](https://arxiv.org/abs/2602.12670) finding that focused skills (+16.2pp) beat comprehensive docs (-2.9pp), and the [AGENTS.md evaluation](https://arxiv.org/abs/2602.11988) showing static context files reduce performance. the system knows when to inject (unfamiliar domain + relevant procedures = high confidence) and when to shut up (model already knows + no specific procedures = skip).
 
 the hypothetical query part is from [docTTTTTquery](https://cs.uwaterloo.ca/~jimmylin/publications/Nogueira_Lin_2019_docTTTTTquery.pdf) — at ingestion time, generate questions each memory might answer, index them alongside the content. fixes the vocabulary mismatch problem where your search terms don't match the stored text.
 
@@ -209,6 +211,7 @@ restart claude code. you get 55 tools:
 | `recall_recent` | last N memories by creation time |
 | `recall_layer` | search within a specific layer |
 | `recall_hints` | search memories but return only hints (truncated snippets + entity names) to trigger recognition without replacing cognition |
+| `get_skills` | task-aware skill selection — get focused procedural guidance only when injection would help, skip when it wouldn't |
 | `recall_code` | search the codebase layer for functions, classes, files |
 | `recall_context` | search and return a formatted context block with token budget |
 | `find_similar` | find memories most similar to a given one by embedding distance |
@@ -360,6 +363,7 @@ GET  /api/retention/scatter           real memory age vs retention scatter data
 GET  /api/reranker/status             deep reranker training state
 GET  /api/bridges                     cross-domain bridge memories
 GET  /api/search/hints?q=...          truncated hints for cognitive scaffolding
+GET  /api/skills?query=...            task-aware skill selection with confidence scoring
 GET  /api/export?format=json          export memories as markdown or JSON
 POST /api/remember                    store a memory (with surprise scoring)
 POST /api/consolidate                 trigger dream cycle
@@ -395,6 +399,7 @@ engram/
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
 ├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
 ├── deep_retrieval.py # learned MLP reranker trained on access patterns
+├── skill_select.py   # task-aware skill selection gate (SkillsBench-inspired)
 ├── lifecycle.py      # retention regularization (L2/Huber/elastic), 7-factor importance, promotion
 ├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer
@@ -404,7 +409,7 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── mcp_server.py     # 55-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── mcp_server.py     # 56-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
@@ -451,6 +456,8 @@ i studied three existing memory systems and six IR papers before building this. 
 - [Titans](https://arxiv.org/abs/2501.00663) (Behrouz et al. 2025) — surprise-based memorization, memory updates proportional to loss gradient
 - [Miras](https://arxiv.org/abs/2504.13173) (Behrouz et al. 2025) — unifying framework for sequence models, forgetting as retention regularization
 - [Your Brain on ChatGPT](https://arxiv.org/abs/2506.08872) (Kosmyna et al. 2025) — cognitive scaffolding vs replacement, recall_hints design
+- [SkillsBench](https://arxiv.org/abs/2602.12670) (Li et al. 2026) — focused skills (+16.2pp) beat comprehensive docs (-2.9pp), get_skills gate design
+- [Evaluating AGENTS.md](https://arxiv.org/abs/2602.11988) (Gloaguen et al. 2026) — static context files reduce performance, validates dynamic retrieval over flat injection
 
 ## config
 
