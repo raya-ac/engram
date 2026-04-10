@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import warnings
+
 import numpy as np
+
+# suppress model loading noise (BERT position_ids UNEXPECTED warnings, HF token nag)
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", message=".*position_ids.*")
+warnings.filterwarnings("ignore", message=".*unauthenticated.*")
 
 _bi_encoder = None
 _cross_encoder = None
@@ -22,7 +33,9 @@ def _get_bi_encoder(model_name: str = "BAAI/bge-small-en-v1.5"):
     global _bi_encoder
     if _bi_encoder is None:
         from sentence_transformers import SentenceTransformer
-        _bi_encoder = SentenceTransformer(model_name)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _bi_encoder = SentenceTransformer(model_name)
     return _bi_encoder
 
 
@@ -30,7 +43,9 @@ def _get_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2")
     global _cross_encoder
     if _cross_encoder is None:
         from sentence_transformers.cross_encoder import CrossEncoder
-        _cross_encoder = CrossEncoder(model_name)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _cross_encoder = CrossEncoder(model_name)
     return _cross_encoder
 
 
