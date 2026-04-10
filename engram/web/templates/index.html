@@ -1948,7 +1948,13 @@ async function loadHealth() {
   const mems = data.memories || {};
   const cards = [
     {label:'Total Memories', value: mems.total||0, status: mems.total > 0 ? 'ok' : 'warn'},
+    {label:'Episodic', value: mems.episodic||0, status: 'ok'},
+    {label:'Semantic', value: mems.semantic||0, status: 'ok'},
+    {label:'Procedural', value: mems.procedural||0, status: 'ok'},
+    {label:'Codebase', value: mems.codebase||0, status: 'ok'},
+    {label:'Working', value: mems.working||0, status: (mems.working||0) === 0 ? 'ok' : 'warn'},
     {label:'Entities', value: data.entities||0, status: 'ok'},
+    {label:'Relationships', value: data.relationships||0, status: 'ok'},
     {label:'DB Size', value: (data.db_size_mb||0)+'MB', status: data.db_size_mb < 100 ? 'ok' : 'warn'},
     {label:'Embedding Cache', value: data.embedding_cache_loaded ? 'loaded' : 'cold', status: data.embedding_cache_loaded ? 'ok' : 'warn'},
     {label:'Cache Vectors', value: data.embedding_cache_size||0, status: 'ok'},
@@ -1956,7 +1962,6 @@ async function loadHealth() {
     {label:'Orphaned Entities', value: data.orphaned_entities||0, status: (data.orphaned_entities||0) === 0 ? 'ok' : 'warn'},
     {label:'Stale Working', value: data.stale_working||0, status: (data.stale_working||0) === 0 ? 'ok' : 'warn'},
     {label:'No Embedding', value: data.no_embedding||0, status: (data.no_embedding||0) === 0 ? 'ok' : 'bad'},
-    {label:'Relationships', value: data.relationships||0, status: 'ok'},
   ];
   document.getElementById('health-grid').innerHTML = cards.map(c =>
     `<div class="health-card ${c.status}"><div class="hc-value">${c.value}</div><div class="hc-label">${c.label}</div></div>`
