@@ -355,12 +355,72 @@ restart claude code. you get 63 tools:
 
 ## benchmarks
 
-engram ships with a self-benchmark suite that tests retrieval quality, latency, coverage, and system health against both the live database and synthetic stress tests.
+43/43 tests across 20 subsystems. run on 446 embedded memories, Apple Silicon.
 
-```bash
-engram benchmark              # run against live data
-engram benchmark --stress 500 # synthetic stress test with N memories
-```
+### full test suite (446 vectors, 384-dim, Apple Silicon)
+
+| subsystem | tests | result |
+|-----------|-------|--------|
+| embedding | 3/3 | dim=384, norm=1.0, avg 5.1ms, batch OK |
+| ANN index (HNSW) | 7/7 | 0.09ms search, 100% recall@10, 5,304 inserts/sec |
+| brute-force dense | 2/2 | 0.016ms avg (100 runs) |
+| intent classification | 1/1 | 6/6 correct (why/when/who/how/what) |
+| full pipeline (no rerank) | 3/3 | 15.5ms avg, debug mode OK |
+| full pipeline (+ cross-encoder) | 1/1 | 252ms avg |
+| cross-encoder | 2/2 | correct ranking, 2.9ms/doc |
+| surprise gate | 4/4 | 0.10ms avg, novel=0.85, duplicate=0.44 |
+| Hopfield channel | 1/1 | <1ms |
+| BM25 / FTS5 | 2/2 | 3.5ms avg |
+| entity graph | 4/4 | find, relationships, 2-hop traversal (161 related) |
+| memory CRUD | 2/2 | write → read → ANN verify → forget |
+| layers (L0-L3) | 1/1 | 248ms, 4 layers |
+| deep reranker | 1/1 | trained=True |
+| importance scoring | 1/1 | 7-factor composite OK |
+| store internals | 3/3 | cache cold=0.4ms hot=0.001ms |
+| diary | 1/1 | write + read OK |
+| events | 1/1 | logging OK |
+| index I/O | 1/1 | 967 KB on disk, save=4ms load=10ms |
+| config | 2/2 | ANN config + reload consistent |
+
+### throughput (Apple Silicon, MLX GPU)
+
+| operation | rate |
+|-----------|------|
+| embedding (MLX GPU) | 1,879 texts/sec |
+| embedding (CPU) | 176 texts/sec |
+| sqlite bulk insert | 51,000 rows/sec |
+| ANN insert | 5,304 ops/sec |
+| embed + store 100k | ~3 min |
+
+### latency (Apple Silicon)
+
+| operation | time |
+|-----------|------|
+| ANN dense search | 0.09ms avg |
+| brute-force dense search | 0.016ms avg |
+| full pipeline (no rerank) | 15.5ms avg |
+| full pipeline (+ cross-encoder) | 252ms avg |
+| surprise gate (k-NN) | 0.10ms avg |
+| embedding | 5.1ms avg |
+| cross-encoder rerank | 2.9ms/doc |
+| BM25 / FTS5 | 3.5ms avg |
+| Hopfield channel | <1ms |
+| ANN index save | 4ms |
+| ANN index load | 10ms |
+| embedding cache (cold) | 0.4ms |
+| embedding cache (hot) | 0.001ms |
+
+### ANN scaling projection
+
+| vectors | brute-force | ANN (HNSW) | speedup |
+|---------|------------|------------|---------|
+| 1k | 0.1ms | 0.12ms | 1x |
+| 10k | 0.9ms | 0.16ms | 5x |
+| 100k | 8.7ms | 0.20ms | 45x |
+| 500k | 43.7ms | 0.22ms | 198x |
+| 1M | 87.3ms | 0.23ms | 377x |
+
+recall@10 accuracy: 100% (20/20 queries, ANN vs brute-force exact match)
 
 ### retrieval quality
 
@@ -373,40 +433,7 @@ tested on synthetic memories with template-varied content (different topics, peo
 | recall@10 | 95% | 95% | 40% |
 | coverage (top 20) | 100% | 100% | 60% |
 
-recall drops at 100k because all synthetic memories use similar templates — finding one exact match among 100k near-duplicates is adversarially hard. real-world diverse content scores much higher (80% recall@10 on the live 444-memory database).
-
-### throughput (Apple Silicon, MLX GPU)
-
-| operation | rate |
-|-----------|------|
-| embedding (MLX GPU) | 1,879 texts/sec |
-| embedding (CPU) | 176 texts/sec |
-| sqlite bulk insert | 51,000 rows/sec |
-| embed + store 100k | ~3 min |
-
-### latency (Apple Silicon)
-
-| operation | brute-force | ANN (HNSW) |
-|-----------|------------|------------|
-| dense search (446 vecs) | 0.04ms | 0.11ms |
-| full pipeline (no rerank) | — | 20ms avg |
-| full pipeline (+ cross-encoder) | — | 320ms avg |
-| surprise gate (k-NN) | 0.20ms | 0.16ms |
-| ANN insert | — | 0.22ms |
-| ANN index save/load | — | 1.7ms / 9.1ms |
-| embedding | 9.5ms avg | — |
-
-scaling projection (dense search only):
-
-| vectors | brute-force | ANN (HNSW) | speedup |
-|---------|------------|------------|---------|
-| 1k | 0.1ms | 0.12ms | 1x |
-| 10k | 0.9ms | 0.16ms | 5x |
-| 100k | 8.7ms | 0.20ms | 45x |
-| 500k | 43.7ms | 0.22ms | 198x |
-| 1M | 87.3ms | 0.23ms | 377x |
-
-recall@10 accuracy: 100% (20/20 queries, ANN vs brute-force exact match)
+recall drops at 100k because all synthetic memories use similar templates — finding one exact match among 100k near-duplicates is adversarially hard. real-world diverse content scores much higher (80% recall@10 on the live database).
 
 ### intent classification
 
@@ -536,7 +563,7 @@ engram/
 ├── retrieval.py      # 5-stage hybrid pipeline (HNSW dense + BM25 + graph → RRF → boost → rerank → deep)
 ├── extractor.py      # LLM fact extraction + hypothetical query generation
 ├── entities.py       # regex entity extraction, relationship graph, co-occurrence
-├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate)
+├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate, ANN-accelerated)
 ├── deep_retrieval.py # learned MLP reranker trained on access patterns
 ├── skill_select.py   # task-aware skill selection gate (SkillsBench-inspired)
 ├── lifecycle.py      # retention regularization (L2/Huber/elastic), 7-factor importance, promotion
@@ -554,7 +581,7 @@ engram/
 ├── quantize.py       # lifecycle embedding compression (32/8/4/2-bit) with FRQAD distance metric
 ├── communities.py    # label propagation community detection + LLM summaries over entity graph
 ├── hopfield.py       # Hopfield associative retrieval channel — pattern completion via modern Hopfield network
-├── mcp_server.py     # 63-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── mcp_server.py     # 63-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep, ANN init
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
