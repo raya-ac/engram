@@ -185,6 +185,104 @@ def evolve_neighbors(new_memory: Memory, neighbors: list[Memory],
     return evolved_ids
 
 
+# --- Write-path CRUD classification (Mem0-inspired) ---
+
+CRUD_SYSTEM = """Given a new memory and an existing similar memory, classify the operation:
+
+- ADD: New memory contains genuinely new information not in the existing memory
+- UPDATE: New memory extends or refines the existing memory — merge them
+- NOOP: New memory is redundant with the existing memory — skip storing it
+
+Return JSON: {"operation": "ADD|UPDATE|NOOP", "merged_content": "..." (only if UPDATE)}
+Respond with ONLY the JSON object."""
+
+
+def classify_write_operation(new_content: str, existing: Memory, similarity: float,
+                             config: Config) -> dict:
+    """Classify whether a new memory should ADD, UPDATE existing, or NOOP.
+
+    Returns {"operation": "ADD"|"UPDATE"|"NOOP", "merged_content": str|None}
+    """
+    # high similarity = likely update or noop
+    if similarity < 0.75:
+        return {"operation": "ADD", "merged_content": None}
+
+    # very high similarity = likely noop
+    if similarity > 0.95:
+        return {"operation": "NOOP", "merged_content": None}
+
+    # medium similarity = ask LLM
+    prompt = (
+        f"NEW MEMORY:\n{new_content[:1000]}\n\n"
+        f"EXISTING MEMORY (similarity: {similarity:.2f}):\n{existing.content[:1000]}"
+    )
+
+    try:
+        response = query_llm(prompt, system=CRUD_SYSTEM, config=config)
+        text = response.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+        result = json.loads(text)
+        op = result.get("operation", "ADD").upper()
+        if op not in ("ADD", "UPDATE", "NOOP"):
+            op = "ADD"
+        return {"operation": op, "merged_content": result.get("merged_content")}
+    except Exception:
+        return {"operation": "ADD", "merged_content": None}
+
+
+# --- Causal parent annotation ---
+
+def annotate_causal_parent(memory: Memory, store: Store):
+    """Try to identify the causal parent of a memory from recent activity.
+
+    Looks at the most recently accessed/created memories and links
+    the most likely trigger as a causal parent.
+    """
+    # get the 3 most recently accessed memories (likely the context that triggered this)
+    recent = store.conn.execute(
+        "SELECT id FROM memories WHERE forgotten=0 AND id != ? ORDER BY last_accessed DESC LIMIT 3",
+        (memory.id,),
+    ).fetchall()
+
+    if recent:
+        memory.metadata["causal_parent"] = recent[0]["id"]
+        store.conn.execute(
+            "UPDATE memories SET metadata = ? WHERE id = ?",
+            (json.dumps(memory.metadata), memory.id),
+        )
+
+
+# --- Entity canonicalization ---
+
+def canonicalize_content(content: str) -> str:
+    """Normalize common patterns in memory content before storage.
+
+    - Lowercase common entity variations
+    - Normalize date formats
+    - Strip trailing whitespace
+    """
+    import re
+
+    # normalize dates: "March 24, 2026" -> "2026-03-24"
+    MONTHS = {
+        'january': '01', 'february': '02', 'march': '03', 'april': '04',
+        'may': '05', 'june': '06', 'july': '07', 'august': '08',
+        'september': '09', 'october': '10', 'november': '11', 'december': '12',
+    }
+    for month_name, month_num in MONTHS.items():
+        pattern = re.compile(
+            rf'{month_name}\s+(\d{{1,2}}),?\s+(\d{{4}})',
+            re.IGNORECASE,
+        )
+        content = pattern.sub(
+            lambda m: f"{m.group(2)}-{month_num}-{int(m.group(1)):02d}",
+            content,
+        )
+
+    return content.strip()
+
+
 # --- Confirmation tracking ---
 
 def check_confirmation(new_content: str, neighbor: Memory, store: Store) -> bool:

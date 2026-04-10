@@ -89,7 +89,13 @@ def consolidate(store: Store, config: Config | None = None) -> dict:
     bridges = _cross_domain_synthesis(store, config)
     stats["cross_domain_bridges"] = bridges
 
-    # Step 5: Drift detection — validate memories against filesystem
+    # Step 5: Adversarial belief probing — challenge stored beliefs
+    try:
+        stats["beliefs_challenged"] = _probe_beliefs(store, config)
+    except Exception:
+        stats["beliefs_challenged"] = 0
+
+    # Step 6: Drift detection — validate memories against filesystem
     try:
         drift_report = run_drift_check(store, check_functions=False)
         stats["drift_score"] = drift_report.score
@@ -102,7 +108,7 @@ def consolidate(store: Store, config: Config | None = None) -> dict:
     except Exception:
         stats["drift_score"] = -1  # signal that drift check failed
 
-    # Step 6: Prune old access_log and events entries (>90 days)
+    # Step 7: Prune old access_log and events entries (>90 days)
     cutoff = time.time() - 90 * 86400
     pruned_access = store.conn.execute(
         "DELETE FROM access_log WHERE accessed_at < ?", (cutoff,)
@@ -368,3 +374,68 @@ def _cross_domain_synthesis(store: Store, config: Config, max_bridges: int = 5) 
         bridges_created += 1
 
     return bridges_created
+
+
+PROBE_SYSTEM = """You are a belief validator. Given a stored memory/belief, determine if it is likely still valid.
+
+Consider:
+- Is this a time-sensitive claim that may have expired?
+- Is this a factual claim that could have been superseded?
+- Does this contain specific versions, URLs, or paths that could be outdated?
+
+Return JSON: {"still_valid": true/false, "confidence": 0.0-1.0, "reason": "why"}
+Only mark as invalid if you have strong reason to doubt it. When unsure, mark as valid.
+Respond with ONLY the JSON object."""
+
+
+def _probe_beliefs(store: Store, config: Config, sample_size: int = 5) -> int:
+    """Adversarial belief probing — randomly sample stored beliefs and challenge them.
+
+    Focuses on procedural and semantic memories that haven't been accessed recently.
+    Decays confidence on unconfirmed beliefs.
+    """
+    import json
+    import random
+
+    # sample old, unaccessed memories from semantic/procedural layers
+    rows = store.conn.execute(
+        """SELECT * FROM memories WHERE forgotten = 0
+           AND layer IN ('semantic', 'procedural')
+           AND last_accessed < ?
+           ORDER BY RANDOM() LIMIT ?""",
+        (time.time() - 14 * 86400, sample_size),  # not accessed in 14 days
+    ).fetchall()
+
+    challenged = 0
+    for row in rows:
+        mem = store._row_to_memory(row)
+
+        try:
+            response = query_llm(
+                f"Stored belief:\n{mem.content[:1500]}",
+                system=PROBE_SYSTEM, config=config,
+            )
+            text = response.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+            result = extract_json_from_response(text)
+
+            if result and not result.get("still_valid", True):
+                # mark as challenged
+                mem.metadata["belief_challenged"] = True
+                mem.metadata["challenge_reason"] = result.get("reason", "")
+                mem.metadata["challenge_confidence"] = result.get("confidence", 0.5)
+                mem.metadata["challenged_at"] = time.time()
+                # reduce importance
+                new_importance = max(0.1, mem.importance * 0.7)
+                store.conn.execute(
+                    "UPDATE memories SET metadata = ?, importance = ? WHERE id = ?",
+                    (json.dumps(mem.metadata), new_importance, mem.id),
+                )
+                challenged += 1
+        except Exception:
+            continue
+
+    if challenged:
+        store.conn.commit()
+    return challenged

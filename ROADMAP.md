@@ -2,7 +2,7 @@
 
 Based on analysis of 15 recent papers (2025-2026) on AI agent memory systems.
 
-## Tier 1 — High Impact, Low Effort (do first)
+## Tier 1 — High Impact, Low Effort (DONE)
 
 ### 1. Enriched Embeddings (A-Mem)
 **Paper:** A-Mem (2502.12110)
@@ -35,7 +35,7 @@ Based on analysis of 15 recent papers (2025-2026) on AI agent memory systems.
 **Files:** `lifecycle.py`, `mcp_server.py` (health tool), `web/routes.py`
 **Effort:** Small — mostly instrumentation on existing access_log.
 
-## Tier 2 — High Impact, Medium Effort
+## Tier 2 — High Impact, Medium Effort (DONE)
 
 ### 5. Intent-Aware Retrieval Router (MAGMA)
 **Paper:** MAGMA (2601.03236)

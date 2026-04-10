@@ -28,7 +28,19 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses three si
 
 **negative knowledge** — `remember_negative` stores explicit "what does NOT exist" claims: no caching layer, no Redux, the /admin endpoint was removed. these prevent future hallucinated recommendations. stored in the semantic layer with a NEGATIVE KNOWLEDGE prefix so they surface when you search for the thing that doesn't exist.
 
-**60 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**enriched embeddings** — at write time, an LLM generates keywords, categorical tags, and a contextual summary for each memory. the embedding is computed over the concatenation of content + keywords + tags + summary, giving the vector richer semantic signal than raw content alone. inspired by [A-Mem](https://arxiv.org/abs/2502.12110)'s zettelkasten approach, where enriched embeddings nearly doubled multi-hop retrieval F1.
+
+**memory evolution** — memories aren't write-once. when a new memory arrives and near-neighbors are detected (via the surprise gate), the system asks an LLM whether existing memories should be updated with the new context. old memories get smarter over time instead of going stale. from [A-Mem](https://arxiv.org/abs/2502.12110) — removing evolution dropped multi-hop F1 from 45.85% to 31.24% in ablation.
+
+**intent-aware retrieval** — queries are classified by intent (why/when/who/how/what) and retrieval signals are dynamically weighted. "why" queries boost graph traversal for causal reasoning. "when" queries boost BM25 for date matching. "who" queries boost entity graph lookup. from [MAGMA](https://arxiv.org/abs/2601.03236)'s adaptive policy (+9% over static weighting).
+
+**trust-weighted decay** — different sources decay at different rates. human-authored memories get full 30-day half-life. auto-extracted observations decay 3x faster. formula: `λ_eff = λ · (1 + κ·(1 - trust))`, κ=2.0. from [SuperLocalMemory V3.3](https://arxiv.org/abs/2604.04514). also: confirmation count — memories corroborated by multiple independent sources get importance boost.
+
+**write-path CRUD** — instead of always appending then deduplicating later, new memories are classified at write time as ADD/UPDATE/NOOP by comparing against existing neighbors. updates merge content in-place. noops skip storage entirely. from [Mem0](https://arxiv.org/abs/2504.19413)'s production pipeline.
+
+**adversarial belief probing** — during the dream cycle, randomly sample old semantic/procedural memories and challenge them: "is this still true?" beliefs that fail the probe get importance reduced. prevents fossilized false beliefs. from the March 2026 survey on [autonomous agent memory](https://arxiv.org/abs/2603.07670).
+
+**61 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -439,9 +451,10 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
+├── evolution.py      # memory enrichment, evolution, CRUD classification, trust scoring, canonicalization
 ├── drift.py          # memory drift detection — claim extraction, filesystem verification, drift scoring
 ├── patterns.py       # session pattern extraction — distill procedural knowledge from work
-├── mcp_server.py     # 60-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
+├── mcp_server.py     # 61-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep
 ├── cli.py            # CLI interface
 ├── config.py         # yaml config with env var overrides
 └── web/
@@ -490,6 +503,15 @@ i studied three existing memory systems and six IR papers before building this. 
 - [Your Brain on ChatGPT](https://arxiv.org/abs/2506.08872) (Kosmyna et al. 2025) — cognitive scaffolding vs replacement, recall_hints design
 - [SkillsBench](https://arxiv.org/abs/2602.12670) (Li et al. 2026) — focused skills (+16.2pp) beat comprehensive docs (-2.9pp), get_skills gate design
 - [Evaluating AGENTS.md](https://arxiv.org/abs/2602.11988) (Gloaguen et al. 2026) — static context files reduce performance, validates dynamic retrieval over flat injection
+- [A-Mem](https://arxiv.org/abs/2502.12110) (Wu et al. 2025) — zettelkasten memory with enriched embeddings and memory evolution, enrichment doubled multi-hop F1
+- [AgeMem](https://arxiv.org/abs/2601.01885) (Chen et al. 2026) — RL-trained memory operations, quality_metrics reward decomposition
+- [MAGMA](https://arxiv.org/abs/2601.03236) (Zhao et al. 2026) — multi-graph architecture with intent-aware adaptive retrieval policy
+- [Zep/Graphiti](https://arxiv.org/abs/2501.13956) (Preston-Werner et al. 2025) — temporal knowledge graph with three-tier architecture
+- [SuperLocalMemory V3.3](https://arxiv.org/abs/2604.04514) (2026) — trust-weighted decay, lifecycle embedding compression, confirmation count
+- [Mem0](https://arxiv.org/abs/2504.19413) (Chhablani et al. 2025) — production write-path CRUD classification, temporal marked deletion
+- [Memory for Autonomous Agents](https://arxiv.org/abs/2603.07670) (2026) — latest comprehensive survey, adversarial belief probing, write-path canonicalization
+- [Mem^p](https://arxiv.org/abs/2508.06433) (2025) — procedural memory with dual representation and reflection-based updates
+- [ACT-R Memory](https://dl.acm.org/doi/10.1145/3765766.3765803) (HAI 2025) — base-level activation, retrieval noise, threshold gating
 
 ## config
 

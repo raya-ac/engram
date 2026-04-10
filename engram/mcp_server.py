@@ -23,7 +23,9 @@ from engram.deep_retrieval import DeepReranker
 from engram.skill_select import select_skills, format_skills
 from engram.drift import run_drift_check, auto_fix_drift
 from engram.patterns import extract_patterns_from_session, store_patterns
-from engram.evolution import enrich_memory, evolve_neighbors, check_confirmation, get_source_trust
+from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmation,
+                              get_source_trust, classify_write_operation,
+                              annotate_causal_parent, canonicalize_content)
 
 TOOLS = [
     # Read tools
@@ -300,8 +302,11 @@ class MCPServer:
     # --- Write tools ---
 
     def _remember(self, args: dict):
+        # canonicalize content (normalize dates, strip whitespace)
+        content = canonicalize_content(args["content"])
+
         mem = Memory(
-            id=str(uuid.uuid4()), content=args["content"],
+            id=str(uuid.uuid4()), content=content,
             source_type=args.get("source_type", SourceType.HUMAN),
             layer=args.get("layer", MemoryLayer.EPISODIC),
             importance=args.get("importance", 0.7),
@@ -349,6 +354,33 @@ class MCPServer:
                     except Exception:
                         pass
 
+        # CRUD classification (Mem0-inspired): decide ADD/UPDATE/NOOP
+        crud_op = "ADD"
+        if surprise_info and surprise_info.get("nearest_id") and not surprise_info.get("is_duplicate"):
+            nearest = self.store.get_memory(surprise_info["nearest_id"])
+            if nearest and surprise_info.get("nearest_distance", 1.0) < 0.4:
+                similarity = 1.0 - surprise_info["nearest_distance"]
+                try:
+                    crud_result = classify_write_operation(mem.content, nearest, similarity, self.config)
+                    crud_op = crud_result["operation"]
+                    if crud_op == "UPDATE" and crud_result.get("merged_content"):
+                        # update existing memory instead of adding new one
+                        from engram.embeddings import embed_documents as _embed
+                        merged_emb = _embed([crud_result["merged_content"]], self.config.embedding_model)
+                        emb_blob = merged_emb[0].astype('float32').tobytes() if merged_emb.size > 0 else None
+                        self.store.conn.execute(
+                            "UPDATE memories SET content = ?, embedding = ? WHERE id = ?",
+                            (crud_result["merged_content"], emb_blob, nearest.id),
+                        )
+                        self.store.conn.commit()
+                        self.store.invalidate_embedding_cache()
+                        return {"id": nearest.id, "status": "updated", "operation": "UPDATE"}
+                    elif crud_op == "NOOP":
+                        return {"id": surprise_info["nearest_id"], "status": "skipped", "operation": "NOOP",
+                                "reason": "redundant with existing memory"}
+                except Exception:
+                    crud_op = "ADD"
+
         # source trust tracking
         mem.metadata["source_trust"] = get_source_trust(mem.source_type)
 
@@ -359,6 +391,12 @@ class MCPServer:
             pass
         self.store.save_memory(mem, hypothetical_queries=hqs)
         process_entities_for_memory(self.store, mem.id, mem.content)
+
+        # causal parent annotation
+        try:
+            annotate_causal_parent(mem, self.store)
+        except Exception:
+            pass
         result = {"id": mem.id, "status": "stored"}
         if surprise_info:
             result["surprise"] = surprise_info["surprise"]
