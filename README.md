@@ -40,7 +40,7 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses five sig
 
 **adversarial belief probing** — during the dream cycle, randomly sample old semantic/procedural memories and challenge them: "is this still true?" beliefs that fail the probe get importance reduced. prevents fossilized false beliefs. from the March 2026 survey on [autonomous agent memory](https://arxiv.org/abs/2603.07670).
 
-**63 MCP tools** — plugs into claude code (or any MCP client) as a tool server. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**63 MCP tools** — plugs into claude code (or any MCP client) as a tool server. 72 tests. docker-ready. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -204,7 +204,16 @@ supported models:
 | `text-embedding-3-large` | OpenAI | 3072 | $0.13 | highest dim |
 | `gemini-embedding-001` | Google | 768 | free tier | top MTEB retrieval score |
 
-switching models requires re-embedding existing memories (`engram index rebuild` after changing the model).
+switching models requires re-embedding all memories — use `engram reembed` after changing the model.
+
+### docker
+
+```bash
+docker compose up -d
+# → http://localhost:8420
+```
+
+mount your config and set API keys via environment variables. data persists in a docker volume.
 
 ## quick start
 
@@ -260,9 +269,36 @@ engram patterns --hours 24 --dry-run            # preview from last 24 hours
 engram patterns --threshold 0.5                 # only store highly novel patterns
 ```
 
+### re-embed after switching models
+```bash
+engram reembed                              # re-embed all memories with current model
+engram reembed --dry-run                    # preview count without re-embedding
+engram reembed --batch-size 128             # larger batches for API models
+```
+
+### watch a directory for auto-ingest
+```bash
+engram watch ~/notes/                       # poll every 30s for new/changed files
+engram watch ~/chats/ --interval 60         # poll every 60s
+```
+
+### export and import
+```bash
+engram export backup.json                   # export memories + entities + relationships
+engram export backup.json --include-embeddings  # include embedding vectors
+engram export backup.jsonl --layer procedural   # filter by layer
+engram import backup.json                   # restore from export
+engram import backup.json --skip-duplicates # skip memories with matching content hash
+```
+
 ### run the dream cycle
 ```bash
 engram consolidate
+```
+
+### run tests
+```bash
+pytest tests/ -v                            # 72 tests, ~3s
 ```
 
 ### start the web dashboard
@@ -539,7 +575,7 @@ you can also wire it into Claude Code's hook system by adding to your settings �
 
 ## web dashboard
 
-full monitoring UI at `http://127.0.0.1:8420`:
+full monitoring UI at `http://127.0.0.1:8420`. supports optional bearer token auth — set `web.auth_token` in config.yaml to lock it down.
 
 - **neural map** — force-directed entity graph with concentric layer rings (semantic core → procedural → episodic → working). neurons glow and fire impulse particles along synapses when memories are accessed. drag nodes, hover for details, click to inspect. polls the database every 2s so MCP queries show up in real time.
 - **search** — hybrid search with debug mode showing all 5 retrieval stages. filter chips for layer, importance slider. hint mode toggle returns truncated snippets with reveal buttons for cognitive scaffolding. search history saved to localStorage with dropdown.
@@ -636,8 +672,8 @@ engram/
 ├── surprise.py       # k-NN novelty scoring at write time (Titans-inspired surprise gate, ANN-accelerated)
 ├── deep_retrieval.py # learned MLP reranker trained on access patterns
 ├── skill_select.py   # task-aware skill selection gate (SkillsBench-inspired)
-├── lifecycle.py      # retention regularization (L2/Huber/elastic), 7-factor importance, promotion
-├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival)
+├── lifecycle.py      # retention regularization (L2/Huber/elastic), 9-factor importance, promotion
+├── consolidator.py   # dream cycle (clustering, summarization, peer cards, archival, belief probing)
 ├── codebase.py       # project scanner — file trees, signatures, deps → codebase layer
 ├── conversations.py  # claude code session ingest — exchange pairs, classification
 ├── dedup.py          # semantic deduplication — find and merge near-duplicates
@@ -645,21 +681,38 @@ engram/
 ├── compress.py       # token-budget compression with entity codes
 ├── formats.py        # parsers for markdown, JSON chat exports, PDF, slack, email
 ├── llm.py            # claude CLI + mlx backend abstraction
-├── evolution.py      # memory enrichment, evolution, CRUD classification, trust scoring, canonicalization, causal parents
-├── drift.py          # memory drift detection — claim extraction, filesystem verification, drift scoring
+├── evolution.py      # memory enrichment, evolution, CRUD classification, trust scoring, canonicalization
+├── drift.py          # memory drift detection — claim extraction, filesystem verification
 ├── patterns.py       # session pattern extraction — distill procedural knowledge from work
-├── quantize.py       # lifecycle embedding compression (32/8/4/2-bit) with FRQAD distance metric
-├── communities.py    # label propagation community detection + LLM summaries over entity graph
-├── hopfield.py       # Hopfield associative retrieval channel — pattern completion via modern Hopfield network
-├── mcp_server.py     # 63-tool MCP server (JSON-RPC, stdio) with working memory auto-sweep, ANN init
-├── cli.py            # CLI interface
-├── config.py         # yaml config with env var overrides
+├── quantize.py       # lifecycle embedding compression (32/8/4/2-bit) with FRQAD
+├── communities.py    # label propagation community detection + LLM summaries
+├── hopfield.py       # Hopfield associative retrieval — pattern completion via modern Hopfield network
+├── benchmark.py      # self-benchmark suite — retrieval quality, latency, throughput
+├── mcp_server.py     # 63-tool MCP server (JSON-RPC, stdio)
+├── cli.py            # CLI — ingest, search, remember, reembed, watch, export, import, index, serve
+├── config.py         # yaml config with env var overrides, auto-dim detection
+├── demo.py           # interactive demo walkthrough
 └── web/
-    ├── app.py        # fastapi with model warmup on startup
-    ├── routes.py     # 52 REST endpoints — search, analytics, surprise, retention, reranker, bridges, bulk, export
+    ├── app.py        # fastapi with model warmup, bearer token auth
+    ├── routes.py     # 70+ REST endpoints
     ├── events.py     # SSE event stream (in-process)
     └── templates/
-        └── index.html  # single-page dashboard with neural canvas, 14 panels, 74 JS functions
+        └── index.html  # single-page dashboard — neural canvas, 17 panels, keyboard shortcuts
+
+tests/
+├── test_store.py       # CRUD, FTS, entities, events, cache
+├── test_embeddings.py  # multi-backend, cosine search, dim detection
+├── test_ann_index.py   # HNSW build, search, add/remove, persistence, recall
+├── test_retrieval.py   # hybrid pipeline, intent classification, debug mode
+├── test_surprise.py    # novelty scoring, importance adjustment
+└── test_config.py      # config loading, auto-dim, env overrides
+
+benchmarks/
+└── longmemeval/
+    └── run_engram.py   # LongMemEval benchmark adapter (98.1% R@5)
+
+Dockerfile              # python 3.12-slim, all deps, port 8420
+docker-compose.yml      # single service, data volume, config mount
 ```
 
 ## supported formats
@@ -716,7 +769,13 @@ lives at `config.yaml` or `~/.config/engram/config.yaml`. env vars override ever
 
 ```yaml
 db_path: ~/.local/share/engram/memory.db
-embedding_model: BAAI/bge-small-en-v1.5   # or: voyage-3.5, text-embedding-3-small, gemini-embedding-001
+
+# embedding model — local or API
+# local:  BAAI/bge-small-en-v1.5 (384d, free, default)
+# voyage: voyage-3.5 (1024d, $0.18/1M), voyage-3.5-lite (1024d, $0.02/1M)
+# openai: text-embedding-3-small (1536d, $0.02/1M), text-embedding-3-large (3072d)
+# gemini: gemini-embedding-001 (768d, free tier)
+embedding_model: BAAI/bge-small-en-v1.5
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
 embedding_backend: auto                   # auto | mlx | sentence_transformers | voyage | openai | gemini
 embedding_dim: 384                        # auto-detected from model name if known
@@ -750,6 +809,7 @@ llm:
 web:
   host: 127.0.0.1
   port: 8420
+  auth_token: ""               # set to enable bearer token auth on the web UI
 
 ann:
   enabled: true
@@ -762,4 +822,4 @@ ann:
 
 ## license
 
-MIT
+[MIT](LICENSE)
