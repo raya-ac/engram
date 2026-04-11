@@ -635,8 +635,30 @@ async def health_check(request: Request):
     ).fetchone()["cnt"]
     fts = store.conn.execute("SELECT COUNT(*) as cnt FROM memories_fts").fetchone()["cnt"]
     no_emb = store.conn.execute("SELECT COUNT(*) as cnt FROM memories WHERE embedding IS NULL AND forgotten=0").fetchone()["cnt"]
-    return {**stats, "embedding_cache_loaded": cache_loaded, "embedding_cache_size": cache_size,
-            "orphaned_entities": orphaned, "stale_working": stale, "fts_indexed": fts, "no_embedding": no_emb}
+    # ANN index status
+    ann_ready = store.ann_index.ready if store.ann_index else False
+    ann_count = store.ann_index.count if store.ann_index and store.ann_index.ready else 0
+
+    # embedding backend info
+    from engram.embeddings import get_backend, _default_model
+    config = request.app.state.config
+    emb_backend = get_backend(config.embedding_model)
+
+    return {
+        **stats,
+        "embedding_cache_loaded": cache_loaded,
+        "embedding_cache_size": cache_size,
+        "orphaned_entities": orphaned,
+        "stale_working": stale,
+        "fts_indexed": fts,
+        "no_embedding": no_emb,
+        "ann_index_ready": ann_ready,
+        "ann_index_count": ann_count,
+        "embedding_backend": emb_backend,
+        "embedding_model": config.embedding_model,
+        "embedding_dim": config.embedding_dim,
+        "reranker_model": config.cross_encoder_model,
+    }
 
 
 @router.get("/api/drift")
