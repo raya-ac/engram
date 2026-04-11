@@ -97,6 +97,10 @@ class TestDefaultModel:
 
 class TestAPIBackendErrors:
     def test_voyage_no_key(self):
+        try:
+            import voyageai
+        except ImportError:
+            pytest.skip("voyageai not installed")
         import os
         old = os.environ.pop("VOYAGE_API_KEY", None)
         try:
@@ -107,6 +111,10 @@ class TestAPIBackendErrors:
                 os.environ["VOYAGE_API_KEY"] = old
 
     def test_openai_no_key(self):
+        try:
+            import openai
+        except ImportError:
+            pytest.skip("openai not installed")
         import os
         old = os.environ.pop("OPENAI_API_KEY", None)
         try:
