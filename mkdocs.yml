@@ -1,0 +1,78 @@
+site_name: engram
+site_description: Cognitive memory system with hybrid retrieval. 98.1% R@5 on LongMemEval.
+site_url: https://engram-memory.dev
+repo_url: https://github.com/raya-ac/engram
+repo_name: raya-ac/engram
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Claude Code Setup: getting-started/claude-code.md
+  - Guides:
+    - Embedding Backends: guides/embedding-backends.md
+    - Retrieval Pipeline: guides/retrieval-pipeline.md
+    - Memory Lifecycle: guides/memory-lifecycle.md
+    - Entity Graph: guides/entity-graph.md
+    - Drift Detection: guides/drift-detection.md
+    - Export & Import: guides/export-import.md
+    - Multi-Agent: guides/multi-agent.md
+    - Docker: guides/docker.md
+  - Reference:
+    - MCP Tools (63): reference/mcp-tools.md
+    - REST API (57): reference/rest-api.md
+    - CLI Commands (15): reference/cli.md
+    - Configuration: reference/config.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Retrieval Internals: architecture/retrieval.md
+    - ANN Index: architecture/ann-index.md
+    - Surprise Scoring: architecture/surprise.md
+    - Benchmarks: architecture/benchmarks.md
+  - Tutorials:
+    - Build an Agent: tutorials/build-an-agent.md
+    - Scan a Codebase: tutorials/scan-a-codebase.md
+    - Negative Knowledge: tutorials/negative-knowledge.md
+  - Changelog: changelog.md

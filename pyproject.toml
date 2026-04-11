@@ -51,6 +51,7 @@ voyage = ["voyageai>=0.3.0"]
 openai = ["openai>=1.30.0"]
 gemini = ["google-genai>=1.0.0"]
 api = ["voyageai>=0.3.0", "openai>=1.30.0", "google-genai>=1.0.0"]
+docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0"]
 
 [tool.pytest.ini_options]
 filterwarnings = [

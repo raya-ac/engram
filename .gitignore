@@ -20,3 +20,4 @@ benchmarks/longmemeval/data/
 benchmarks/longmemeval/src/
 benchmarks/longmemeval/*.jsonl
 benchmarks/longmemeval/retrieval_logs/
+site/
