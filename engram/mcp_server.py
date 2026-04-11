@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 52 tools."""
+"""MCP tool server — JSON-RPC over stdio with 63 tools."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ TOOLS = [
     {"name": "backlinks", "description": "Find all memories that reference or are linked to a specific memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
     # Batch operations
     {"name": "batch_tag", "description": "Add tags to all memories matching a search query", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}, "top_k": {"type": "integer", "default": 10}}, "required": ["query", "tags"]}},
-    {"name": "recompute_importance", "description": "Recalculate importance scores for all memories using the 7-factor formula", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "recompute_importance", "description": "Recalculate importance scores for all memories using the 9-factor formula", "inputSchema": {"type": "object", "properties": {}}},
     # Edit & annotate
     {"name": "edit_memory", "description": "Edit the content of an existing memory. Re-embeds automatically.", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "new_content": {"type": "string"}}, "required": ["memory_id", "new_content"]}},
     {"name": "annotate", "description": "Add a note/annotation to a memory without changing its content", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "note": {"type": "string"}}, "required": ["memory_id", "note"]}},
@@ -92,7 +92,7 @@ TOOLS = [
     {"name": "search_entities", "description": "Fuzzy search for entities by name — finds partial matches unlike recall_entity which needs exact name", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}}, "required": ["query"]}},
     {"name": "entity_timeline", "description": "Get an entity's memories ordered by date — see its story chronologically", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     # Explain
-    {"name": "explain_importance", "description": "Break down a memory's importance score into its 7 component factors", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
+    {"name": "explain_importance", "description": "Break down a memory's importance score into its 9 component factors", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
     # Visualization data
     {"name": "memory_map", "description": "Get a high-level map of the entire memory system — layer counts, top entities per layer, recent activity, oldest/newest memories", "inputSchema": {"type": "object", "properties": {}}},
     # Deep retrieval

@@ -8,6 +8,14 @@ build/
 *.db-wal
 *.db-shm
 .claude/
+.env
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.pytest_cache/
 benchmarks/longmemeval/data/
 benchmarks/longmemeval/src/
 benchmarks/longmemeval/*.jsonl

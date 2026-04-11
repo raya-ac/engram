@@ -412,7 +412,7 @@ restart claude code. you get 63 tools:
 |------|-------------|
 | `dedup` | find and merge near-duplicate memories by embedding similarity |
 | `find_duplicates` | preview duplicate pairs without merging |
-| `recompute_importance` | recalculate all importance scores with the 7-factor formula |
+| `recompute_importance` | recalculate all importance scores with the 9-factor formula |
 | `batch_tag` | add tags to all memories matching a search query |
 | `train_reranker` | train the deep MLP reranker on access patterns |
 | `reranker_status` | check if the deep reranker is trained |
@@ -466,7 +466,7 @@ restart claude code. you get 63 tools:
 | memory CRUD | 2/2 | write → read → ANN verify → forget |
 | layers (L0-L3) | 1/1 | 248ms, 4 layers |
 | deep reranker | 1/1 | trained=True |
-| importance scoring | 1/1 | 7-factor composite OK |
+| importance scoring | 1/1 | 9-factor composite OK |
 | store internals | 3/3 | cache cold=0.4ms hot=0.001ms |
 | diary | 1/1 | write + read OK |
 | events | 1/1 | logging OK |
@@ -610,7 +610,7 @@ full monitoring UI at `http://127.0.0.1:8420`. supports optional bearer token au
 - **export** — download memories as markdown or JSON from sidebar, with optional layer filter.
 - **live events** — real-time feed of all memory reads/writes across all processes (MCP, CLI, web). deduplicates events within 2-second windows and shows result counts.
 - **session diary** — quick note-taking input in the sidebar, timestamped entries.
-- **inspector panel** — right sidebar that shows memory details, entity graphs, similar memories (with similarity percentages), importance factor breakdowns (colored bar chart with 7 weighted factors), annotations with add-note input, and access history.
+- **inspector panel** — right sidebar that shows memory details, entity graphs, similar memories (with similarity percentages), importance factor breakdowns (colored bar chart with 9 weighted factors), annotations with add-note input, and access history.
 - **toast notifications** — bottom-right toasts for all actions (promote, pin, copy, forget, dedup) with success/error/info styling and auto-dismiss.
 - **keyboard shortcuts** — `/` focus search, `n` neural map, `s` search, `r` remember, `a` analytics, `c` cognition, `b` bridges, `Esc` close inspector.
 
@@ -622,7 +622,7 @@ the dashboard is backed by a full JSON API you can hit directly:
 GET  /api/memories                    paginated list, optional ?layer= filter
 GET  /api/memories/:id                full memory with hypothetical queries, entities, access history
 GET  /api/memories/:id/similar        find similar memories by embedding distance
-GET  /api/memories/:id/importance     7-factor importance score breakdown
+GET  /api/memories/:id/importance     9-factor importance score breakdown
 GET  /api/search?q=...&debug=true     hybrid search with optional debug breakdown
 GET  /api/search/filtered?q=...       search with layer, importance, date, source filters
 GET  /api/entities                    all entities with memory counts
