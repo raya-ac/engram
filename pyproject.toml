@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "engram-ai"
+name = "engram-memory-system"
 version = "0.1.0"
 description = "Cognitive memory system with hybrid retrieval, entity graphs, and memory lifecycle. 98.1% R@5 on LongMemEval."
 license = "MIT"
