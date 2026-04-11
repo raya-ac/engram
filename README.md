@@ -142,14 +142,28 @@ memories aren't write-once. you can:
 
 the `examples/` directory has ready-to-use setup guides:
 
+**setup guides:**
+
 | file | what it covers |
 |------|---------------|
 | [`claude-code-setup.md`](examples/claude-code-setup.md) | full walkthrough: install, wire into claude code, add CLAUDE.md instructions, seed memories |
-| [`agent-patterns.md`](examples/agent-patterns.md) | common patterns: session orientation, learning from corrections, check-before-store, cognitive scaffolding, multi-agent setup |
-| [`python-client.py`](examples/python-client.py) | standalone Python usage without MCP — direct library calls for store, search, surprise scoring, reranker |
-| [`custom-agent.py`](examples/custom-agent.py) | minimal conversational agent with engram memory using the Anthropic SDK |
-| [`openai-compatible.py`](examples/openai-compatible.py) | same agent pattern but works with any OpenAI-compatible API (OpenAI, Ollama, vLLM, llama.cpp) |
 | [`hooks-setup.md`](examples/hooks-setup.md) | auto-extract memories from conversations via claude code hooks |
+| [`agent-patterns.md`](examples/agent-patterns.md) | common patterns: session orientation, learning from corrections, check-before-store, cognitive scaffolding, multi-agent setup |
+
+**python examples:**
+
+| file | what it does |
+|------|-------------|
+| [`python-client.py`](examples/python-client.py) | standalone usage without MCP — store, search, surprise scoring, reranker training |
+| [`custom-agent.py`](examples/custom-agent.py) | conversational agent with engram memory using the Anthropic SDK |
+| [`openai-compatible.py`](examples/openai-compatible.py) | same pattern for any OpenAI-compatible API (OpenAI, Ollama, vLLM, llama.cpp) |
+| [`multi-agent.py`](examples/multi-agent.py) | 3 specialized agents sharing one database — cross-domain recall, surprise, dream cycle |
+| [`api-embeddings.py`](examples/api-embeddings.py) | switch between local and cloud embedding backends (Voyage, OpenAI, Gemini) |
+| [`entity-graph.py`](examples/entity-graph.py) | build and traverse the entity relationship graph — multi-hop traversal |
+| [`negative-knowledge.py`](examples/negative-knowledge.py) | store "what does NOT exist" — prevents hallucinated recommendations |
+| [`drift-detection.py`](examples/drift-detection.py) | detect and fix stale memories referencing dead paths or missing functions |
+| [`export-import.py`](examples/export-import.py) | export memories to portable JSON, import into fresh database |
+| [`codebase-scan.py`](examples/codebase-scan.py) | scan a project and extract compressed code knowledge |
 
 ## install
 
