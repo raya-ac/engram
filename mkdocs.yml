@@ -6,6 +6,8 @@ repo_name: raya-ac/engram
 
 theme:
   name: material
+  logo: assets/logo-192.png
+  favicon: assets/favicon.png
   palette:
     - scheme: slate
       primary: deep purple

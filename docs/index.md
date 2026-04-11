@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo-192.png" alt="engram" width="150">
+</p>
+
 # engram
 
 a cognitive memory system that actually remembers things.
