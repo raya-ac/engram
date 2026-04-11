@@ -339,14 +339,49 @@ def cosine_similarity_search(query_vec: np.ndarray, doc_vecs: np.ndarray,
     return [(int(i), float(scores[i])) for i in top_indices]
 
 
+RERANKER_BACKENDS = {
+    "rerank-2": "voyage", "rerank-2-lite": "voyage",
+    "rerank-2.5": "voyage", "rerank-2.5-lite": "voyage",
+}
+
+
 def cross_encoder_rerank(query: str, documents: list[str],
                           model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list[tuple[int, float]]:
+    """Rerank documents by relevance to query.
+
+    Supports local cross-encoders (ms-marco-MiniLM) and cloud rerankers
+    (Voyage rerank-2.5). Auto-detects backend from model name.
+    """
     if not documents:
         return []
+
+    if model_name in RERANKER_BACKENDS:
+        return _rerank_voyage(query, documents, model_name)
+
+    # local cross-encoder
     model = _get_cross_encoder(model_name)
     pairs = [(query, doc) for doc in documents]
     scores = model.predict(pairs, show_progress_bar=False)
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+    return [(int(i), float(s)) for i, s in ranked]
+
+
+def _rerank_voyage(query: str, documents: list[str], model_name: str) -> list[tuple[int, float]]:
+    """Rerank via Voyage AI API."""
+    try:
+        import voyageai
+    except ImportError:
+        raise ImportError("voyageai not installed: pip install voyageai")
+
+    api_key = os.environ.get("VOYAGE_API_KEY")
+    if not api_key:
+        raise ValueError("VOYAGE_API_KEY environment variable not set")
+
+    vo = voyageai.Client(api_key=api_key)
+    result = vo.rerank(query=query, documents=documents, model=model_name)
+
+    ranked = [(r.index, r.relevance_score) for r in result.results]
+    ranked.sort(key=lambda x: x[1], reverse=True)
     return [(int(i), float(s)) for i, s in ranked]
 
 

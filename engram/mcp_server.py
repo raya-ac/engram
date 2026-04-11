@@ -1390,3 +1390,89 @@ def run_mcp(config: Config):
             error = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(e)}}
             sys.stdout.write(json.dumps(error) + "\n")
             sys.stdout.flush()
+
+
+def run_mcp_sse(config: Config, port: int = 8421):
+    """Run MCP server over HTTP with SSE transport.
+
+    Endpoints:
+        POST /mcp  — JSON-RPC request, returns JSON-RPC response
+        GET  /sse  — SSE stream for server-initiated messages (notifications)
+        GET  /health — health check
+
+    Use this when you can't use stdio (e.g. remote agents, browser-based clients).
+    """
+    import asyncio
+    import threading
+    from fastapi import FastAPI, Request
+    from fastapi.responses import JSONResponse
+    from sse_starlette.sse import EventSourceResponse
+    import uvicorn
+
+    server = MCPServer(config)
+
+    # warmup
+    def _warmup():
+        try:
+            from engram.embeddings import warmup as _warmup_models
+            if config.embedding_backend != "auto":
+                from engram.embeddings import set_backend
+                set_backend(config.embedding_backend)
+            _warmup_models(config.embedding_model, config.cross_encoder_model)
+        except Exception:
+            pass
+
+    threading.Thread(target=_warmup, daemon=True).start()
+
+    app = FastAPI(title="Engram MCP (SSE)", version="0.1.0")
+
+    # SSE subscribers
+    _sse_queues: list[asyncio.Queue] = []
+
+    @app.post("/mcp")
+    async def mcp_endpoint(request: Request):
+        body = await request.json()
+        response = server.handle_request(body)
+        if response:
+            # broadcast to SSE subscribers
+            for q in _sse_queues:
+                try:
+                    q.put_nowait(response)
+                except asyncio.QueueFull:
+                    pass
+            return JSONResponse(content=response)
+        return JSONResponse(content={"jsonrpc": "2.0", "result": "ok"})
+
+    @app.get("/sse")
+    async def sse_endpoint():
+        queue = asyncio.Queue(maxsize=100)
+        _sse_queues.append(queue)
+
+        async def event_generator():
+            try:
+                while True:
+                    msg = await queue.get()
+                    yield {"event": "message", "data": json.dumps(msg)}
+            except asyncio.CancelledError:
+                pass
+            finally:
+                _sse_queues.remove(queue)
+
+        return EventSourceResponse(event_generator())
+
+    @app.get("/health")
+    async def health():
+        stats = server.store.get_stats()
+        ann_ready = server.store.ann_index.ready if server.store.ann_index else False
+        return {
+            "status": "ok",
+            "memories": stats["memories"]["total"],
+            "entities": stats["entities"],
+            "ann_ready": ann_ready,
+        }
+
+    print(f"Starting Engram MCP (SSE) on http://127.0.0.1:{port}")
+    print(f"  POST /mcp   — JSON-RPC endpoint")
+    print(f"  GET  /sse   — SSE stream")
+    print(f"  GET  /health — health check")
+    uvicorn.run(app, host="127.0.0.1", port=port)

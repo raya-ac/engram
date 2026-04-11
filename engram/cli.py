@@ -99,7 +99,8 @@ def main():
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
     p_serve.add_argument("--mcp", action="store_true", help="Start MCP server (stdio)")
-    p_serve.add_argument("--port", type=int, help="Web UI port override")
+    p_serve.add_argument("--mcp-sse", action="store_true", help="Start MCP server (HTTP/SSE transport)")
+    p_serve.add_argument("--port", type=int, help="Port override")
 
     args = parser.parse_args()
     config = Config.load(args.config)
@@ -462,6 +463,10 @@ def cmd_serve(args, config: Config):
     if args.mcp:
         from engram.mcp_server import run_mcp
         run_mcp(config)
+    elif getattr(args, 'mcp_sse', False):
+        from engram.mcp_server import run_mcp_sse
+        port = args.port or 8421
+        run_mcp_sse(config, port=port)
     elif args.web:
         from engram.web.app import create_app
         import uvicorn
