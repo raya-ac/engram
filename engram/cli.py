@@ -84,6 +84,12 @@ def main():
     args = parser.parse_args()
     config = Config.load(args.config)
 
+    # set embedding backend + default model from config
+    from engram.embeddings import set_backend, set_default_model
+    if config.embedding_backend and config.embedding_backend != "auto":
+        set_backend(config.embedding_backend)
+    set_default_model(config.embedding_model)
+
     if args.command == "ingest":
         cmd_ingest(args, config)
     elif args.command == "search":

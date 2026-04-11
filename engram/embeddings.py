@@ -37,6 +37,7 @@ _mlx_model = None
 _mlx_tokenizer = None
 _backend = None
 _models_warmed = False
+_default_model = "BAAI/bge-small-en-v1.5"
 
 # known model → dim mappings (so we don't need a probe call)
 MODEL_DIMS = {
@@ -81,27 +82,29 @@ def get_model_dim(model_name: str) -> int | None:
 
 
 def _detect_backend(model_name: str | None = None) -> str:
-    """Auto-detect best available backend."""
+    """Detect backend. Priority: model name → explicit _backend → auto-detect local."""
     global _backend
 
-    # if model implies a specific backend, use it
+    # API models always use their specific backend
     if model_name and model_name in MODEL_BACKENDS:
         return MODEL_BACKENDS[model_name]
 
-    if _backend:
+    # explicit override via set_backend() or config
+    if _backend and _backend != "auto":
         return _backend
+
+    # auto-detect best local backend
     try:
         import mlx.core
-        _backend = "mlx"
+        return "mlx"
     except ImportError:
-        _backend = "sentence_transformers"
-    return _backend
+        return "sentence_transformers"
 
 
 def set_backend(backend: str):
-    """Override the embedding backend."""
+    """Override the embedding backend. Called during config init."""
     global _backend, _bi_encoder, _mlx_model, _mlx_tokenizer
-    valid = ("sentence_transformers", "mlx", "voyage", "openai", "gemini")
+    valid = ("auto", "sentence_transformers", "mlx", "voyage", "openai", "gemini")
     if backend not in valid:
         raise ValueError(f"Unknown backend: {backend}. Use one of: {valid}")
     _backend = backend
@@ -110,8 +113,14 @@ def set_backend(backend: str):
     _mlx_tokenizer = None
 
 
-def get_backend() -> str:
-    return _detect_backend()
+def set_default_model(model_name: str):
+    """Set the default model used when callers don't specify one."""
+    global _default_model
+    _default_model = model_name
+
+
+def get_backend(model_name: str | None = None) -> str:
+    return _detect_backend(model_name)
 
 
 def warmup(bi_model: str = "BAAI/bge-small-en-v1.5",
@@ -296,27 +305,28 @@ def _embed_gemini(texts: list[str], model_name: str, is_query: bool, normalize: 
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 
-def embed_texts(texts: list[str], model_name: str = "BAAI/bge-small-en-v1.5",
+def embed_texts(texts: list[str], model_name: str | None = None,
                 is_query: bool = False, normalize: bool = True) -> np.ndarray:
     if not texts:
         return np.array([])
-    backend = _detect_backend(model_name)
+    model = model_name or _default_model
+    backend = _detect_backend(model)
     if backend == "voyage":
-        return _embed_voyage(texts, model_name, is_query, normalize)
+        return _embed_voyage(texts, model, is_query, normalize)
     elif backend == "openai":
-        return _embed_openai(texts, model_name, is_query, normalize)
+        return _embed_openai(texts, model, is_query, normalize)
     elif backend == "gemini":
-        return _embed_gemini(texts, model_name, is_query, normalize)
+        return _embed_gemini(texts, model, is_query, normalize)
     elif backend == "mlx":
-        return _embed_mlx(texts, model_name, is_query, normalize)
-    return _embed_st(texts, model_name, is_query, normalize)
+        return _embed_mlx(texts, model, is_query, normalize)
+    return _embed_st(texts, model, is_query, normalize)
 
 
-def embed_query(text: str, model_name: str = "BAAI/bge-small-en-v1.5") -> np.ndarray:
+def embed_query(text: str, model_name: str | None = None) -> np.ndarray:
     return embed_texts([text], model_name=model_name, is_query=True)[0]
 
 
-def embed_documents(texts: list[str], model_name: str = "BAAI/bge-small-en-v1.5") -> np.ndarray:
+def embed_documents(texts: list[str], model_name: str | None = None) -> np.ndarray:
     return embed_texts(texts, model_name=model_name, is_query=False)
 
 

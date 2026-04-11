@@ -124,4 +124,11 @@ class Config:
                 if hasattr(cfg.ann, k):
                     setattr(cfg.ann, k, v)
 
+        # auto-detect embedding dim from model name if dim wasn't explicitly set
+        if "embedding_dim" not in raw and not os.environ.get("ENGRAM_EMBEDDING_DIM"):
+            from engram.embeddings import get_model_dim
+            detected = get_model_dim(cfg.embedding_model)
+            if detected:
+                cfg.embedding_dim = detected
+
         return cfg

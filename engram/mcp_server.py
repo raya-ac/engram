@@ -120,6 +120,11 @@ _session_diary: list[str] = []
 class MCPServer:
     def __init__(self, config: Config):
         self.config = config
+        # set embedding backend + default model from config
+        from engram.embeddings import set_backend, set_default_model
+        if config.embedding_backend and config.embedding_backend != "auto":
+            set_backend(config.embedding_backend)
+        set_default_model(config.embedding_model)
         self.store = Store(config)
         self.store.init_db()
         self.store.init_ann_index(background=True)

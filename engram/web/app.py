@@ -17,6 +17,13 @@ def create_app(config: Config | None = None) -> FastAPI:
         config = Config.load()
 
     app = FastAPI(title="Engram", version="0.1.0")
+
+    # set embedding backend + default model from config
+    from engram.embeddings import set_backend, set_default_model
+    if config.embedding_backend and config.embedding_backend != "auto":
+        set_backend(config.embedding_backend)
+    set_default_model(config.embedding_model)
+
     store = Store(config)
     store.init_db()
 
