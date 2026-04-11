@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.git/
+.claude/
+benchmarks/
+*.db
+*.db-wal
+*.db-shm

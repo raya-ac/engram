@@ -75,6 +75,26 @@ def main():
     p_index = sub.add_parser("index", help="Manage ANN index")
     p_index.add_argument("action", choices=["rebuild", "status"], help="Action to perform")
 
+    # reembed
+    p_reembed = sub.add_parser("reembed", help="Re-embed all memories (use after switching embedding model)")
+    p_reembed.add_argument("--batch-size", type=int, default=64, help="Batch size for embedding")
+    p_reembed.add_argument("--dry-run", action="store_true", help="Count memories without re-embedding")
+
+    # watch
+    p_watch = sub.add_parser("watch", help="Watch a directory for new files and auto-ingest")
+    p_watch.add_argument("path", help="Directory to watch")
+    p_watch.add_argument("--interval", type=int, default=30, help="Poll interval in seconds")
+
+    # export / import
+    p_export = sub.add_parser("export", help="Export memories to portable format")
+    p_export.add_argument("output", help="Output file path (.json or .jsonl)")
+    p_export.add_argument("--layer", help="Filter by layer")
+    p_export.add_argument("--include-embeddings", action="store_true", help="Include embedding vectors")
+
+    p_import = sub.add_parser("import", help="Import memories from exported file")
+    p_import.add_argument("input", help="Input file path (.json or .jsonl)")
+    p_import.add_argument("--skip-duplicates", action="store_true", help="Skip memories with matching chunk_hash")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
@@ -108,6 +128,14 @@ def main():
         cmd_patterns(args, config)
     elif args.command == "index":
         cmd_index(args, config)
+    elif args.command == "reembed":
+        cmd_reembed(args, config)
+    elif args.command == "watch":
+        cmd_watch(args, config)
+    elif args.command == "export":
+        cmd_export(args, config)
+    elif args.command == "import":
+        cmd_import(args, config)
     elif args.command == "demo":
         from engram.demo import run_demo
         run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
@@ -536,6 +564,341 @@ def cmd_patterns(args, config: Config):
         print(f"\n  Stored {result['total_stored']} patterns, skipped {result['total_skipped']}.")
         for s in result["stored"]:
             print(f"    + {s['title']} (novelty={s['novelty']:.2f}, importance={s['importance']:.2f})")
+
+    store.close()
+
+
+def cmd_reembed(args, config: Config):
+    from engram.store import Store
+    from engram.embeddings import embed_documents
+
+    store = Store(config)
+    store.init_db()
+
+    # count memories with embeddings
+    total = store.conn.execute(
+        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten = 0"
+    ).fetchone()["cnt"]
+    with_emb = store.conn.execute(
+        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten = 0 AND embedding IS NOT NULL"
+    ).fetchone()["cnt"]
+
+    print(f"Re-embedding with model: {config.embedding_model} (dim={config.embedding_dim})")
+    print(f"Memories: {total} total, {with_emb} with embeddings")
+
+    if args.dry_run:
+        print(f"[DRY RUN] Would re-embed {total} memories in batches of {args.batch_size}")
+        store.close()
+        return
+
+    # fetch all memories
+    rows = store.conn.execute(
+        "SELECT id, content FROM memories WHERE forgotten = 0 ORDER BY created_at"
+    ).fetchall()
+
+    batch_size = args.batch_size
+    updated = 0
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        ids = [r["id"] for r in batch]
+        texts = [r["content"] for r in batch]
+
+        vecs = embed_documents(texts, config.embedding_model)
+
+        for mid, vec in zip(ids, vecs):
+            blob = vec.astype(__import__("numpy").float32).tobytes()
+            store.conn.execute(
+                "UPDATE memories SET embedding = ? WHERE id = ?", (blob, mid)
+            )
+        store.conn.commit()
+        updated += len(batch)
+        print(f"  [{updated}/{len(rows)}] embedded")
+
+    store._embedding_cache = None
+
+    # rebuild ANN index
+    print("Rebuilding ANN index...")
+    store.init_ann_index(background=False)
+    if store.ann_index and store.ann_index.ready:
+        print(f"  ANN index: {store.ann_index.count} vectors")
+
+    print(f"Done. Re-embedded {updated} memories.")
+    store.close()
+
+
+def cmd_watch(args, config: Config):
+    import signal
+    from engram.store import Store
+
+    path = Path(args.path).expanduser().resolve()
+    if not path.is_dir():
+        print(f"Error: {path} is not a directory")
+        sys.exit(1)
+
+    store = Store(config)
+    store.init_db()
+
+    interval = args.interval
+    print(f"Watching {path} every {interval}s for new files...")
+    print("Press Ctrl+C to stop.\n")
+
+    def _shutdown(sig, frame):
+        print("\nStopping watcher.")
+        store.close()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    import hashlib
+    from engram.extractor import extract_facts, facts_to_memories, generate_hypothetical_queries
+    from engram.embeddings import embed_documents
+    from engram.entities import process_entities_for_memory
+    from engram.formats import parse_file, group_exchanges, detect_format
+
+    while True:
+        files = []
+        for ext in ("*.md", "*.txt", "*.json", "*.jsonl", "*.pdf"):
+            files.extend(path.rglob(ext))
+
+        new_files = 0
+        for fpath in sorted(files, key=lambda f: f.stat().st_mtime):
+            file_hash = hashlib.sha256(fpath.read_bytes()).hexdigest()
+            existing = store.get_file_hash(str(fpath))
+            if existing == file_hash:
+                continue
+
+            new_files += 1
+            print(f"  ingesting: {fpath.name}")
+
+            exchanges = parse_file(fpath)
+            if not exchanges:
+                continue
+
+            fmt = detect_format(fpath)
+            groups = group_exchanges(exchanges, fmt)
+
+            from engram.store import Memory, SourceType
+            for group in groups:
+                content = "\n".join(f"{e.role}: {e.content}" for e in group)
+                mem = Memory(
+                    id=str(uuid.uuid4()),
+                    content=content,
+                    source_file=str(fpath),
+                    source_type=SourceType.INGEST,
+                )
+                emb = embed_documents([content], config.embedding_model)
+                mem.embedding = emb[0]
+
+                store.save_memory(mem)
+                process_entities_for_memory(mem, store)
+
+            store.set_file_hash(str(fpath), file_hash)
+
+        if new_files:
+            print(f"  → ingested {new_files} new files")
+
+        time.sleep(interval)
+
+
+def cmd_export(args, config: Config):
+    import base64
+    from engram.store import Store
+
+    store = Store(config)
+    store.init_db()
+
+    query = "SELECT * FROM memories WHERE forgotten = 0"
+    params = []
+    if args.layer:
+        query += " AND layer = ?"
+        params.append(args.layer)
+    query += " ORDER BY created_at"
+
+    rows = store.conn.execute(query, params).fetchall()
+
+    output_path = Path(args.output)
+    memories = []
+
+    for row in rows:
+        mem = {
+            "id": row["id"],
+            "content": row["content"],
+            "source_file": row["source_file"],
+            "source_type": row["source_type"],
+            "layer": row["layer"],
+            "importance": row["importance"],
+            "access_count": row["access_count"],
+            "created_at": row["created_at"],
+            "last_accessed": row["last_accessed"],
+            "fact_date": row["fact_date"],
+            "fact_date_end": row["fact_date_end"],
+            "emotional_valence": row["emotional_valence"],
+            "chunk_hash": row["chunk_hash"],
+            "metadata": json.loads(row["metadata"]),
+        }
+        if args.include_embeddings and row["embedding"]:
+            mem["embedding_b64"] = base64.b64encode(row["embedding"]).decode()
+            mem["embedding_dim"] = config.embedding_dim
+            mem["embedding_model"] = config.embedding_model
+        memories.append(mem)
+
+    # also export entities and relationships
+    entities = [dict(r) for r in store.conn.execute("SELECT * FROM entities").fetchall()]
+    for e in entities:
+        e["aliases"] = json.loads(e["aliases"])
+        e["metadata"] = json.loads(e["metadata"])
+
+    relationships = [dict(r) for r in store.conn.execute("SELECT * FROM relationships").fetchall()]
+
+    entity_mentions = [dict(r) for r in store.conn.execute("SELECT * FROM entity_mentions").fetchall()]
+
+    export_data = {
+        "version": "1.0",
+        "exported_at": time.time(),
+        "embedding_model": config.embedding_model,
+        "embedding_dim": config.embedding_dim,
+        "memories": memories,
+        "entities": entities,
+        "relationships": relationships,
+        "entity_mentions": entity_mentions,
+    }
+
+    if str(output_path).endswith(".jsonl"):
+        with open(output_path, "w") as f:
+            for mem in memories:
+                f.write(json.dumps(mem) + "\n")
+    else:
+        with open(output_path, "w") as f:
+            json.dump(export_data, f, indent=2)
+
+    size_mb = output_path.stat().st_size / (1024 * 1024)
+    print(f"Exported {len(memories)} memories, {len(entities)} entities, {len(relationships)} relationships")
+    print(f"  → {output_path} ({size_mb:.1f} MB)")
+    if not args.include_embeddings:
+        print(f"  (embeddings excluded — use --include-embeddings to include)")
+    store.close()
+
+
+def cmd_import(args, config: Config):
+    import base64
+    import numpy as np
+    from engram.store import Store, Memory
+
+    store = Store(config)
+    store.init_db()
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: {input_path} does not exist")
+        sys.exit(1)
+
+    if str(input_path).endswith(".jsonl"):
+        with open(input_path) as f:
+            memories_data = [json.loads(line) for line in f if line.strip()]
+        entities_data = []
+        relationships_data = []
+        mentions_data = []
+    else:
+        with open(input_path) as f:
+            export_data = json.load(f)
+        memories_data = export_data.get("memories", [])
+        entities_data = export_data.get("entities", [])
+        relationships_data = export_data.get("relationships", [])
+        mentions_data = export_data.get("entity_mentions", [])
+
+        if "embedding_model" in export_data:
+            exp_model = export_data["embedding_model"]
+            if exp_model != config.embedding_model:
+                print(f"Warning: exported with model '{exp_model}', current model is '{config.embedding_model}'")
+                print(f"  Embeddings may be incompatible. Run 'engram reembed' after import.")
+
+    imported = 0
+    skipped = 0
+
+    for mem_data in memories_data:
+        if args.skip_duplicates:
+            existing = store.conn.execute(
+                "SELECT id FROM memories WHERE chunk_hash = ?",
+                (mem_data.get("chunk_hash", ""),)
+            ).fetchone()
+            if existing:
+                skipped += 1
+                continue
+
+        mem = Memory(
+            id=mem_data["id"],
+            content=mem_data["content"],
+            source_file=mem_data.get("source_file"),
+            source_type=mem_data.get("source_type", "ingest"),
+            layer=mem_data.get("layer", "episodic"),
+            importance=mem_data.get("importance", 0.5),
+            access_count=mem_data.get("access_count", 0),
+            created_at=mem_data.get("created_at", time.time()),
+            last_accessed=mem_data.get("last_accessed", time.time()),
+            fact_date=mem_data.get("fact_date"),
+            fact_date_end=mem_data.get("fact_date_end"),
+            emotional_valence=mem_data.get("emotional_valence", 0.0),
+            chunk_hash=mem_data.get("chunk_hash", ""),
+            metadata=mem_data.get("metadata", {}),
+        )
+
+        # restore embedding if present and compatible
+        if "embedding_b64" in mem_data:
+            emb_bytes = base64.b64decode(mem_data["embedding_b64"])
+            mem.embedding = np.frombuffer(emb_bytes, dtype=np.float32).copy()
+        else:
+            # embed with current model
+            from engram.embeddings import embed_documents
+            emb = embed_documents([mem.content], config.embedding_model)
+            mem.embedding = emb[0]
+
+        store.save_memory(mem)
+        imported += 1
+
+        if imported % 100 == 0:
+            print(f"  [{imported}] imported...")
+
+    # import entities
+    from engram.store import Entity, Relationship
+    for e_data in entities_data:
+        entity = Entity(
+            id=e_data["id"],
+            canonical_name=e_data["canonical_name"],
+            aliases=e_data.get("aliases", []),
+            entity_type=e_data.get("entity_type", "concept"),
+            first_seen=e_data.get("first_seen", 0),
+            last_seen=e_data.get("last_seen", 0),
+            metadata=e_data.get("metadata", {}),
+        )
+        store.save_entity(entity)
+
+    # import relationships
+    for r_data in relationships_data:
+        rel = Relationship(
+            source_entity_id=r_data["source_entity_id"],
+            target_entity_id=r_data["target_entity_id"],
+            relation_type=r_data["relation_type"],
+            strength=r_data.get("strength", 1.0),
+            evidence_count=r_data.get("evidence_count", 1),
+            created_at=r_data.get("created_at", 0),
+            last_seen=r_data.get("last_seen", 0),
+        )
+        store.save_relationship(rel)
+
+    # import entity mentions
+    for m_data in mentions_data:
+        store.link_entity_memory(m_data["entity_id"], m_data["memory_id"])
+
+    print(f"\nImported {imported} memories, {len(entities_data)} entities, {len(relationships_data)} relationships")
+    if skipped:
+        print(f"  Skipped {skipped} duplicates")
+
+    # rebuild ANN index
+    store.init_ann_index(background=False)
+    if store.ann_index and store.ann_index.ready:
+        print(f"  ANN index rebuilt: {store.ann_index.count} vectors")
 
     store.close()
 

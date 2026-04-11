@@ -59,6 +59,7 @@ class ANNConfig:
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8420
+    auth_token: str = ""  # set to enable bearer token auth on the web UI
 
 
 @dataclass

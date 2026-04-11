@@ -57,6 +57,11 @@ class ANNIndex:
     def build(self, ids: list[str], vecs: np.ndarray):
         """Build index from scratch. ids and vecs must be aligned."""
         if len(ids) == 0:
+            # init empty index so add() works later
+            idx = hnswlib.Index(space="cosine", dim=self.dim)
+            idx.init_index(max_elements=self.max_elements, M=self.m, ef_construction=self.ef_construction)
+            idx.set_ef(self.ef_search)
+            self._index = idx
             self._ready = True
             return
 
@@ -127,10 +132,10 @@ class ANNIndex:
         Scores are cosine similarity (higher = more similar), matching
         the convention of the brute-force fallback.
         """
-        if not self._ready or self._index is None or self._index.get_current_count() == 0:
+        if not self._ready or self._index is None or self.count == 0:
             return []
 
-        k = min(top_k, self._index.get_current_count())
+        k = min(top_k, self.count)
         q = query_vec.astype(np.float32).reshape(1, -1)
 
         with self._lock:

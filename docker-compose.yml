@@ -1,0 +1,18 @@
+services:
+  engram:
+    build: .
+    ports:
+      - "8420:8420"
+    volumes:
+      - engram-data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - ENGRAM_DB_PATH=/data/memory.db
+      # uncomment and set API keys for cloud embedding backends
+      # - VOYAGE_API_KEY=
+      # - OPENAI_API_KEY=
+      # - GEMINI_API_KEY=
+    restart: unless-stopped
+
+volumes:
+  engram-data:

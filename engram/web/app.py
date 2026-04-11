@@ -5,7 +5,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from engram.config import Config
@@ -29,6 +30,47 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.state.store = store
     app.state.config = config
+
+    # auth middleware — if auth_token is set, require Bearer token
+    if config.web.auth_token:
+        @app.middleware("http")
+        async def auth_middleware(request: Request, call_next):
+            # allow the root page and static assets without auth
+            path = request.url.path
+            if path == "/" or path.startswith("/static"):
+                # check query param token for browser access
+                token = request.query_params.get("token")
+                if token == config.web.auth_token:
+                    response = await call_next(request)
+                    return response
+                # also check cookie
+                cookie_token = request.cookies.get("engram_token")
+                if cookie_token == config.web.auth_token:
+                    response = await call_next(request)
+                    return response
+
+            # check Authorization header for API access
+            auth = request.headers.get("Authorization", "")
+            if auth == f"Bearer {config.web.auth_token}":
+                response = await call_next(request)
+                return response
+
+            # check query param for all routes
+            token = request.query_params.get("token")
+            if token == config.web.auth_token:
+                response = await call_next(request)
+                return response
+
+            # check cookie
+            cookie_token = request.cookies.get("engram_token")
+            if cookie_token == config.web.auth_token:
+                response = await call_next(request)
+                return response
+
+            return JSONResponse(
+                status_code=401,
+                content={"error": "unauthorized", "detail": "set Authorization: Bearer <token> header, or ?token=<token> query param"},
+            )
 
     template_dir = Path(__file__).parent / "templates"
     templates = Jinja2Templates(directory=str(template_dir))
