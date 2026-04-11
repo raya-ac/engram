@@ -29,3 +29,9 @@ voyage = ["voyageai>=0.3.0"]
 openai = ["openai>=1.30.0"]
 gemini = ["google-genai>=1.0.0"]
 api = ["voyageai>=0.3.0", "openai>=1.30.0", "google-genai>=1.0.0"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:importlib._bootstrap",
+    "ignore::DeprecationWarning:sys",
+]
