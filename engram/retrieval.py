@@ -17,7 +17,7 @@ import numpy as np
 from engram.config import Config
 from engram.embeddings import embed_query, cosine_similarity_search, cross_encoder_rerank
 from engram.hopfield import hopfield_retrieve
-from engram.store import Store, Memory
+from engram.store import Store, Memory, MemoryType
 
 
 # --- Intent classification (MAGMA-inspired) ---
@@ -48,6 +48,13 @@ def classify_intent(query: str) -> str:
     return max(scores, key=scores.get)
 
 
+# Retrieval profiles — filter by memory_type before ranking
+RETRIEVAL_PROFILES = {
+    "facts_only":       {MemoryType.FACT},
+    "facts_plus_rules": {MemoryType.FACT, MemoryType.PROCEDURE},
+    "full_context":     {MemoryType.FACT, MemoryType.PROCEDURE, MemoryType.NARRATIVE},
+}
+
 # retrieval noise scale (ACT-R inspired) — small logistic noise for beneficial variation
 RETRIEVAL_NOISE_SCALE = 0.02
 
@@ -75,13 +82,17 @@ class RetrievalDebug:
 def search(query: str, store: Store, config: Config | None = None,
            top_k: int | None = None, debug: bool = False,
            rerank: bool = True,
-           deep_reranker=None) -> list[RetrievalResult] | tuple[list[RetrievalResult], RetrievalDebug]:
+           deep_reranker=None,
+           mode: str = "full_context") -> list[RetrievalResult] | tuple[list[RetrievalResult], RetrievalDebug]:
     if config is None:
         config = Config.load()
 
     rc = config.retrieval
     k = top_k or rc.top_k
     t0 = time.time()
+
+    # resolve retrieval profile — which memory types to include
+    allowed_types = RETRIEVAL_PROFILES.get(mode, RETRIEVAL_PROFILES["full_context"])
 
     # --- Stage 0: Intent classification (MAGMA-inspired) ---
     intent = classify_intent(query)
@@ -110,7 +121,7 @@ def search(query: str, store: Store, config: Config | None = None,
     candidate_memories = {}
     for mid in candidate_ids:
         mem = store.get_memory(mid)
-        if mem:
+        if mem and mem.memory_type in allowed_types and mem.status in ("active", None):
             candidate_memories[mid] = mem
 
     if not candidate_memories:

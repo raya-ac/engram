@@ -25,6 +25,22 @@ class MemoryLayer(str, Enum):
     CODEBASE = "codebase"
 
 
+class MemoryType(str, Enum):
+    """Semantic type of the memory content — orthogonal to layer."""
+    FACT = "fact"              # structured knowledge, statuses, states
+    PROCEDURE = "procedure"    # how-to, playbooks, rules
+    NARRATIVE = "narrative"    # session logs, stories, raw context
+
+
+class MemoryStatus(str, Enum):
+    """Lifecycle status of a memory."""
+    ACTIVE = "active"
+    CHALLENGED = "challenged"
+    INVALIDATED = "invalidated"
+    MERGED = "merged"
+    SUPERSEDED = "superseded"
+
+
 class SourceType(str, Enum):
     INGEST = "ingest"
     HUMAN = "remember:human"
@@ -41,6 +57,8 @@ class Memory:
     source_file: str | None = None
     source_type: str = SourceType.INGEST
     layer: str = MemoryLayer.EPISODIC
+    memory_type: str = MemoryType.NARRATIVE
+    status: str = MemoryStatus.ACTIVE
     embedding: np.ndarray | None = None
     importance: float = 0.5
     access_count: int = 0
@@ -100,6 +118,8 @@ CREATE TABLE IF NOT EXISTS memories (
     source_file TEXT,
     source_type TEXT NOT NULL DEFAULT 'ingest',
     layer TEXT NOT NULL DEFAULT 'episodic',
+    memory_type TEXT NOT NULL DEFAULT 'narrative',
+    status TEXT NOT NULL DEFAULT 'active',
     embedding BLOB,
     importance REAL NOT NULL DEFAULT 0.5,
     access_count INTEGER NOT NULL DEFAULT 0,
@@ -120,6 +140,8 @@ CREATE INDEX IF NOT EXISTS idx_memories_fact_date ON memories(fact_date);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_forgotten ON memories(forgotten);
+CREATE INDEX IF NOT EXISTS idx_memories_memory_type ON memories(memory_type);
+CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     content,
@@ -206,6 +228,16 @@ CREATE TABLE IF NOT EXISTS importance_history (
     recorded_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_imp_hist_memory ON importance_history(memory_id);
+
+CREATE TABLE IF NOT EXISTS status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    old_status TEXT NOT NULL,
+    new_status TEXT NOT NULL,
+    reason TEXT,
+    changed_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_status_hist_memory ON status_history(memory_id);
 """
 
 
@@ -244,6 +276,8 @@ class Store:
             ("relationships", "embedding", "BLOB DEFAULT NULL"),
             ("relationships", "valid_from", "REAL DEFAULT NULL"),
             ("relationships", "valid_to", "REAL DEFAULT NULL"),
+            ("memories", "memory_type", "TEXT DEFAULT 'narrative'"),
+            ("memories", "status", "TEXT DEFAULT 'active'"),
         ]
         for table, column, coltype in migrations:
             try:
@@ -251,6 +285,78 @@ class Store:
                 self.conn.commit()
             except Exception:
                 pass  # column already exists
+
+        # create status_history table if missing (for pre-0.3.0 DBs)
+        try:
+            self.conn.execute("""CREATE TABLE IF NOT EXISTS status_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                old_status TEXT NOT NULL, new_status TEXT NOT NULL,
+                reason TEXT, changed_at REAL NOT NULL)""")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_status_hist_memory ON status_history(memory_id)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_memory_type ON memories(memory_type)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status)")
+            self.conn.commit()
+        except Exception:
+            pass
+
+        # backfill memory_type from metadata for existing memories
+        self._backfill_memory_type()
+
+    def _backfill_memory_type(self):
+        """Backfill memory_type from metadata['type'] for pre-0.3.0 memories."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, metadata, layer FROM memories WHERE memory_type = 'narrative' OR memory_type IS NULL"
+            ).fetchall()
+            type_map = {"factual": "fact", "procedural": "procedure", "experiential": "narrative"}
+            updated = 0
+            for row in rows:
+                meta = json.loads(row["metadata"]) if row["metadata"] else {}
+                raw_type = meta.get("type", "")
+                # infer from metadata or layer
+                if raw_type in type_map:
+                    mtype = type_map[raw_type]
+                elif row["layer"] == "procedural":
+                    mtype = "procedure"
+                elif row["layer"] == "semantic":
+                    mtype = "fact"
+                else:
+                    continue  # leave as narrative
+                self.conn.execute("UPDATE memories SET memory_type = ? WHERE id = ?", (mtype, row["id"]))
+                updated += 1
+            if updated:
+                self.conn.commit()
+        except Exception:
+            pass
+
+    def update_status(self, memory_id: str, new_status: str, reason: str | None = None):
+        """Transition a memory's status with audit trail."""
+        row = self.conn.execute("SELECT status FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        if not row:
+            return
+        old_status = row["status"] or "active"
+        self.conn.execute("UPDATE memories SET status = ? WHERE id = ?", (new_status, memory_id))
+        self.conn.execute(
+            "INSERT INTO status_history (memory_id, old_status, new_status, reason, changed_at) VALUES (?, ?, ?, ?, ?)",
+            (memory_id, old_status, new_status, reason, time.time()),
+        )
+        self._emit_event("status_change", memory_id=memory_id, detail=f"{old_status} → {new_status}: {reason}")
+        self.conn.commit()
+
+    def get_status_history(self, memory_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM status_history WHERE memory_id = ? ORDER BY changed_at ASC",
+            (memory_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_memories_by_type(self, memory_type: str, limit: int = 50) -> list['Memory']:
+        rows = self.conn.execute(
+            "SELECT * FROM memories WHERE memory_type = ? AND forgotten = 0 AND status = 'active' ORDER BY importance DESC LIMIT ?",
+            (memory_type, limit),
+        ).fetchall()
+        return [self._row_to_memory(r) for r in rows]
 
     def init_ann_index(self, background: bool = True):
         """Initialize the ANN index — load from disk or rebuild."""
@@ -324,11 +430,13 @@ class Store:
 
         self.conn.execute(
             """INSERT OR REPLACE INTO memories
-            (id, content, source_file, source_type, layer, embedding, importance,
-             access_count, created_at, last_accessed, fact_date, fact_date_end,
-             emotional_valence, chunk_hash, metadata, forgotten, previous_memory_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, content, source_file, source_type, layer, memory_type, status,
+             embedding, importance, access_count, created_at, last_accessed,
+             fact_date, fact_date_end, emotional_valence, chunk_hash, metadata,
+             forgotten, previous_memory_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (mem.id, mem.content, mem.source_file, mem.source_type, mem.layer,
+             mem.memory_type, mem.status,
              emb_blob, mem.importance, mem.access_count, mem.created_at,
              mem.last_accessed, mem.fact_date, mem.fact_date_end,
              mem.emotional_valence, mem.chunk_hash, json.dumps(mem.metadata),
@@ -702,12 +810,16 @@ class Store:
 
     def _row_to_memory(self, row: sqlite3.Row) -> Memory:
         emb = _unpack_embedding(row["embedding"]) if row["embedding"] else None
+        # safe access for new columns (may not exist in old DBs mid-migration)
+        keys = row.keys() if hasattr(row, "keys") else []
         return Memory(
             id=row["id"],
             content=row["content"],
             source_file=row["source_file"],
             source_type=row["source_type"],
             layer=row["layer"],
+            memory_type=row["memory_type"] if "memory_type" in keys else MemoryType.NARRATIVE,
+            status=row["status"] if "status" in keys else MemoryStatus.ACTIVE,
             embedding=emb,
             importance=row["importance"],
             access_count=row["access_count"],

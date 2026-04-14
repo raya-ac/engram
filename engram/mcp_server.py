@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 63 tools."""
+"""MCP tool server — JSON-RPC over stdio with 66 tools."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import uuid
 from typing import Any
 
 from engram.config import Config
-from engram.store import Store, Memory, MemoryLayer, SourceType
+from engram.store import Store, Memory, MemoryLayer, MemoryType, MemoryStatus, SourceType
 from engram.embeddings import embed_documents
 from engram.retrieval import search as hybrid_search
 from engram.entities import process_entities_for_memory
@@ -29,7 +29,7 @@ from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmatio
 
 TOOLS = [
     # Read tools
-    {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder)", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}}, "required": ["query"]}},
+    {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder). Use mode to filter by memory type: facts_only (structured knowledge), facts_plus_rules (+ procedures), full_context (everything).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context", "description": "Retrieval profile — facts_only for statuses/states, facts_plus_rules for methodology, full_context for exhaustive recall"}}, "required": ["query"]}},
     {"name": "recall_entity", "description": "Get everything about a specific entity — facts, relationships, timeline", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "recall_timeline", "description": "Query memories by date range", "inputSchema": {"type": "object", "properties": {"start": {"type": "string", "description": "Start date YYYY-MM-DD or YYYY-MM"}, "end": {"type": "string"}}, "required": ["start"]}},
     {"name": "recall_related", "description": "Multi-hop graph traversal from an entity", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "max_hops": {"type": "integer", "default": 2}}, "required": ["name"]}},
@@ -40,7 +40,7 @@ TOOLS = [
     {"name": "entity_graph", "description": "Get entity relationship subgraph as JSON", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "access_patterns", "description": "What memories are recalled most, hit rates", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
     # Write tools
-    {"name": "remember", "description": "Store a memory", "inputSchema": {"type": "object", "properties": {"content": {"type": "string"}, "source_type": {"type": "string", "default": "remember:human"}, "layer": {"type": "string", "default": "episodic"}, "importance": {"type": "number", "default": 0.7}}, "required": ["content"]}},
+    {"name": "remember", "description": "Store a memory", "inputSchema": {"type": "object", "properties": {"content": {"type": "string"}, "source_type": {"type": "string", "default": "remember:human"}, "layer": {"type": "string", "default": "episodic"}, "memory_type": {"type": "string", "enum": ["fact", "procedure", "narrative"], "default": "narrative", "description": "Semantic type: fact (structured knowledge), procedure (how-to/rules), narrative (session logs)"}, "importance": {"type": "number", "default": 0.7}}, "required": ["content"]}},
     {"name": "remember_interaction", "description": "Store a Q+A exchange pair", "inputSchema": {"type": "object", "properties": {"question": {"type": "string"}, "answer": {"type": "string"}, "importance": {"type": "number", "default": 0.5}}, "required": ["question", "answer"]}},
     {"name": "remember_decision", "description": "Store a decision with rationale → procedural", "inputSchema": {"type": "object", "properties": {"decision": {"type": "string"}, "rationale": {"type": "string"}, "importance": {"type": "number", "default": 0.8}}, "required": ["decision"]}},
     {"name": "remember_error", "description": "Store an error pattern with prevention → procedural", "inputSchema": {"type": "object", "properties": {"error": {"type": "string"}, "prevention": {"type": "string"}, "importance": {"type": "number", "default": 0.7}}, "required": ["error"]}},
@@ -112,6 +112,10 @@ TOOLS = [
     {"name": "detect_communities", "description": "Run label propagation over the entity graph to discover clusters. Generates community summaries for higher-level retrieval.", "inputSchema": {"type": "object", "properties": {"min_size": {"type": "integer", "default": 3, "description": "Minimum community size"}, "generate_summaries": {"type": "boolean", "default": False, "description": "Generate LLM summaries for communities"}}}},
     {"name": "quality_metrics", "description": "Memory system quality metrics — storage quality ratio (what % of stored memories get recalled), curation ratio (active maintenance vs passive accumulation), retrieval relevance. Based on AgeMem reward decomposition.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "remember_negative", "description": "Store explicit negative knowledge — what does NOT exist, what was deliberately excluded, what should NOT be done. Prevents future hallucinated recommendations. Examples: 'There is no caching layer in this project', 'We deliberately do not use Redux', 'The /admin endpoint was removed in v2'.", "inputSchema": {"type": "object", "properties": {"content": {"type": "string", "description": "What does NOT exist or should NOT be done"}, "context": {"type": "string", "description": "Why this negative fact matters — what mistake it prevents"}, "scope": {"type": "string", "description": "What project/system this applies to"}, "importance": {"type": "number", "default": 0.75}}, "required": ["content"]}},
+    # Status & type tools (v0.3.0)
+    {"name": "update_status", "description": "Transition a memory's lifecycle status (active → challenged → invalidated/merged/superseded) with audit trail", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}, "new_status": {"type": "string", "enum": ["active", "challenged", "invalidated", "merged", "superseded"]}, "reason": {"type": "string"}}, "required": ["memory_id", "new_status"]}},
+    {"name": "recall_by_type", "description": "Get memories filtered by semantic type — fact (structured knowledge), procedure (how-to/rules), narrative (session logs)", "inputSchema": {"type": "object", "properties": {"memory_type": {"type": "string", "enum": ["fact", "procedure", "narrative"]}, "limit": {"type": "integer", "default": 20}}, "required": ["memory_type"]}},
+    {"name": "status_history", "description": "Get the full status transition history for a memory — what changed, when, and why", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
 ]
 
 _session_diary: list[str] = []
@@ -224,6 +228,9 @@ class MCPServer:
             "quality_metrics": self._quality_metrics,
             "compress_embeddings": self._compress_embeddings,
             "detect_communities": self._detect_communities,
+            "update_status": self._update_status,
+            "recall_by_type": self._recall_by_type,
+            "status_history": self._status_history,
         }
         handler = handlers.get(name)
         if not handler:
@@ -236,9 +243,11 @@ class MCPServer:
         self._sweep_working()
         results = hybrid_search(args["query"], self.store, self.config,
                                 top_k=args.get("top_k", 10),
-                                deep_reranker=self._reranker)
+                                deep_reranker=self._reranker,
+                                mode=args.get("mode", "full_context"))
         return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
-                 "layer": r.memory.layer, "fact_date": r.memory.fact_date,
+                 "layer": r.memory.layer, "memory_type": r.memory.memory_type,
+                 "status": r.memory.status, "fact_date": r.memory.fact_date,
                  "importance": r.memory.importance} for r in results]
 
     def _sweep_working(self):
@@ -319,6 +328,7 @@ class MCPServer:
             id=str(uuid.uuid4()), content=content,
             source_type=args.get("source_type", SourceType.HUMAN),
             layer=args.get("layer", MemoryLayer.EPISODIC),
+            memory_type=args.get("memory_type", MemoryType.NARRATIVE),
             importance=args.get("importance", 0.7),
         )
 
@@ -429,12 +439,14 @@ class MCPServer:
         content = f"Decision: {args['decision']}\nRationale: {args.get('rationale', '')}"
         return self._remember({"content": content, "source_type": SourceType.AI,
                                "layer": MemoryLayer.PROCEDURAL,
+                               "memory_type": MemoryType.PROCEDURE,
                                "importance": args.get("importance", 0.8)})
 
     def _remember_error(self, args: dict):
         content = f"Error: {args['error']}\nPrevention: {args.get('prevention', '')}"
         return self._remember({"content": content, "source_type": SourceType.AI,
                                "layer": MemoryLayer.PROCEDURAL,
+                               "memory_type": MemoryType.PROCEDURE,
                                "importance": args.get("importance", 0.7)})
 
     def _forget(self, args: dict):
@@ -574,6 +586,7 @@ class MCPServer:
             parts.append(f"Notes: {args['notes']}")
         content = "\n".join(parts)
         return self._remember({"content": content, "layer": MemoryLayer.SEMANTIC,
+                               "memory_type": MemoryType.FACT,
                                "importance": 0.7, "source_type": SourceType.HUMAN})
 
     def _recall_context(self, args: dict):
@@ -1339,9 +1352,31 @@ class MCPServer:
             "content": content,
             "source_type": SourceType.HUMAN,
             "layer": MemoryLayer.SEMANTIC,
+            "memory_type": MemoryType.FACT,
             "importance": args.get("importance", 0.75),
         })
         result["type"] = "negative_knowledge"
+        return result
+
+    # --- Status & type tools (v0.3.0) ---
+
+    def _update_status(self, args: dict):
+        self.store.update_status(args["memory_id"], args["new_status"], args.get("reason"))
+        return {"memory_id": args["memory_id"], "new_status": args["new_status"], "reason": args.get("reason")}
+
+    def _recall_by_type(self, args: dict):
+        mems = self.store.get_memories_by_type(args["memory_type"], args.get("limit", 20))
+        return [{"id": m.id, "content": m.content, "memory_type": m.memory_type,
+                 "status": m.status, "layer": m.layer, "importance": m.importance,
+                 "fact_date": m.fact_date} for m in mems]
+
+    def _status_history(self, args: dict):
+        history = self.store.get_status_history(args["memory_id"])
+        mem = self.store.get_memory(args["memory_id"])
+        result = {"memory_id": args["memory_id"], "transitions": history}
+        if mem:
+            result["current_status"] = mem.status
+            result["content_preview"] = mem.content[:100]
         return result
 
     def _response(self, req_id, result):

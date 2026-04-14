@@ -10,7 +10,7 @@ from pathlib import Path
 
 from engram.config import Config
 from engram.llm import query_llm, extract_json_from_response
-from engram.store import Memory, MemoryLayer, SourceType
+from engram.store import Memory, MemoryLayer, MemoryType, SourceType
 
 EXTRACTION_SYSTEM = """You are a memory extraction system. Your job is to distill raw text into atomic, self-contained factual statements.
 
@@ -106,7 +106,13 @@ def facts_to_memories(facts: list[dict], source_file: str | None = None) -> list
             "experiential": MemoryLayer.EPISODIC,
             "procedural": MemoryLayer.PROCEDURAL,
         }
+        type_map = {
+            "factual": MemoryType.FACT,
+            "experiential": MemoryType.NARRATIVE,
+            "procedural": MemoryType.PROCEDURE,
+        }
         layer = layer_map.get(fact.get("type", "factual"), MemoryLayer.EPISODIC)
+        memory_type = type_map.get(fact.get("type", "factual"), MemoryType.NARRATIVE)
 
         mem = Memory(
             id=str(uuid.uuid4()),
@@ -114,6 +120,7 @@ def facts_to_memories(facts: list[dict], source_file: str | None = None) -> list
             source_file=fact.get("source_file", source_file),
             source_type=SourceType.INGEST,
             layer=layer,
+            memory_type=memory_type,
             importance=fact.get("importance", 0.5),
             fact_date=fact.get("fact_date"),
             metadata={
