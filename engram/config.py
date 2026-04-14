@@ -36,9 +36,10 @@ class LifecycleConfig:
 
 @dataclass
 class LLMConfig:
-    backend: str = "claude_cli"
+    backend: str = "claude_cli"  # claude_cli | mlx | openai | anthropic
     model: str = "claude-sonnet-4-20250514"
     mlx_model: str = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    api_key: str = ""  # for openai/anthropic backends; defaults to env var if empty
 
 
 @dataclass
