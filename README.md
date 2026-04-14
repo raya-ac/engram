@@ -51,7 +51,11 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses five sig
 
 **adversarial belief probing** — during the dream cycle, randomly sample old semantic/procedural memories and challenge them: "is this still true?" beliefs that fail the probe get importance reduced. prevents fossilized false beliefs. from the March 2026 survey on [autonomous agent memory](https://arxiv.org/abs/2603.07670).
 
-**63 MCP tools** — plugs into claude code (or any MCP client) as a tool server. 72 tests. docker-ready. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**memory types** — memories are now typed: `fact` (structured knowledge, statuses, states), `procedure` (how-to, playbooks, rules), `narrative` (session logs, raw context). types are indexed and filterable. the `recall` tool accepts a `mode` parameter: `facts_only` (just structured knowledge), `facts_plus_rules` (+ procedures), `full_context` (everything). no more narrative dumps when you just want a status. existing memories auto-backfill from metadata on migration.
+
+**status tracking** — memories have lifecycle states: `active`, `challenged`, `invalidated`, `merged`, `superseded`. every transition is recorded in a `status_history` audit table with timestamp and reason. non-active memories are filtered from retrieval results. use `update_status` to transition, `status_history` to audit. designed for the "which status is current?" problem — one canonical state per memory, no conflicting duplicates.
+
+**66 MCP tools** — plugs into claude code (or any MCP client) as a tool server. 72 tests. docker-ready. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 
@@ -190,15 +194,39 @@ needs python 3.11+. first run will download two small models (~100MB total):
 - `BAAI/bge-small-en-v1.5` (33MB) — embeddings
 - `cross-encoder/ms-marco-MiniLM-L-6-v2` (22MB) — reranking
 
-### optional: API embedding backends
+### optional: API backends
 
-use cloud embedding APIs instead of (or alongside) local models:
+**LLM backends** — for fact extraction, memory evolution, enrichment, and consolidation:
+
+```bash
+pip install -e ".[anthropic]"  # anthropic API (claude models)
+pip install -e ".[openai]"     # openai API (gpt models)
+pip install -e ".[api]"        # all API backends (embedding + LLM)
+```
+
+configure in config.yaml:
+
+```yaml
+llm:
+  backend: anthropic             # claude_cli | anthropic | openai | mlx
+  model: claude-haiku-4-5-20251001
+  api_key: ""                    # or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var
+```
+
+| backend | auth | notes |
+|---------|------|-------|
+| `claude_cli` | Claude Code login | default, uses `claude` CLI subprocess |
+| `anthropic` | `ANTHROPIC_API_KEY` or `llm.api_key` | direct API, any Claude model |
+| `openai` | `OPENAI_API_KEY` or `llm.api_key` | any OpenAI/compatible model |
+| `mlx` | local | runs Qwen/Llama/etc on Apple Silicon GPU |
+
+**embedding backends** — use cloud embedding APIs instead of (or alongside) local models:
 
 ```bash
 pip install -e ".[voyage]"   # voyage-3.5, voyage-3.5-lite, voyage-code-3
 pip install -e ".[openai]"   # text-embedding-3-small, text-embedding-3-large
 pip install -e ".[gemini]"   # gemini-embedding-001
-pip install -e ".[api]"      # all three
+pip install -e ".[api]"      # all API backends
 ```
 
 set the API key and model in config.yaml or env vars:
@@ -352,13 +380,13 @@ wire it into claude code by adding to `~/.claude/settings.json`:
 }
 ```
 
-restart claude code. you get 63 tools:
+restart claude code. you get 66 tools:
 
 **recall & search**
 
 | tool | what it does |
 |------|-------------|
-| `recall` | hybrid search across all layers |
+| `recall` | hybrid search across all layers. accepts `mode`: `facts_only`, `facts_plus_rules`, `full_context` |
 | `recall_entity` | everything about a person/project/tool — memories, relationships, timeline |
 | `recall_timeline` | memories in a date range |
 | `recall_related` | multi-hop graph traversal from an entity |
@@ -368,6 +396,7 @@ restart claude code. you get 63 tools:
 | `get_skills` | task-aware skill selection — get focused procedural guidance only when injection would help, skip when it wouldn't |
 | `recall_code` | search the codebase layer for functions, classes, files |
 | `recall_context` | search and return a formatted context block with token budget |
+| `recall_by_type` | get memories filtered by semantic type — fact, procedure, narrative |
 | `find_similar` | find memories most similar to a given one by embedding distance |
 | `compress` | summarize search results down to a token budget |
 
@@ -386,6 +415,8 @@ restart claude code. you get 63 tools:
 | `pin` / `unpin` | pin a memory so it never gets forgotten by the dream cycle |
 | `forget` | soft-delete a memory |
 | `invalidate` | mark a fact as no longer true |
+| `update_status` | transition a memory's lifecycle status with audit trail |
+| `status_history` | get the full status transition history for a memory |
 | `tag` | add or remove tags on a memory |
 | `bulk_forget` | mass cleanup by source file, layer, or date |
 

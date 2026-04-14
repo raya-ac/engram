@@ -9,6 +9,7 @@ build/
 *.db-shm
 .claude/
 .env
+config.yaml
 .DS_Store
 .vscode/
 .idea/

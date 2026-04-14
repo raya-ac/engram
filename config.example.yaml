@@ -43,8 +43,9 @@ lifecycle:
   elastic_l1_ratio: 0.3
 
 llm:
-  backend: claude_cli          # claude_cli | mlx | llamacpp
-  model: claude-sonnet-4-20250514
+  backend: anthropic           # claude_cli | anthropic | openai | mlx
+  model: claude-haiku-4-5-20251001
+  api_key: ""                  # or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var
   mlx_model: mlx-community/Qwen2.5-3B-Instruct-4bit
 
 web:
