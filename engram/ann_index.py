@@ -135,7 +135,7 @@ class ANNIndex:
         if not self._ready or self._index is None or self.count == 0:
             return []
 
-        k = min(top_k, self.count)
+        k = int(min(top_k, self.count))
         q = query_vec.astype(np.float32).reshape(1, -1)
 
         with self._lock:
