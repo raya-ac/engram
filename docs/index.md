@@ -15,7 +15,7 @@ one sqlite file, hybrid retrieval that fuses five signals, memory layers that mo
 - **hybrid retrieval** — HNSW dense + BM25 + entity graph BFS + Hopfield associative pattern completion, fused with intent-weighted reciprocal rank fusion, cross-encoder reranking, deep MLP reranking
 - **memory layers** — working, episodic, semantic, procedural, codebase. memories promote upward when useful, decay if unused
 - **entity graph** — extracts people, tools, projects from every memory. multi-hop traversal via recursive SQL CTEs
-- **63 MCP tools** — plugs into Claude Code or any MCP client. 72 tests. docker-ready
+- **66 MCP tools** — plugs into Claude Code or any MCP client. 72 tests. docker-ready
 - **multi-backend embeddings** — local (MLX/CPU), Voyage AI, OpenAI, Google Gemini. auto-detects from model name
 - **web dashboard** — 17 panels including neural map, search, analytics, cognition, drift detection
 
@@ -36,7 +36,7 @@ cd engram && pip install -e .
 
 - [Installation](getting-started/installation.md) — full setup guide
 - [Quick Start](getting-started/quickstart.md) — first steps
-- [MCP Tools Reference](reference/mcp-tools.md) — all 63 tools
+- [MCP Tools Reference](reference/mcp-tools.md) — all 66 tools
 - [Architecture](architecture/overview.md) — how it works inside
 - [Benchmarks](architecture/benchmarks.md) — LongMemEval results
 

@@ -99,6 +99,20 @@ train with `train_reranker` after accumulating usage data.
 
 small gaussian noise (σ=0.02, [ACT-R](https://dl.acm.org/doi/10.1145/3765766.3765803) inspired) for beneficial retrieval variation. minimum score threshold gates out low-quality results.
 
+## retrieval profiles
+
+the `recall` tool accepts a `mode` parameter that filters candidates by memory type *before* cross-encoder reranking:
+
+| mode | types included | use case |
+|------|---------------|----------|
+| `facts_only` | fact | statuses, states, structured answers |
+| `facts_plus_rules` | fact + procedure | methodology, how-to queries |
+| `full_context` | fact + procedure + narrative | exhaustive recall (default) |
+
+filtering happens after RRF fusion (stage 2) but before the cross-encoder (stage 4). non-active memories (status != active) are also excluded at this stage.
+
+this means `facts_only` mode still benefits from the full 4-channel candidate generation — it just removes narrative-typed candidates before the expensive reranking step.
+
 ## tuning
 
 all parameters are in `config.yaml`:

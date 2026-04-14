@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 (April 14, 2026)
+
+### new features
+- **LLM API backends** — `anthropic` and `openai` backends for fact extraction, memory enrichment, consolidation. configure with `llm.backend` + `llm.api_key` in config.yaml or env vars. `pip install 'engram-memory-system[anthropic]'` or `[openai]`
+- **memory types** — `fact`, `procedure`, `narrative` column on every memory. indexed, filterable. auto-backfilled from existing metadata on migration
+- **retrieval profiles** — `recall` accepts `mode`: `facts_only` (structured knowledge only), `facts_plus_rules` (+ procedures), `full_context` (everything). filters before cross-encoder reranking
+- **status tracking** — lifecycle states: `active`, `challenged`, `invalidated`, `merged`, `superseded`. `status_history` audit table with timestamps and reasons. non-active memories excluded from retrieval
+- **3 new MCP tools**: `update_status`, `recall_by_type`, `status_history` (66 total)
+- `remember` tool accepts `memory_type` param. `remember_decision`, `remember_error`, `remember_project`, `remember_negative` auto-set the correct type
+
+### fixes
+- hnswlib `knn_query` crash when MCP passes float `k` (JSON numbers are floats)
+- schema init on existing DBs — tolerates missing columns, runs migration before index creation
+- config.yaml gitignored (contains API keys), config.example.yaml tracked
+
 ## 0.2.0 (April 11, 2026)
 
 ### new features

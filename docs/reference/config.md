@@ -47,8 +47,9 @@ lifecycle:
   elastic_l1_ratio: 0.3
 
 llm:
-  backend: claude_cli       # claude_cli | mlx | llamacpp
-  model: claude-sonnet-4-20250514
+  backend: anthropic         # claude_cli | anthropic | openai | mlx
+  model: claude-haiku-4-5-20251001
+  api_key: ""                # or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var
   mlx_model: mlx-community/Qwen2.5-3B-Instruct-4bit
 
 web:
@@ -76,12 +77,30 @@ export ENGRAM_EMBEDDING_DIM=1024
 export ENGRAM_EMBEDDING_BACKEND=voyage
 ```
 
-API keys (not in config, env-only):
+API keys (env vars or `llm.api_key` in config):
 
 ```bash
-export VOYAGE_API_KEY=your-key
-export OPENAI_API_KEY=your-key
-export GEMINI_API_KEY=your-key
+export ANTHROPIC_API_KEY=your-key   # for llm.backend: anthropic
+export OPENAI_API_KEY=your-key      # for llm.backend: openai (or embedding)
+export VOYAGE_API_KEY=your-key      # for embedding backend
+export GEMINI_API_KEY=your-key      # for embedding backend
+```
+
+### LLM backends
+
+| backend | auth | notes |
+|---------|------|-------|
+| `claude_cli` | Claude Code login | uses `claude` CLI subprocess |
+| `anthropic` | `ANTHROPIC_API_KEY` or `llm.api_key` | direct API, any Claude model |
+| `openai` | `OPENAI_API_KEY` or `llm.api_key` | any OpenAI/compatible model |
+| `mlx` | local | runs Qwen/Llama/etc on Apple Silicon GPU |
+
+install the backend you need:
+
+```bash
+pip install 'engram-memory-system[anthropic]'   # anthropic SDK
+pip install 'engram-memory-system[openai]'      # openai SDK
+pip install 'engram-memory-system[api]'         # all backends
 ```
 
 ## load priority

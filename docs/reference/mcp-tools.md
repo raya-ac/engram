@@ -1,4 +1,4 @@
-# MCP Tools (63)
+# MCP Tools (66)
 
 all tools available via the engram MCP server (`engram serve --mcp`).
 
@@ -6,7 +6,8 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 
 | tool | params | description |
 |------|--------|-------------|
-| `recall` | `query` (required), `top_k` (default: 10) | hybrid search across all layers — HNSW + BM25 + graph + Hopfield + RRF + cross-encoder |
+| `recall` | `query` (required), `top_k` (default: 10), `mode` (default: "full_context") | hybrid search — HNSW + BM25 + graph + Hopfield + RRF + cross-encoder. mode filters by memory type: `facts_only`, `facts_plus_rules`, `full_context` |
+| `recall_by_type` | `memory_type` (required: fact/procedure/narrative), `limit` (default: 20) | get memories filtered by semantic type |
 | `recall_entity` | `name` (required) | everything about a person/project/tool — memories, relationships, timeline |
 | `recall_timeline` | `start` (required, YYYY-MM-DD or YYYY-MM), `end` | memories in a date range |
 | `recall_related` | `name` (required), `max_hops` (default: 2) | multi-hop graph traversal from an entity |
@@ -25,7 +26,7 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 
 | tool | params | description |
 |------|--------|-------------|
-| `remember` | `content` (required), `source_type` (default: "remember:human"), `layer` (default: "episodic"), `importance` (default: 0.7) | store a memory with surprise scoring |
+| `remember` | `content` (required), `source_type` (default: "remember:human"), `layer` (default: "episodic"), `memory_type` (default: "narrative", enum: fact/procedure/narrative), `importance` (default: 0.7) | store a memory with surprise scoring |
 | `remember_interaction` | `question` (required), `answer` (required), `importance` (default: 0.5) | store a Q+A pair → episodic |
 | `remember_decision` | `decision` (required), `rationale`, `importance` (default: 0.8) | decision + rationale → procedural |
 | `remember_error` | `error` (required), `prevention`, `importance` (default: 0.7) | error pattern + prevention → procedural |
@@ -44,6 +45,8 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | tool | params | description |
 |------|--------|-------------|
 | `invalidate` | `memory_id` (required), `reason` | mark a fact as no longer true |
+| `update_status` | `memory_id` (required), `new_status` (required: active/challenged/invalidated/merged/superseded), `reason` | transition lifecycle status with audit trail |
+| `status_history` | `memory_id` (required) | full status transition history — what changed, when, why |
 | `promote` | `memory_id` (required), `target_layer` (required) | move to a higher layer |
 | `demote` | `memory_id` (required), `target_layer` (required) | move to a lower layer |
 | `edit_memory` | `memory_id` (required), `new_content` (required) | edit content, auto re-embeds |

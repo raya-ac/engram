@@ -12,6 +12,48 @@ memories aren't static. they move between layers, gain or lose importance, and e
 | procedural | decisions, patterns, how-to | ∞ | "always use real DB for integration tests" |
 | codebase | compressed code knowledge | ∞ | file trees, function signatures |
 
+## memory types
+
+orthogonal to layers — every memory has a semantic type that describes *what kind of information* it contains:
+
+| type | description | example |
+|------|-------------|---------|
+| `fact` | structured knowledge, statuses, states | "engram v0.3.0 has 66 MCP tools" |
+| `procedure` | how-to, playbooks, rules, decisions | "always run drift_check before deploying" |
+| `narrative` | session logs, raw context, stories | "session 2026-04-14: built retrieval profiles..." |
+
+types are indexed and filterable. the `recall` tool accepts a `mode` parameter:
+
+| mode | includes | use when |
+|------|----------|----------|
+| `facts_only` | fact | asking for a status, state, or structured answer |
+| `facts_plus_rules` | fact + procedure | asking about methodology or how-to |
+| `full_context` | everything | exhaustive recall (default) |
+
+existing memories are auto-classified from metadata on migration. new memories get their type from the extraction pipeline or the `memory_type` param on `remember`.
+
+## status tracking
+
+every memory has a lifecycle status with audit trail:
+
+| status | meaning |
+|--------|---------|
+| `active` | live, included in retrieval results (default) |
+| `challenged` | flagged for review (e.g., by belief probing) |
+| `invalidated` | confirmed wrong, excluded from retrieval |
+| `merged` | content absorbed into another memory |
+| `superseded` | replaced by a newer memory |
+
+non-active memories are filtered from retrieval results. use `update_status` to transition, `status_history` to audit:
+
+```
+update_status(memory_id, "challenged", reason="conflicting info from new source")
+status_history(memory_id)
+# → [{old: "active", new: "challenged", reason: "...", changed_at: 1713094800}]
+```
+
+every transition is recorded in the `status_history` table with timestamp and reason.
+
 ## importance scoring (9 factors)
 
 | factor | weight | description |
