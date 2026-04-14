@@ -264,10 +264,22 @@ class Store:
         for stmt in SCHEMA.split(";"):
             stmt = stmt.strip()
             if stmt:
-                self.conn.execute(stmt)
+                try:
+                    self.conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass  # column/index may not exist yet — migration will fix
         self.conn.commit()
         # migrations — add new columns if missing (safe for existing DBs)
         self._migrate()
+        # retry any indexes that failed pre-migration
+        for stmt in SCHEMA.split(";"):
+            stmt = stmt.strip()
+            if stmt and "CREATE INDEX" in stmt.upper():
+                try:
+                    self.conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass
+        self.conn.commit()
 
     def _migrate(self):
         """Add new columns to existing databases without breaking them."""
