@@ -17,7 +17,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     if config is None:
         config = Config.load()
 
-    app = FastAPI(title="Engram", version="0.4.0")
+    app = FastAPI(title="Engram", version="0.4.1")
 
     # set embedding backend + default model from config
     from engram.embeddings import set_backend, set_default_model

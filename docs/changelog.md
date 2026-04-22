@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 (April 23, 2026)
+
+### fixes
+- **web dashboard stability** — high-traffic dashboard routes now use short-lived store connections instead of the shared app store connection, which reduces SQLite contention under concurrent polling
+- **drift check + fix responsiveness** — web drift operations now run off the async request thread, return fast `503` errors on lock contention, and avoid pinning the whole UI while a check or fix runs
+- **lighter dashboard boot** — the web UI defers more work until it is needed and reduces background polling pressure during startup
+
+### docs
+- release metadata updated for the `0.4.1` patch release
+
 ## 0.4.0 (April 23, 2026)
 
 ### new features
