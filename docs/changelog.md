@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 (April 23, 2026)
+
+### new features
+- **structured session handoffs** — active MCP sessions now maintain a resumable handoff packet with recent work, decisions, open loops, touched entities, and recall history
+- **2 new MCP tools** — `session_handoff` builds and optionally persists a structured handoff packet, `resume_context` loads the latest saved handoff for fast startup
+- **session continuity skill** — added `examples/skills/session-continuity/SKILL.md` so agents have a concrete default pattern for startup, in-session writes, and stop-point handoffs
+
+### docs
+- docs site now covers the session continuity flow on the home page, MCP tools reference, and Claude Code setup guide
+- README and examples docs now point to the new continuity skill and handoff workflow
+
 ## 0.3.1 (April 14, 2026)
 
 ### new features
