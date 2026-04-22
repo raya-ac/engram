@@ -1,5 +1,6 @@
 """Tests for store.py — CRUD, FTS, entities, events."""
 
+import time
 import uuid
 import numpy as np
 import pytest
@@ -144,6 +145,29 @@ class TestDiary:
         entries = store.get_diary(limit=1)
         assert len(entries) == 1
         assert entries[0]["text"] == "test entry"
+
+    def test_session_handoff_roundtrip(self, store):
+        metadata = {
+            "session_id": "sess-1",
+            "summary": "Current state summary",
+            "open_loops": ["Finish MCP resume flow"],
+            "decisions": [{"content": "Use structured handoff packets"}],
+        }
+        store.save_session_handoff("sess-1", "Current state summary", metadata)
+
+        handoff = store.get_session_handoff("sess-1")
+        assert handoff is not None
+        assert handoff["session_id"] == "sess-1"
+        assert handoff["summary"] == "Current state summary"
+        assert handoff["metadata"]["open_loops"] == ["Finish MCP resume flow"]
+
+    def test_session_handoff_list_sorted(self, store):
+        store.save_session_handoff("older", "older summary", {"summary": "older"})
+        time.sleep(0.01)
+        store.save_session_handoff("newer", "newer summary", {"summary": "newer"})
+
+        handoffs = store.list_session_handoffs(limit=2)
+        assert [item["session_id"] for item in handoffs] == ["newer", "older"]
 
 
 class TestEvents:

@@ -33,6 +33,8 @@ this fires the save hook whenever a conversation ends (the Stop tool is called).
 5. stores them in the right layer with appropriate importance
 6. runs surprise scoring to avoid duplicates
 
+engram also keeps a structured handoff snapshot for the active MCP session. as diary entries and memory writes happen, the current session handoff is refreshed automatically. when a new agent session starts, call `resume_context` to load the latest resumable packet instead of reconstructing state from raw diary text.
+
 ## alternative: directory watcher
 
 instead of hooks, you can use the `watch` command to continuously monitor for new session files:
@@ -94,6 +96,8 @@ engram auto-detects the format from file structure:
 ## tips
 
 - **run `engram status`** after the first hook fires to verify memories were created
+- **call `resume_context`** at the start of a new agent session to load the latest handoff snapshot
+- **call `session_handoff`** if you want to explicitly persist a structured handoff before you stop
 - **check surprise scores** in the web dashboard (Remember tab) to see if auto-ingestion is storing redundant content
 - **set up drift detection** to catch when auto-ingested memories reference things that later change: `engram drift --fix --dry-run`
 - **export before bulk ingestion** in case you want to roll back: `engram export pre-ingest-backup.json`

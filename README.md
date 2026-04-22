@@ -31,6 +31,8 @@ engram sits in the middle. one sqlite file, hybrid retrieval that fuses five sig
 
 **conversation ingest** — auto-extracts memories from Claude Code JSONL session logs. parses exchanges into Q+A pairs, classifies them (decisions, corrections, errors, task completions), and stores them in the right layer with appropriate importance scores.
 
+**session handoffs** — maintains a structured resumable handoff snapshot for the active MCP session. as diary entries and memory writes happen, engram refreshes the current handoff automatically. new agent sessions can call `resume_context` to pick up the latest decisions, open loops, recent work, and search history without reconstructing everything from raw logs.
+
 **neural visualization** — force-directed graph of entities organized in concentric rings by memory layer. neurons fire with traveling impulse particles when memories get accessed. polls the database so it works across processes. fire a query from the CLI or MCP server and watch the web UI light up.
 
 **drift detection** — memories reference file paths, function names, commands, and dependencies. those references go stale when the codebase changes. `drift_check` extracts verifiable claims from memory content and validates them against the actual filesystem — dead paths, missing functions, broken npm scripts. returns a drift score (0-100) with per-issue breakdown. zero AI cost, pure filesystem checks. `drift_fix` auto-invalidates dead references and flags stale memories. inspired by [mex](https://github.com/theDakshJaitly/mex)'s claim verification approach.
@@ -164,6 +166,12 @@ the `examples/` directory has ready-to-use setup guides:
 | [`claude-code-setup.md`](examples/claude-code-setup.md) | full walkthrough: install, wire into claude code, add CLAUDE.md instructions, seed memories |
 | [`hooks-setup.md`](examples/hooks-setup.md) | auto-extract memories from conversations via claude code hooks |
 | [`agent-patterns.md`](examples/agent-patterns.md) | common patterns: session orientation, learning from corrections, check-before-store, cognitive scaffolding, multi-agent setup |
+
+**skills:**
+
+| file | what it covers |
+|------|---------------|
+| [`session-continuity/SKILL.md`](examples/skills/session-continuity/SKILL.md) | agent skill for loading `resume_context`, writing important state during work, and leaving a structured `session_handoff` behind |
 
 **python examples:**
 
@@ -468,6 +476,8 @@ restart claude code. you get 66 tools:
 |------|-------------|
 | `ingest_sessions` | auto-extract memories from recent Claude Code conversation logs |
 | `session_summary` | generate summary from diary entries + recent events |
+| `session_handoff` | build and optionally persist a structured handoff packet for the active session |
+| `resume_context` | load the latest saved handoff packet so a new session can resume quickly |
 
 **lifecycle & system**
 
@@ -626,6 +636,8 @@ ENGRAM_VENV=~/path/to/engram/.venv ./hooks/save_hook.sh
 ```
 
 the hook finds recent Claude Code JSONL files, parses exchanges into Q+A pairs, classifies them (decisions get stored in procedural, corrections become error patterns, etc.), and stores them with appropriate importance. it skips files it's already ingested via content hash.
+
+inside the MCP server, engram now also refreshes a structured session handoff automatically as diary entries and memory writes happen. if a new agent session needs orientation, call `resume_context` to get the latest handoff packet instead of re-reading the whole diary.
 
 you can also wire it into Claude Code's hook system by adding to your settings — check `hooks/save_hook.sh` for details.
 

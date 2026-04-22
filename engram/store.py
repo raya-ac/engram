@@ -221,6 +221,15 @@ CREATE TABLE IF NOT EXISTS diary_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_diary_created ON diary_entries(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS session_handoffs (
+    session_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    metadata TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_handoffs_updated ON session_handoffs(updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS importance_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     memory_id TEXT NOT NULL,
@@ -790,6 +799,44 @@ class Store:
                 "SELECT * FROM diary_entries ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def save_session_handoff(self, session_id: str, summary: str, metadata: dict):
+        now = time.time()
+        row = self.conn.execute(
+            "SELECT created_at FROM session_handoffs WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        created_at = row["created_at"] if row else now
+        self.conn.execute(
+            """INSERT OR REPLACE INTO session_handoffs
+            (session_id, summary, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (session_id, summary, json.dumps(metadata), created_at, now),
+        )
+        self.conn.commit()
+
+    def get_session_handoff(self, session_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM session_handoffs WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["metadata"] = json.loads(result["metadata"])
+        return result
+
+    def list_session_handoffs(self, limit: int = 10) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM session_handoffs ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item["metadata"])
+            results.append(item)
+        return results
 
     # --- Importance history ---
 

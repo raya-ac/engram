@@ -10,6 +10,12 @@ ready-to-run examples covering setup, integration patterns, and advanced feature
 | [hooks-setup.md](hooks-setup.md) | auto-extract memories from conversations via claude code hooks — no manual `remember()` calls needed |
 | [agent-patterns.md](agent-patterns.md) | common patterns: session orientation, learning from corrections, check-before-store, cognitive scaffolding, multi-agent coordination |
 
+## skills
+
+| file | what it covers |
+|------|---------------|
+| [skills/session-continuity/SKILL.md](skills/session-continuity/SKILL.md) | use Engram's `resume_context` and `session_handoff` tools to make agent sessions resumable by default |
+
 ## python examples
 
 ### getting started

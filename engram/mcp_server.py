@@ -78,6 +78,8 @@ TOOLS = [
     {"name": "ingest_sessions", "description": "Ingest recent Claude Code conversation sessions into memory", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
     # Session tools
     {"name": "session_summary", "description": "Generate a summary of the current session based on diary and recent events", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "session_handoff", "description": "Build a structured handoff snapshot for the current session or a specific session. Can also persist the snapshot for later resume.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional specific session id. Defaults to the current MCP session."}, "save": {"type": "boolean", "default": True, "description": "Persist the generated handoff snapshot."}, "limit": {"type": "integer", "default": 8, "description": "Max items returned per section."}}}},
+    {"name": "resume_context", "description": "Get the latest structured handoff snapshot plus recent related activity so a new agent session can resume quickly.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional exact session id to resume."}, "limit": {"type": "integer", "default": 3, "description": "How many recent handoffs to include if session_id is omitted."}}}},
     # Backlinks
     {"name": "backlinks", "description": "Find all memories that reference or are linked to a specific memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
     # Batch operations
@@ -133,6 +135,7 @@ class MCPServer:
         self.store.init_db()
         self.store.init_ann_index(background=True)
         self._session_id = str(uuid.uuid4())[:8]
+        self._session_started_at = time.time()
         # deep reranker — persists model next to db
         model_path = config.resolved_db_path.parent / "reranker.npz"
         self._reranker = DeepReranker(model_path=model_path)
@@ -214,6 +217,8 @@ class MCPServer:
             "find_duplicates": self._find_duplicates_tool,
             "ingest_sessions": self._ingest_sessions,
             "session_summary": self._session_summary,
+            "session_handoff": self._session_handoff,
+            "resume_context": self._resume_context,
             "backlinks": self._backlinks,
             "batch_tag": self._batch_tag,
             "recompute_importance": self._recompute_importance,
@@ -245,6 +250,7 @@ class MCPServer:
                                 top_k=args.get("top_k", 10),
                                 deep_reranker=self._reranker,
                                 mode=args.get("mode", "full_context"))
+        self._refresh_session_handoff()
         return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
                  "layer": r.memory.layer, "memory_type": r.memory.memory_type,
                  "status": r.memory.status, "fact_date": r.memory.fact_date,
@@ -394,6 +400,7 @@ class MCPServer:
                         )
                         self.store.conn.commit()
                         self.store.invalidate_embedding_cache()
+                        self._refresh_session_handoff()
                         return {"id": nearest.id, "status": "updated", "operation": "UPDATE"}
                     elif crud_op == "NOOP":
                         return {"id": surprise_info["nearest_id"], "status": "skipped", "operation": "NOOP",
@@ -428,6 +435,7 @@ class MCPServer:
             result["evolved"] = evolved_ids
         if enrichment.get("tags"):
             result["tags"] = enrichment["tags"]
+        self._refresh_session_handoff()
         return result
 
     def _remember_interaction(self, args: dict):
@@ -509,6 +517,7 @@ class MCPServer:
         entry = f"[{time.strftime('%H:%M:%S')}] {args['entry']}"
         _session_diary.append(entry)  # keep in-memory for session_summary
         self.store.write_diary(entry, session_id=self._session_id)
+        self._refresh_session_handoff()
         return {"status": "written", "entries": len(_session_diary)}
 
     def _diary_read(self, args: dict):
@@ -772,6 +781,7 @@ class MCPServer:
         self.store.invalidate_embedding_cache()
         self.store._emit_event("memory_edit", memory_id=mem.id, detail=f"content updated ({len(new_content)} chars)")
         self.store.conn.commit()
+        self._refresh_session_handoff()
         return {"status": "edited", "id": mem.id}
 
     def _annotate(self, args: dict):
@@ -952,29 +962,147 @@ class MCPServer:
 
     # --- Session tools ---
 
+    def _recent_session_memories(self, since_ts: float, limit: int = 40):
+        rows = self.store.conn.execute(
+            """SELECT * FROM memories
+               WHERE forgotten = 0 AND created_at >= ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (since_ts, limit),
+        ).fetchall()
+        return [self.store._row_to_memory(r) for r in rows]
+
+    def _recent_session_events(self, since_ts: float, limit: int = 80):
+        rows = self.store.conn.execute(
+            "SELECT * FROM events WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
+            (since_ts, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _build_session_handoff(self, session_id: str | None = None, limit: int = 8):
+        sid = session_id or self._session_id
+        since_ts = self._session_started_at if sid == self._session_id else 0.0
+        diary_rows = self.store.get_diary(limit=50, session_id=sid)
+        recent_events = self._recent_session_events(since_ts, limit=80)
+        recent_memories = self._recent_session_memories(since_ts, limit=60)
+
+        decisions = []
+        errors = []
+        project_updates = []
+        facts = []
+        open_loops = []
+        touched_entities = set()
+
+        for mem in recent_memories:
+            content = mem.content.strip()
+            preview = content.split("\n")[0][:180]
+            if content.lower().startswith("decision:"):
+                decisions.append({"id": mem.id, "content": preview, "importance": round(mem.importance, 3)})
+            elif content.lower().startswith("error:"):
+                errors.append({"id": mem.id, "content": preview, "importance": round(mem.importance, 3)})
+            elif mem.memory_type == MemoryType.FACT:
+                facts.append({"id": mem.id, "content": preview, "importance": round(mem.importance, 3)})
+            else:
+                project_updates.append({"id": mem.id, "content": preview, "importance": round(mem.importance, 3)})
+
+            entity_rows = self.store.conn.execute(
+                """SELECT e.canonical_name
+                   FROM entity_mentions em
+                   JOIN entities e ON e.id = em.entity_id
+                   WHERE em.memory_id = ?
+                   LIMIT 5""",
+                (mem.id,),
+            ).fetchall()
+            for row in entity_rows:
+                touched_entities.add(row["canonical_name"])
+
+        for row in diary_rows:
+            text = row["text"]
+            lower = text.lower()
+            if any(token in lower for token in ["todo", "next", "block", "blocked", "unresolved", "follow up", "follow-up", "remaining"]):
+                open_loops.append(text[:220])
+
+        recall_queries = []
+        for event in recent_events:
+            if event.get("event_type") == "recall" and event.get("detail"):
+                recall_queries.append(event["detail"])
+        recall_queries = list(dict.fromkeys(recall_queries))
+
+        summary_lines = [
+            f"Session {sid}",
+            f"Diary entries: {len(diary_rows)}",
+            f"Recent searches: {len(recall_queries)}",
+            f"Memories written: {len([e for e in recent_events if 'write' in (e.get('event_type') or '') or e.get('event_type') == 'memory_edit'])}",
+        ]
+        if decisions:
+            summary_lines.append("Decisions: " + " | ".join(item["content"] for item in decisions[:3]))
+        if open_loops:
+            summary_lines.append("Open loops: " + " | ".join(open_loops[:3]))
+        elif project_updates:
+            summary_lines.append("Recent work: " + " | ".join(item["content"] for item in project_updates[:3]))
+
+        handoff = {
+            "session_id": sid,
+            "generated_at": time.time(),
+            "summary": "\n".join(summary_lines),
+            "current_state": [row["text"] for row in diary_rows[:limit]],
+            "decisions": decisions[:limit],
+            "errors": errors[:limit],
+            "facts": facts[:limit],
+            "recent_work": project_updates[:limit],
+            "open_loops": open_loops[:limit],
+            "recent_queries": recall_queries[:limit],
+            "touched_entities": sorted(touched_entities)[:limit],
+            "stats": {
+                "diary_entries": len(diary_rows),
+                "recent_queries": len(recall_queries),
+                "memories_written": len([e for e in recent_events if "write" in (e.get("event_type") or "") or e.get("event_type") == "memory_edit"]),
+                "recent_events": len(recent_events),
+            },
+        }
+        return handoff
+
+    def _refresh_session_handoff(self):
+        handoff = self._build_session_handoff(self._session_id)
+        self.store.save_session_handoff(self._session_id, handoff["summary"], handoff)
+        return handoff
+
     def _session_summary(self, args: dict):
         """Generate a summary of the current session from diary + recent events."""
-        diary = _session_diary.copy()
-        recent_events = self.store.get_recent_events(limit=30)
+        handoff = self._build_session_handoff(self._session_id)
+        self.store.save_session_handoff(self._session_id, handoff["summary"], handoff)
+        return {
+            "summary": handoff["summary"],
+            "diary_entries": handoff["stats"]["diary_entries"],
+            "searches": handoff["stats"]["recent_queries"],
+            "writes": handoff["stats"]["memories_written"],
+            "open_loops": handoff["open_loops"],
+            "decisions": handoff["decisions"],
+        }
 
-        # collect what happened
-        reads = [e for e in recent_events if e.get("event_type") == "recall"]
-        writes = [e for e in recent_events if "write" in (e.get("event_type") or "")]
-        queries = [e.get("detail", "") for e in reads if e.get("detail")]
+    def _session_handoff(self, args: dict):
+        session_id = args.get("session_id") or self._session_id
+        handoff = self._build_session_handoff(session_id, limit=args.get("limit", 8))
+        if args.get("save", True):
+            self.store.save_session_handoff(session_id, handoff["summary"], handoff)
+        return handoff
 
-        parts = []
-        if diary:
-            parts.append("Diary entries:\n" + "\n".join(diary))
-        if queries:
-            unique_queries = list(dict.fromkeys(queries))[:10]
-            parts.append("Topics searched: " + ", ".join(unique_queries))
-        if writes:
-            parts.append(f"Memories written: {len(writes)}")
-        parts.append(f"Total events this session: {len(recent_events)}")
+    def _resume_context(self, args: dict):
+        session_id = args.get("session_id")
+        limit = args.get("limit", 3)
+        if session_id:
+            handoff = self.store.get_session_handoff(session_id)
+            if not handoff:
+                return {"error": f"No saved handoff for session '{session_id}'"}
+            return {"handoffs": [handoff], "latest": handoff}
 
-        summary = "\n".join(parts) if parts else "No activity recorded this session."
-        return {"summary": summary, "diary_entries": len(diary),
-                "searches": len(reads), "writes": len(writes)}
+        handoffs = self.store.list_session_handoffs(limit=limit)
+        latest = handoffs[0] if handoffs else None
+        return {
+            "latest": latest,
+            "handoffs": handoffs,
+            "note": "Use the latest handoff summary, open loops, and decisions to resume work quickly."
+        }
 
     # --- Backlinks ---
 
