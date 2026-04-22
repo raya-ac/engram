@@ -106,6 +106,10 @@ async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool
             "results": [_result_dict(r) for r in results],
             "entity_ids": entity_ids,
             "debug": {
+                "intent": dbg.intent,
+                "expanded_terms": dbg.expanded_terms,
+                "phrase_terms": dbg.phrase_terms,
+                "cache_hit": dbg.cache_hit,
                 "latency_ms": round(dbg.latency_ms, 1),
                 "dense_count": len(dbg.dense_candidates),
                 "bm25_count": len(dbg.bm25_candidates),
@@ -116,6 +120,55 @@ async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool
     results = result
     entity_ids = _collect_entity_ids(store, [r.memory.id for r in results])
     return {"results": [_result_dict(r) for r in results], "entity_ids": entity_ids}
+
+
+@router.get("/api/search/explain")
+async def explain_search(request: Request, q: str, top_k: int = 10):
+    store = _store(request)
+    config = _config(request)
+    results, dbg = hybrid_search(q, store, config, top_k=top_k, debug=True)
+    return {
+        "query": q,
+        "results": [_result_dict(r) for r in results],
+        "debug": {
+            "intent": dbg.intent,
+            "expanded_terms": dbg.expanded_terms,
+            "phrase_terms": dbg.phrase_terms,
+            "cache_hit": dbg.cache_hit,
+            "latency_ms": round(dbg.latency_ms, 1),
+            "dense_count": len(dbg.dense_candidates),
+            "bm25_count": len(dbg.bm25_candidates),
+            "graph_count": len(dbg.graph_candidates),
+            "rrf_count": len(dbg.rrf_scores),
+        },
+    }
+
+
+@router.get("/api/session-handoffs")
+async def list_session_handoffs(request: Request, limit: int = 10):
+    store = _store(request)
+    handoffs = store.list_session_handoffs(limit=limit)
+    return {
+        "handoffs": [
+            {
+                "session_id": item["session_id"],
+                "summary": item["summary"],
+                "created_at": item["created_at"],
+                "updated_at": item["updated_at"],
+                "metadata": item["metadata"],
+            }
+            for item in handoffs
+        ]
+    }
+
+
+@router.get("/api/session-handoffs/{session_id}")
+async def get_session_handoff(request: Request, session_id: str):
+    store = _store(request)
+    handoff = store.get_session_handoff(session_id)
+    if not handoff:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return handoff
 
 
 @router.get("/api/entities")
@@ -1034,6 +1087,7 @@ async def edit_memory(request: Request, memory_id: str):
         store.conn.execute("INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, '')",
                            (row[0], new_content))
     store.invalidate_embedding_cache()
+    store.invalidate_search_cache()
     store._emit_event("memory_edit", memory_id=memory_id)
     store.conn.commit()
     return {"status": "edited"}
@@ -1089,6 +1143,7 @@ async def bulk_action(request: Request):
                 affected += 1
     store.conn.commit()
     store.invalidate_embedding_cache()
+    store.invalidate_search_cache()
     return {"affected": affected, "action": action}
 
 

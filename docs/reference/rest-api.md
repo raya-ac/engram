@@ -1,4 +1,4 @@
-# REST API (57 endpoints)
+# REST API (60 endpoints)
 
 the web dashboard (`engram serve --web`) exposes a full JSON API at `http://127.0.0.1:8420`.
 
@@ -28,6 +28,7 @@ if `web.auth_token` is set in config, include `Authorization: Bearer <token>` he
 | method | endpoint | description |
 |--------|----------|-------------|
 | GET | `/api/search?q=...` | hybrid search, optional `&debug=true` |
+| GET | `/api/search/explain?q=...` | search with retrieval intent, expansions, cache status, and candidate counts |
 | GET | `/api/search/filtered?q=...` | search with layer, importance, date, source filters |
 | GET | `/api/search/hints?q=...` | truncated hints for cognitive scaffolding |
 | POST | `/api/remember` | store a memory with surprise scoring |
@@ -92,6 +93,8 @@ if `web.auth_token` is set in config, include `Authorization: Bearer <token>` he
 | POST | `/api/ingest/sessions` | ingest Claude Code sessions |
 | GET | `/api/diary` | session diary entries |
 | POST | `/api/diary` | append diary entry |
+| GET | `/api/session-handoffs` | list recent saved session handoff packets |
+| GET | `/api/session-handoffs/:session_id` | retrieve one saved handoff packet |
 
 ## SSE
 

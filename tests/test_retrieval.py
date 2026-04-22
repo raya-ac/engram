@@ -38,6 +38,28 @@ class TestSearch:
         assert dbg.latency_ms > 0
         assert len(dbg.dense_candidates) > 0
 
+    def test_search_debug_surfaces_query_features(self, store_with_memories, config):
+        results, dbg = search('"auth" bug', store_with_memories, config, top_k=5, rerank=False, debug=True)
+        assert results is not None
+        assert dbg.intent == "what"
+        assert "auth" in dbg.phrase_terms
+        assert "authentication" in dbg.expanded_terms
+        assert dbg.cache_hit is False
+
+    def test_search_populates_cache_for_repeat_queries(self, store_with_memories, config):
+        search("auth bug", store_with_memories, config, top_k=5, rerank=False)
+        cache_key = (
+            "auth bug",
+            "full_context",
+            5,
+            False,
+            config.embedding_model,
+            config.cross_encoder_model,
+        )
+        cached = store_with_memories.get_search_cache(cache_key)
+        assert cached is not None
+        assert len(cached) > 0
+
     def test_search_records_access(self, store_with_memories, config):
         results = search("HNSW", store_with_memories, config, top_k=1, rerank=False)
         if results:

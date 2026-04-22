@@ -169,6 +169,16 @@ class TestDiary:
         handoffs = store.list_session_handoffs(limit=2)
         assert [item["session_id"] for item in handoffs] == ["newer", "older"]
 
+    def test_search_cache_invalidates_after_write(self, store):
+        key = ("query", "full_context", 5, False, "model-a", "model-b")
+        store.set_search_cache(key, [{"memory_id": "cached", "score": 0.9, "sources": {}}])
+        assert store.get_search_cache(key) is not None
+
+        mem = Memory(id=str(uuid.uuid4()), content="new write", layer="episodic")
+        store.save_memory(mem)
+
+        assert store.get_search_cache(key) is None
+
 
 class TestEvents:
     def test_events_logged(self, store):

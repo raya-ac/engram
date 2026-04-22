@@ -256,6 +256,8 @@ class Store:
         self.db_path = config.resolved_db_path
         self._conn: sqlite3.Connection | None = None
         self._embedding_cache: tuple[list[str], np.ndarray] | None = None
+        self._search_cache: dict[tuple, tuple[int, list[dict]]] = {}
+        self._search_cache_version = 0
         self.ann_index = None  # initialized in init_ann_index()
 
     @property
@@ -358,6 +360,7 @@ class Store:
             return
         old_status = row["status"] or "active"
         self.conn.execute("UPDATE memories SET status = ? WHERE id = ?", (new_status, memory_id))
+        self.invalidate_search_cache()
         self.conn.execute(
             "INSERT INTO status_history (memory_id, old_status, new_status, reason, changed_at) VALUES (?, ?, ?, ?, ?)",
             (memory_id, old_status, new_status, reason, time.time()),
@@ -487,6 +490,7 @@ class Store:
         )
 
         self._embedding_cache = None  # invalidate cache
+        self.invalidate_search_cache()
         if self.ann_index and self.ann_index.ready and mem.embedding is not None:
             self.ann_index.add(mem.id, mem.embedding)
         self._emit_event("memory_write", memory_id=mem.id,
@@ -501,6 +505,27 @@ class Store:
 
     def invalidate_embedding_cache(self):
         self._embedding_cache = None
+
+    def invalidate_search_cache(self):
+        self._search_cache_version += 1
+        self._search_cache.clear()
+
+    def get_search_cache(self, key: tuple) -> list[dict] | None:
+        entry = self._search_cache.get(key)
+        if not entry:
+            return None
+        version, payload = entry
+        if version != self._search_cache_version:
+            self._search_cache.pop(key, None)
+            return None
+        return payload
+
+    def set_search_cache(self, key: tuple, payload: list[dict]):
+        self._search_cache[key] = (self._search_cache_version, payload)
+        limit = max(1, self.config.retrieval.search_cache_size)
+        while len(self._search_cache) > limit:
+            oldest = next(iter(self._search_cache))
+            self._search_cache.pop(oldest, None)
 
     def get_all_embeddings(self) -> tuple[list[str], np.ndarray]:
         if self._embedding_cache is not None:
@@ -565,6 +590,7 @@ class Store:
 
     def forget_memory(self, memory_id: str):
         self.conn.execute("UPDATE memories SET forgotten = 1 WHERE id = ?", (memory_id,))
+        self.invalidate_search_cache()
         if self.ann_index and self.ann_index.ready:
             self.ann_index.remove(memory_id)
         self._emit_event("memory_forget", memory_id=memory_id)
@@ -572,11 +598,13 @@ class Store:
 
     def update_layer(self, memory_id: str, new_layer: str):
         self.conn.execute("UPDATE memories SET layer = ? WHERE id = ?", (new_layer, memory_id))
+        self.invalidate_search_cache()
         self._emit_event("memory_promote", memory_id=memory_id, detail=f"to={new_layer}")
         self.conn.commit()
 
     def update_importance(self, memory_id: str, importance: float):
         self.conn.execute("UPDATE memories SET importance = ? WHERE id = ?", (importance, memory_id))
+        self.invalidate_search_cache()
         self.conn.commit()
 
     def get_memories_by_layer(self, layer: str, limit: int = 100) -> list[Memory]:

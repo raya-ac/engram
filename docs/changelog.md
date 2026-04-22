@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 (April 23, 2026)
+
+### new features
+- **retrieval explainability** — search now exposes query intent, expansion terms, exact-match boosting, cache-hit status, and candidate counts through `recall_explain` and `/api/search/explain`
+- **query expansion + exact match boosts** — retrieval can expand common operator queries (`auth`, `deploy`, `code`, `graph`, `memory`) and reward exact phrase/token matches without overwhelming the dense pipeline
+- **search result caching** — repeated hybrid searches are cached in-memory with automatic invalidation on writes, edits, forgets, layer changes, and bulk updates
+- **richer continuity tooling** — `session_checkpoint` adds explicit stop-point checkpoints on top of automatic handoff refreshes, and `resume_context` now falls back to generating a handoff when no saved packet exists yet
+- **continuity APIs** — the web server now exposes `/api/session-handoffs` and `/api/session-handoffs/:session_id` for dashboard and agent clients that want resumable session state without MCP
+
+### docs
+- MCP tools reference now covers `recall_explain` and `session_checkpoint`
+- REST API reference now documents the search explain endpoint and session handoff endpoints
+- release metadata updated for the new feature release
+
 ## 0.3.2 (April 23, 2026)
 
 ### new features

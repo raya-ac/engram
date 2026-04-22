@@ -1,4 +1,4 @@
-# MCP Tools (66)
+# MCP Tools (68)
 
 all tools available via the engram MCP server (`engram serve --mcp`).
 
@@ -16,6 +16,7 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `recall_context` | `query` (required), `max_tokens` (default: 2000) | formatted context block ready for prompt injection |
 | `recall_code` | `query` (required), `project`, `top_k` (default: 10) | search the codebase layer for functions, classes, files |
 | `recall_hints` | `query` (required), `top_k` (default: 10), `hint_length` (default: 60) | truncated snippets + entity names for recognition without replacing cognition |
+| `recall_explain` | `query` (required), `top_k` (default: 10), `mode` (default: "full_context") | hybrid search with retrieval intent, expansions, cache status, candidate counts, and score breakdowns |
 | `find_similar` | `memory_id` (required), `top_k` (default: 5) | find memories most similar by embedding distance |
 | `find_duplicates` | `threshold` (default: 0.92), `limit` (default: 20) | preview near-duplicate pairs without merging |
 | `search_entities` | `query` (required), `limit` (default: 20) | fuzzy search for entities by partial name |
@@ -99,6 +100,7 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `ingest_sessions` | `limit` (default: 20) | ingest recent Claude Code sessions |
 | `session_summary` | — | generate summary from diary + recent events |
 | `session_handoff` | `session_id`, `save` (default: true), `limit` (default: 8) | build a structured handoff packet for the current or specified session and optionally persist it |
+| `session_checkpoint` | `note`, `limit` (default: 8) | append an optional checkpoint note and persist a richer handoff packet for the current session |
 | `resume_context` | `session_id`, `limit` (default: 3) | load the latest saved handoff packet so a new agent session can resume quickly |
 
 ## system & context
@@ -127,6 +129,7 @@ for resumable agent work, the default flow is:
 
 1. `resume_context` at session startup
 2. normal `remember`, `remember_decision`, `remember_negative`, and `diary_write` calls during work
-3. `session_handoff` near a stop point if you want to explicitly persist the current packet
+3. `recall_explain` when retrieval quality needs debugging or tuning
+4. `session_checkpoint` or `session_handoff` near a stop point if you want to explicitly persist the current packet
 
 the active MCP session also refreshes its handoff automatically after recalls, memory writes, diary writes, and memory edits.

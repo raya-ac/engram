@@ -30,6 +30,7 @@ from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmatio
 TOOLS = [
     # Read tools
     {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder). Use mode to filter by memory type: facts_only (structured knowledge), facts_plus_rules (+ procedures), full_context (everything).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context", "description": "Retrieval profile — facts_only for statuses/states, facts_plus_rules for methodology, full_context for exhaustive recall"}}, "required": ["query"]}},
+    {"name": "recall_explain", "description": "Search memories and include retrieval intent, expansions, cache status, candidate counts, and score breakdowns for debugging retrieval quality.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context"}}, "required": ["query"]}},
     {"name": "recall_entity", "description": "Get everything about a specific entity — facts, relationships, timeline", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "recall_timeline", "description": "Query memories by date range", "inputSchema": {"type": "object", "properties": {"start": {"type": "string", "description": "Start date YYYY-MM-DD or YYYY-MM"}, "end": {"type": "string"}}, "required": ["start"]}},
     {"name": "recall_related", "description": "Multi-hop graph traversal from an entity", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "max_hops": {"type": "integer", "default": 2}}, "required": ["name"]}},
@@ -79,6 +80,7 @@ TOOLS = [
     # Session tools
     {"name": "session_summary", "description": "Generate a summary of the current session based on diary and recent events", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "session_handoff", "description": "Build a structured handoff snapshot for the current session or a specific session. Can also persist the snapshot for later resume.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional specific session id. Defaults to the current MCP session."}, "save": {"type": "boolean", "default": True, "description": "Persist the generated handoff snapshot."}, "limit": {"type": "integer", "default": 8, "description": "Max items returned per section."}}}},
+    {"name": "session_checkpoint", "description": "Write an optional checkpoint note and persist a richer handoff packet for the current session so another session can resume from a clean stop point.", "inputSchema": {"type": "object", "properties": {"note": {"type": "string", "description": "Optional checkpoint note to store in the session diary before saving the handoff."}, "limit": {"type": "integer", "default": 8, "description": "Max items returned per section."}}}},
     {"name": "resume_context", "description": "Get the latest structured handoff snapshot plus recent related activity so a new agent session can resume quickly.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional exact session id to resume."}, "limit": {"type": "integer", "default": 3, "description": "How many recent handoffs to include if session_id is omitted."}}}},
     # Backlinks
     {"name": "backlinks", "description": "Find all memories that reference or are linked to a specific memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
@@ -121,6 +123,25 @@ TOOLS = [
 ]
 
 _session_diary: list[str] = []
+
+
+def _suggest_resume_queries(open_loops: list[str], touched_entities: set[str], recall_queries: list[str], limit: int) -> list[str]:
+    suggestions: list[str] = []
+    for loop in open_loops[:limit]:
+        suggestions.append(f"status of {loop[:80]}")
+    for entity in sorted(touched_entities)[:limit]:
+        suggestions.append(f"recent work involving {entity}")
+    for query in recall_queries[:limit]:
+        suggestions.append(query)
+    deduped = []
+    seen = set()
+    for item in suggestions:
+        normalized = item.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(item)
+    return deduped[:limit]
 
 
 class MCPServer:
@@ -169,6 +190,7 @@ class MCPServer:
     def _call_tool(self, name: str, args: dict) -> Any:
         handlers = {
             "recall": self._recall,
+            "recall_explain": self._recall_explain,
             "recall_entity": self._recall_entity,
             "recall_timeline": self._recall_timeline,
             "recall_related": self._recall_related,
@@ -218,6 +240,7 @@ class MCPServer:
             "ingest_sessions": self._ingest_sessions,
             "session_summary": self._session_summary,
             "session_handoff": self._session_handoff,
+            "session_checkpoint": self._session_checkpoint,
             "resume_context": self._resume_context,
             "backlinks": self._backlinks,
             "batch_tag": self._batch_tag,
@@ -255,6 +278,45 @@ class MCPServer:
                  "layer": r.memory.layer, "memory_type": r.memory.memory_type,
                  "status": r.memory.status, "fact_date": r.memory.fact_date,
                  "importance": r.memory.importance} for r in results]
+
+    def _recall_explain(self, args: dict):
+        self._sweep_working()
+        results, dbg = hybrid_search(
+            args["query"],
+            self.store,
+            self.config,
+            top_k=args.get("top_k", 10),
+            debug=True,
+            deep_reranker=self._reranker,
+            mode=args.get("mode", "full_context"),
+        )
+        self._refresh_session_handoff()
+        return {
+            "query": dbg.query,
+            "intent": dbg.intent,
+            "expanded_terms": dbg.expanded_terms,
+            "phrase_terms": dbg.phrase_terms,
+            "cache_hit": dbg.cache_hit,
+            "latency_ms": round(dbg.latency_ms, 1),
+            "candidate_counts": {
+                "dense": len(dbg.dense_candidates),
+                "bm25": len(dbg.bm25_candidates),
+                "graph": len(dbg.graph_candidates),
+                "rrf": len(dbg.rrf_scores),
+            },
+            "results": [
+                {
+                    "id": r.memory.id,
+                    "content": r.memory.content,
+                    "score": round(r.score, 4),
+                    "sources": {k: round(v, 4) for k, v in r.sources.items()},
+                    "layer": r.memory.layer,
+                    "memory_type": r.memory.memory_type,
+                    "status": r.memory.status,
+                }
+                for r in results
+            ],
+        }
 
     def _sweep_working(self):
         """Auto-promote old working memories to episodic."""
@@ -400,6 +462,7 @@ class MCPServer:
                         )
                         self.store.conn.commit()
                         self.store.invalidate_embedding_cache()
+                        self.store.invalidate_search_cache()
                         self._refresh_session_handoff()
                         return {"id": nearest.id, "status": "updated", "operation": "UPDATE"}
                     elif crud_op == "NOOP":
@@ -779,6 +842,7 @@ class MCPServer:
                 (row[0], new_content, hq_text),
             )
         self.store.invalidate_embedding_cache()
+        self.store.invalidate_search_cache()
         self.store._emit_event("memory_edit", memory_id=mem.id, detail=f"content updated ({len(new_content)} chars)")
         self.store.conn.commit()
         self._refresh_session_handoff()
@@ -1053,6 +1117,7 @@ class MCPServer:
             "open_loops": open_loops[:limit],
             "recent_queries": recall_queries[:limit],
             "touched_entities": sorted(touched_entities)[:limit],
+            "suggested_queries": _suggest_resume_queries(open_loops, touched_entities, recall_queries, limit),
             "stats": {
                 "diary_entries": len(diary_rows),
                 "recent_queries": len(recall_queries),
@@ -1087,17 +1152,32 @@ class MCPServer:
             self.store.save_session_handoff(session_id, handoff["summary"], handoff)
         return handoff
 
+    def _session_checkpoint(self, args: dict):
+        note = (args.get("note") or "").strip()
+        if note:
+            entry = f"[checkpoint] {note}"
+            _session_diary.append(entry)
+            self.store.write_diary(entry, session_id=self._session_id)
+        handoff = self._build_session_handoff(self._session_id, limit=args.get("limit", 8))
+        handoff["checkpoint_note"] = note or None
+        self.store.save_session_handoff(self._session_id, handoff["summary"], handoff)
+        return handoff
+
     def _resume_context(self, args: dict):
         session_id = args.get("session_id")
         limit = args.get("limit", 3)
         if session_id:
             handoff = self.store.get_session_handoff(session_id)
             if not handoff:
-                return {"error": f"No saved handoff for session '{session_id}'"}
+                generated = self._build_session_handoff(session_id, limit=8)
+                return {"handoffs": [generated], "latest": generated, "generated": True}
             return {"handoffs": [handoff], "latest": handoff}
 
         handoffs = self.store.list_session_handoffs(limit=limit)
         latest = handoffs[0] if handoffs else None
+        if not latest:
+            latest = self._build_session_handoff(self._session_id, limit=8)
+            handoffs = [latest]
         return {
             "latest": latest,
             "handoffs": handoffs,
@@ -1587,7 +1667,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.1.0")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.4.0")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

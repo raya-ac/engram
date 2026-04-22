@@ -17,6 +17,9 @@ class RetrievalConfig:
     rerank_candidates: int = 20
     dense_multiplier: int = 3
     bm25_multiplier: int = 3
+    enable_query_expansion: bool = True
+    exact_match_boost: float = 1.22
+    search_cache_size: int = 128
 
 
 @dataclass
