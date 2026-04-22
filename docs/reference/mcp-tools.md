@@ -98,6 +98,8 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `ingest` | `path` (required) | ingest a file or directory |
 | `ingest_sessions` | `limit` (default: 20) | ingest recent Claude Code sessions |
 | `session_summary` | — | generate summary from diary + recent events |
+| `session_handoff` | `session_id`, `save` (default: true), `limit` (default: 8) | build a structured handoff packet for the current or specified session and optionally persist it |
+| `resume_context` | `session_id`, `limit` (default: 3) | load the latest saved handoff packet so a new agent session can resume quickly |
 
 ## system & context
 
@@ -118,3 +120,13 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 |------|--------|-------------|
 | `diary_write` | `entry` (required) | append to session diary |
 | `diary_read` | — | read current session diary |
+
+## continuity pattern
+
+for resumable agent work, the default flow is:
+
+1. `resume_context` at session startup
+2. normal `remember`, `remember_decision`, `remember_negative`, and `diary_write` calls during work
+3. `session_handoff` near a stop point if you want to explicitly persist the current packet
+
+the active MCP session also refreshes its handoff automatically after recalls, memory writes, diary writes, and memory edits.

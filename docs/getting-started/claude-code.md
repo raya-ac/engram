@@ -23,7 +23,7 @@ find the absolute path:
 echo "$(cd /path/to/engram && pwd)/.venv/bin/python"
 ```
 
-restart Claude Code. you should see `engram` with 63 tools.
+restart Claude Code. you should see `engram` with 66 tools.
 
 ## 2. add memory instructions to CLAUDE.md
 
@@ -44,10 +44,12 @@ preferences, project decisions, error patterns, architecture choices.
 - `recall` — hybrid search across all memory layers
 - `recall_hints` — lightweight check before full recall
 - `recall_entity` — everything about a person/project/tool
+- `resume_context` — load the latest structured handoff packet at session start
 - `remember` — store with automatic surprise scoring
 - `remember_decision` — decisions with rationale
 - `remember_error` — error patterns with prevention
 - `remember_negative` — what does NOT exist
+- `session_handoff` — explicitly persist a resumable handoff packet before stopping
 - `get_skills` — focused procedural guidance for a task
 ```
 
@@ -92,9 +94,19 @@ in Claude Code:
 
 the agent should use `recall` or `recall_hints` to search.
 
+for continuity-oriented setups, also test:
+
+```text
+> load the latest resume context for this work
+```
+
+the agent should call `resume_context` and use the latest handoff packet if one exists.
+
 ## tips
 
 - **`recall_hints` before `recall`** — check if memory exists before pulling full content
+- **`resume_context` at startup** — use the latest structured handoff before doing a broader recall
+- **`session_handoff` before stopping** — useful when handing work across sessions or agents
 - **train the reranker** after a few days: `train_reranker`
 - **run the dream cycle** periodically: `consolidate`
 - **watch surprise scores** — low surprise (< 0.3) means redundant storage
