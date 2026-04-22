@@ -1,0 +1,23 @@
+title: "[question] "
+labels:
+  - discussion
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for usage questions, integration questions, or architecture clarifications that are broader than a bug report.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Current setup
+      description: Include Engram version, install method, client, and anything relevant.
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you already tried?

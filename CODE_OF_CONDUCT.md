@@ -60,11 +60,17 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-contact@engram-memory.decv.
-All complaints will be reviewed and investigated promptly and fairly.
+contact@engram-memory.dev.
+All complaints will be reviewed and investigated promptly and fairly. If you
+are reporting a concern, include any relevant links, screenshots, or context
+that would help us understand what happened.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
+
+We will acknowledge reports as soon as reasonably possible, evaluate the
+reported behavior against this Code of Conduct, and decide on an appropriate
+response based on severity, pattern, and impact on the community.
 
 ## Enforcement Guidelines
 

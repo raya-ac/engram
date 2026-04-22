@@ -1,5 +1,12 @@
 # Benchmarks
 
+## at a glance
+
+- **98.1% R@5** on LongMemEval
+- **1.5 points above MemPalace**
+- **12.1 points above Emergence AI**
+- **377x faster** than brute-force dense search at 1M vectors with HNSW
+
 ## LongMemEval (ICLR 2025)
 
 [LongMemEval](https://arxiv.org/abs/2410.10813) — 500 questions testing 5 long-term memory abilities across ~40 conversation sessions per question (~115k tokens).
@@ -36,6 +43,18 @@ v2 adds three improvements over v1:
 3. **cross-encoder reranking** — jointly scores top-20 candidates against the query
 
 run the benchmark: `python benchmarks/longmemeval/run_engram.py data/longmemeval_s_cleaned.json --rerank`
+
+### benchmark takeaway
+
+The important result is not just “higher score”.
+
+Engram wins while staying operationally simple:
+
+- one SQLite file
+- local retrieval stack
+- no external vector DB
+- no graph database
+- production-friendly latency
 
 ## system benchmark (72 tests)
 

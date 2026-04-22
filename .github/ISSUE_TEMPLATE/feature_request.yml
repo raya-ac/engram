@@ -1,0 +1,65 @@
+name: Feature request
+description: Suggest an improvement or new capability for Engram
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new capabilities, workflow improvements, or product direction changes.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve?
+      placeholder: I'm trying to do X, but Engram currently makes it hard because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or change you want.
+      placeholder: A clear description of the behavior you want.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What are you doing today instead?
+      placeholder: Current workaround, competing approach, or why existing tools do not fit.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Retrieval
+        - Memory storage
+        - MCP tools
+        - CLI
+        - Web UI
+        - Docs
+        - Integrations
+        - Benchmarks
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example use case
+      description: Show what this would unlock in a real workflow.
+      placeholder: In my setup, this would let me ...
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      placeholder: Links, screenshots, related papers, or prior discussion.

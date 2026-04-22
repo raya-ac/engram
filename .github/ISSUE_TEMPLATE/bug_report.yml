@@ -1,0 +1,80 @@
+name: Bug report
+description: Report a reproducible bug in Engram
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please include enough detail for someone else to reproduce it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+      placeholder: A short description of the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps that trigger the problem.
+      placeholder: |
+        1. Start Engram with ...
+        2. Call tool ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, traceback, or screenshots
+      description: Paste any relevant errors or screenshots.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Engram version
+      placeholder: "0.3.2"
+
+  - type: input
+    id: install
+    attributes:
+      label: Install method
+      description: How did you install Engram?
+      placeholder: pip / editable install / Docker / source
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, MCP client, or anything else relevant
+      placeholder: macOS 15, Python 3.12, Claude Code
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      placeholder: Anything else that would help debug this issue.

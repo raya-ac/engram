@@ -6,17 +6,18 @@ repo_name: raya-ac/engram
 
 theme:
   name: material
+  custom_dir: docs/overrides
   logo: assets/logo-192.png
   favicon: assets/favicon.png
   palette:
     - scheme: slate
-      primary: deep purple
+      primary: teal
       accent: amber
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - scheme: default
-      primary: deep purple
+      primary: teal
       accent: amber
       toggle:
         icon: material/brightness-7
@@ -54,6 +55,8 @@ nav:
     - Quick Start: getting-started/quickstart.md
     - Claude Code Setup: getting-started/claude-code.md
   - Guides:
+    - Session Continuity: guides/session-continuity.md
+    - Client Configs: guides/client-configs.md
     - Embedding Backends: guides/embedding-backends.md
     - Retrieval Pipeline: guides/retrieval-pipeline.md
     - Memory Lifecycle: guides/memory-lifecycle.md
@@ -73,6 +76,9 @@ nav:
     - ANN Index: architecture/ann-index.md
     - Surprise Scoring: architecture/surprise.md
     - Benchmarks: architecture/benchmarks.md
+  - Maintainers:
+    - Triage: maintainers/triage.md
+    - Releasing: maintainers/releasing.md
   - Tutorials:
     - Build an Agent: tutorials/build-an-agent.md
     - Scan a Codebase: tutorials/scan-a-codebase.md

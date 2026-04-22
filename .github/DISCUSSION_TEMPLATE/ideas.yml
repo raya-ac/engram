@@ -1,0 +1,25 @@
+title: "[idea] "
+labels:
+  - discussion
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for product direction, retrieval ideas, memory-model changes, or other open-ended proposals.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should Engram do differently?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context or references
+      description: Papers, examples, competing tools, or prior discussion.

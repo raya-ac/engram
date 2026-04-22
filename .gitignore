@@ -22,3 +22,4 @@ benchmarks/longmemeval/src/
 benchmarks/longmemeval/*.jsonl
 benchmarks/longmemeval/retrieval_logs/
 site/
+uv.lock
