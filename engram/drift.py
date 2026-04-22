@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -586,6 +587,23 @@ def auto_fix_drift(store: Store, report: DriftReport, dry_run: bool = True) -> d
     """
     actions = []
 
+    def _begin_write_transaction() -> None:
+        attempts = 40
+        for attempt in range(attempts):
+            try:
+                store.conn.execute("BEGIN IMMEDIATE")
+                return
+            except sqlite3.OperationalError as exc:
+                if "database is locked" not in str(exc).lower() or attempt == attempts - 1:
+                    raise
+                time.sleep(0.25)
+
+    def _execute_write(sql: str, params: tuple[Any, ...]) -> None:
+        store.conn.execute(sql, params)
+
+    if not dry_run:
+        _begin_write_transaction()
+
     for issue in report.issues:
         if issue.code == "DEAD_PATH":
             action = {
@@ -602,8 +620,8 @@ def auto_fix_drift(store: Store, report: DriftReport, dry_run: bool = True) -> d
                     mem.metadata["invalidation_reason"] = f"drift:dead_path:{issue.claim}"
                     mem.metadata["invalidated_at"] = time.time()
                     import json
-                    store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
-                                       (json.dumps(mem.metadata), mem.id))
+                    _execute_write("UPDATE memories SET metadata = ? WHERE id = ?",
+                                   (json.dumps(mem.metadata), mem.id))
             actions.append(action)
 
         elif issue.code == "STALE_MEMORY" and issue.severity == "error":
@@ -620,8 +638,8 @@ def auto_fix_drift(store: Store, report: DriftReport, dry_run: bool = True) -> d
                     mem.metadata["drift_flagged_at"] = time.time()
                     mem.metadata["drift_reason"] = issue.message
                     import json
-                    store.conn.execute("UPDATE memories SET metadata = ? WHERE id = ?",
-                                       (json.dumps(mem.metadata), mem.id))
+                    _execute_write("UPDATE memories SET metadata = ? WHERE id = ?",
+                                   (json.dumps(mem.metadata), mem.id))
             actions.append(action)
 
         elif issue.code == "INVALIDATED_ACTIVE":
@@ -632,12 +650,13 @@ def auto_fix_drift(store: Store, report: DriftReport, dry_run: bool = True) -> d
                 "preview": issue.memory_preview,
             }
             if not dry_run:
-                store.forget_memory(issue.memory_id)
+                _execute_write("UPDATE memories SET forgotten = 1 WHERE id = ?", (issue.memory_id,))
             actions.append(action)
 
     if not dry_run:
         store.conn.commit()
         store.invalidate_embedding_cache()
+        store.invalidate_search_cache()
 
     return {
         "dry_run": dry_run,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import sqlite3
 import time
 import uuid
 
@@ -35,6 +37,16 @@ def _store(request: Request) -> Store:
 
 def _config(request: Request):
     return request.app.state.config
+
+
+def _fresh_store(request: Request) -> Store:
+    """Use a short-lived connection for read-heavy web requests.
+
+    The dashboard issues multiple concurrent fetches during normal use. Reusing the
+    app's shared Store connection for all of them can pin the main thread inside
+    SQLite. Hot read endpoints should use their own connection and close it quickly.
+    """
+    return Store(_config(request))
 
 
 # --- HTML ---
@@ -205,141 +217,137 @@ async def entity_graph(request: Request, entity_id: str):
 @router.get("/api/neural")
 async def neural_graph(request: Request, limit: int = 80):
     """Full entity-relationship graph for neural visualization."""
-    store = _store(request)
-    # get top entities by memory count
-    # layer priority: semantic > procedural > episodic > working
-    # assign entity to its highest-priority layer
-    rows = store.conn.execute(
-        """SELECT e.id, e.canonical_name, e.entity_type,
-                  COUNT(em.memory_id) as mem_count,
-                  MAX(m.last_accessed) as last_active,
-                  CASE
-                    WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
-                                WHERE em2.entity_id=e.id AND m2.layer='semantic' AND m2.forgotten=0) THEN 'semantic'
-                    WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
-                                WHERE em2.entity_id=e.id AND m2.layer='procedural' AND m2.forgotten=0) THEN 'procedural'
-                    WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
-                                WHERE em2.entity_id=e.id AND m2.layer='working' AND m2.forgotten=0) THEN 'working'
-                    ELSE 'episodic'
-                  END as dominant_layer
-           FROM entities e
-           JOIN entity_mentions em ON em.entity_id = e.id
-           JOIN memories m ON m.id = em.memory_id AND m.forgotten = 0
-           GROUP BY e.id
-           ORDER BY mem_count DESC
-           LIMIT ?""",
-        (limit,),
-    ).fetchall()
-
-    nodes = []
-    node_ids = set()
-    for r in rows:
-        nodes.append({
-            "id": r["id"],
-            "name": r["canonical_name"],
-            "type": r["entity_type"],
-            "size": r["mem_count"],
-            "lastActive": r["last_active"],
-            "layer": r["dominant_layer"] or "episodic",
-        })
-        node_ids.add(r["id"])
-
-    # get relationships between these nodes
-    edges = []
-    if node_ids:
-        placeholders = ",".join("?" * len(node_ids))
-        rels = store.conn.execute(
-            f"""SELECT r.source_entity_id, r.target_entity_id,
-                       r.relation_type, r.strength, r.evidence_count,
-                       e1.canonical_name as source_name,
-                       e2.canonical_name as target_name
-                FROM relationships r
-                JOIN entities e1 ON e1.id = r.source_entity_id
-                JOIN entities e2 ON e2.id = r.target_entity_id
-                WHERE r.source_entity_id IN ({placeholders})
-                  AND r.target_entity_id IN ({placeholders})""",
-            list(node_ids) + list(node_ids),
+    store = _fresh_store(request)
+    try:
+        # get top entities by memory count
+        # layer priority: semantic > procedural > episodic > working
+        # assign entity to its highest-priority layer
+        rows = store.conn.execute(
+            """SELECT e.id, e.canonical_name, e.entity_type,
+                      COUNT(em.memory_id) as mem_count,
+                      MAX(m.last_accessed) as last_active,
+                      CASE
+                        WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
+                                    WHERE em2.entity_id=e.id AND m2.layer='semantic' AND m2.forgotten=0) THEN 'semantic'
+                        WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
+                                    WHERE em2.entity_id=e.id AND m2.layer='procedural' AND m2.forgotten=0) THEN 'procedural'
+                        WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
+                                    WHERE em2.entity_id=e.id AND m2.layer='working' AND m2.forgotten=0) THEN 'working'
+                        ELSE 'episodic'
+                      END as dominant_layer
+               FROM entities e
+               JOIN entity_mentions em ON em.entity_id = e.id
+               JOIN memories m ON m.id = em.memory_id AND m.forgotten = 0
+               GROUP BY e.id
+               ORDER BY mem_count DESC
+               LIMIT ?""",
+            (limit,),
         ).fetchall()
-        for r in rels:
-            edges.append(dict(r))
 
-    # get recent access events (reads + writes for firing animation)
-    cutoff = time.time() - 300  # last 5 minutes
-    read_fires = store.conn.execute(
-        """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
-                  GROUP_CONCAT(e.id) as entity_ids, 'read' as fire_type
-           FROM access_log al
-           JOIN entity_mentions em ON em.memory_id = al.memory_id
-           JOIN entities e ON e.id = em.entity_id
-           WHERE al.accessed_at > ?
-           GROUP BY al.id
-           ORDER BY al.accessed_at DESC
-           LIMIT 30""",
-        (cutoff,),
-    ).fetchall()
-    write_fires = store.conn.execute(
-        """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
-                  GROUP_CONCAT(e.id) as entity_ids, 'write' as fire_type
-           FROM events ev
-           JOIN entity_mentions em ON em.memory_id = ev.memory_id
-           JOIN entities e ON e.id = em.entity_id
-           WHERE ev.created_at > ?
-             AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
-           GROUP BY ev.id
-           ORDER BY ev.created_at DESC
-           LIMIT 30""",
-        (cutoff,),
-    ).fetchall()
-    fires = [dict(r) for r in read_fires] + [dict(r) for r in write_fires]
-    fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
-    fires = fires[:30]
+        nodes = []
+        node_ids = set()
+        for r in rows:
+            nodes.append({
+                "id": r["id"],
+                "name": r["canonical_name"],
+                "type": r["entity_type"],
+                "size": r["mem_count"],
+                "lastActive": r["last_active"],
+                "layer": r["dominant_layer"] or "episodic",
+            })
+            node_ids.add(r["id"])
 
-    return {"nodes": nodes, "edges": edges, "fires": fires}
+        edges = []
+        if node_ids:
+            placeholders = ",".join("?" * len(node_ids))
+            rels = store.conn.execute(
+                f"""SELECT r.source_entity_id, r.target_entity_id,
+                           r.relation_type, r.strength, r.evidence_count,
+                           e1.canonical_name as source_name,
+                           e2.canonical_name as target_name
+                    FROM relationships r
+                    JOIN entities e1 ON e1.id = r.source_entity_id
+                    JOIN entities e2 ON e2.id = r.target_entity_id
+                    WHERE r.source_entity_id IN ({placeholders})
+                      AND r.target_entity_id IN ({placeholders})""",
+                list(node_ids) + list(node_ids),
+            ).fetchall()
+            for r in rels:
+                edges.append(dict(r))
+
+        cutoff = time.time() - 300
+        read_fires = store.conn.execute(
+            """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
+                      GROUP_CONCAT(e.id) as entity_ids, 'read' as fire_type
+               FROM access_log al
+               JOIN entity_mentions em ON em.memory_id = al.memory_id
+               JOIN entities e ON e.id = em.entity_id
+               WHERE al.accessed_at > ?
+               GROUP BY al.id
+               ORDER BY al.accessed_at DESC
+               LIMIT 30""",
+            (cutoff,),
+        ).fetchall()
+        write_fires = store.conn.execute(
+            """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
+                      GROUP_CONCAT(e.id) as entity_ids, 'write' as fire_type
+               FROM events ev
+               JOIN entity_mentions em ON em.memory_id = ev.memory_id
+               JOIN entities e ON e.id = em.entity_id
+               WHERE ev.created_at > ?
+                 AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
+               GROUP BY ev.id
+               ORDER BY ev.created_at DESC
+               LIMIT 30""",
+            (cutoff,),
+        ).fetchall()
+        fires = [dict(r) for r in read_fires] + [dict(r) for r in write_fires]
+        fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
+        return {"nodes": nodes, "edges": edges, "fires": fires[:30]}
+    finally:
+        store.close()
 
 
 @router.get("/api/neural/fires")
 async def neural_fires(request: Request, since: float = 0):
     """Lightweight poll endpoint — returns recent read AND write events since timestamp."""
-    store = _store(request)
-    cutoff = since if since > 0 else time.time() - 10
-
-    # reads from access_log
-    reads = store.conn.execute(
-        """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
-                  GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
-                  GROUP_CONCAT(DISTINCT e.id) as entity_ids,
-                  'read' as fire_type
-           FROM access_log al
-           JOIN entity_mentions em ON em.memory_id = al.memory_id
-           JOIN entities e ON e.id = em.entity_id
-           WHERE al.accessed_at > ?
-           GROUP BY al.id
-           ORDER BY al.accessed_at DESC
-           LIMIT 50""",
-        (cutoff,),
-    ).fetchall()
-
-    # writes from events table
-    writes = store.conn.execute(
-        """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
-                  GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
-                  GROUP_CONCAT(DISTINCT e.id) as entity_ids,
-                  'write' as fire_type
-           FROM events ev
-           JOIN entity_mentions em ON em.memory_id = ev.memory_id
-           JOIN entities e ON e.id = em.entity_id
-           WHERE ev.created_at > ?
-             AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
-           GROUP BY ev.id
-           ORDER BY ev.created_at DESC
-           LIMIT 50""",
-        (cutoff,),
-    ).fetchall()
-
-    # merge and sort by timestamp descending
-    fires = [dict(r) for r in reads] + [dict(r) for r in writes]
-    fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
-    return {"fires": fires[:50], "timestamp": time.time()}
+    store = _fresh_store(request)
+    try:
+        cutoff = since if since > 0 else time.time() - 10
+        reads = store.conn.execute(
+            """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
+                      GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
+                      GROUP_CONCAT(DISTINCT e.id) as entity_ids,
+                      'read' as fire_type
+               FROM access_log al
+               JOIN entity_mentions em ON em.memory_id = al.memory_id
+               JOIN entities e ON e.id = em.entity_id
+               WHERE al.accessed_at > ?
+               GROUP BY al.id
+               ORDER BY al.accessed_at DESC
+               LIMIT 50""",
+            (cutoff,),
+        ).fetchall()
+        writes = store.conn.execute(
+            """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
+                      GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
+                      GROUP_CONCAT(DISTINCT e.id) as entity_ids,
+                      'write' as fire_type
+               FROM events ev
+               JOIN entity_mentions em ON em.memory_id = ev.memory_id
+               JOIN entities e ON e.id = em.entity_id
+               WHERE ev.created_at > ?
+                 AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
+               GROUP BY ev.id
+               ORDER BY ev.created_at DESC
+               LIMIT 50""",
+            (cutoff,),
+        ).fetchall()
+        fires = [dict(r) for r in reads] + [dict(r) for r in writes]
+        fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
+        return {"fires": fires[:50], "timestamp": time.time()}
+    finally:
+        store.close()
 
 
 @router.get("/api/timeline")
@@ -351,72 +359,80 @@ async def timeline(request: Request, start: str, end: str | None = None, limit: 
 
 @router.get("/api/stats")
 async def stats(request: Request):
-    store = _store(request)
-    return store.get_stats()
+    store = _fresh_store(request)
+    try:
+        return store.get_stats()
+    finally:
+        store.close()
 
 
 @router.get("/api/events")
 async def events(request: Request, limit: int = 50):
-    store = _store(request)
-    return store.get_recent_events(limit=limit)
+    store = _fresh_store(request)
+    try:
+        return store.get_recent_events(limit=limit)
+    finally:
+        store.close()
 
 
 @router.get("/api/pulse")
 async def session_pulse(request: Request):
     """Real-time session activity counters + hourly sparkline."""
-    store = _store(request)
-    now = time.time()
-    hour_ago = now - 3600
+    store = _fresh_store(request)
+    try:
+        now = time.time()
+        hour_ago = now - 3600
+        rows = store.conn.execute(
+            """SELECT event_type, COUNT(*) as cnt
+               FROM events WHERE created_at > ?
+               GROUP BY event_type""",
+            (hour_ago,),
+        ).fetchall()
+        counts = {r["event_type"]: r["cnt"] for r in rows}
+        sparkline = []
+        for i in range(12):
+            bucket_start = hour_ago + i * 300
+            bucket_end = bucket_start + 300
+            cnt = store.conn.execute(
+                "SELECT COUNT(*) as cnt FROM events WHERE created_at >= ? AND created_at < ?",
+                (bucket_start, bucket_end),
+            ).fetchone()["cnt"]
+            sparkline.append(cnt)
 
-    # count events by type in last hour
-    rows = store.conn.execute(
-        """SELECT event_type, COUNT(*) as cnt
-           FROM events WHERE created_at > ?
-           GROUP BY event_type""",
-        (hour_ago,),
-    ).fetchall()
-    counts = {r["event_type"]: r["cnt"] for r in rows}
-
-    # sparkline: activity per 5-min bucket over last hour (12 buckets)
-    sparkline = []
-    for i in range(12):
-        bucket_start = hour_ago + i * 300
-        bucket_end = bucket_start + 300
-        cnt = store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM events WHERE created_at >= ? AND created_at < ?",
-            (bucket_start, bucket_end),
-        ).fetchone()["cnt"]
-        sparkline.append(cnt)
-
-    return {
-        "created": counts.get("memory_write", 0),
-        "recalled": counts.get("recall", 0) + counts.get("memory_read", 0),
-        "promoted": counts.get("memory_promote", 0),
-        "forgotten": counts.get("memory_forget", 0),
-        "total_events": sum(counts.values()),
-        "sparkline": sparkline,
-        "timestamp": now,
-    }
+        return {
+            "created": counts.get("memory_write", 0),
+            "recalled": counts.get("recall", 0) + counts.get("memory_read", 0),
+            "promoted": counts.get("memory_promote", 0),
+            "forgotten": counts.get("memory_forget", 0),
+            "total_events": sum(counts.values()),
+            "sparkline": sparkline,
+            "timestamp": now,
+        }
+    finally:
+        store.close()
 
 
 @router.get("/api/heatmap")
 async def activity_heatmap(request: Request, days: int = 30):
     """GitHub-style activity heatmap: day x hour bucketed event counts."""
-    store = _store(request)
-    cutoff = time.time() - days * 86400
-    rows = store.conn.execute(
-        """SELECT
-             CAST((created_at - ?) / 86400 AS INT) as day_offset,
-             CAST(((created_at - ?) % 86400) / 3600 AS INT) as hour,
-             event_type,
-             COUNT(*) as cnt
-           FROM events WHERE created_at > ?
-           GROUP BY day_offset, hour, event_type
-           ORDER BY day_offset, hour""",
-        (cutoff, cutoff, cutoff),
-    ).fetchall()
-    cells = [dict(r) for r in rows]
-    return {"cells": cells, "days": days}
+    store = _fresh_store(request)
+    try:
+        cutoff = time.time() - days * 86400
+        rows = store.conn.execute(
+            """SELECT
+                 CAST((created_at - ?) / 86400 AS INT) as day_offset,
+                 CAST(((created_at - ?) % 86400) / 3600 AS INT) as hour,
+                 event_type,
+                 COUNT(*) as cnt
+               FROM events WHERE created_at > ?
+               GROUP BY day_offset, hour, event_type
+               ORDER BY day_offset, hour""",
+            (cutoff, cutoff, cutoff),
+        ).fetchall()
+        cells = [dict(r) for r in rows]
+        return {"cells": cells, "days": days}
+    finally:
+        store.close()
 
 
 # --- API: Write ---
@@ -718,27 +734,52 @@ async def health_check(request: Request):
 async def drift_check(request: Request,
                        check_functions: bool = False,
                        search_roots: str = Query(None)):
-    store = _store(request)
     roots = search_roots.split(",") if search_roots else None
-    report = run_drift_check(store, search_roots=roots, check_functions=check_functions)
-    result = report.to_dict()
-    error_count = sum(1 for i in report.issues if i.severity == "error")
-    warn_count = sum(1 for i in report.issues if i.severity == "warning")
-    result["summary"] = (
-        f"Drift score: {report.score}/100 | "
-        f"{error_count} errors, {warn_count} warnings | "
-        f"{report.claims_valid}/{report.claims_verified} claims valid"
-    )
-    return result
+    config = _config(request)
+
+    def _run() -> dict:
+        store = Store(config)
+        try:
+            store.conn.execute("PRAGMA busy_timeout=750")
+            report = run_drift_check(store, search_roots=roots, check_functions=check_functions)
+            result = report.to_dict()
+            error_count = sum(1 for i in report.issues if i.severity == "error")
+            warn_count = sum(1 for i in report.issues if i.severity == "warning")
+            result["summary"] = (
+                f"Drift score: {report.score}/100 | "
+                f"{error_count} errors, {warn_count} warnings | "
+                f"{report.claims_valid}/{report.claims_verified} claims valid"
+            )
+            return result
+        finally:
+            store.close()
+
+    try:
+        return await asyncio.to_thread(_run)
+    except sqlite3.OperationalError as exc:
+        return JSONResponse({"error": f"database busy during drift check: {exc}"}, status_code=503)
 
 
 @router.post("/api/drift/fix")
 async def drift_fix(request: Request):
-    store = _store(request)
+    config = _config(request)
     body = await request.json() if request.headers.get("content-type") == "application/json" else {}
     dry_run = body.get("dry_run", False)
-    report = run_drift_check(store, check_functions=False)
-    result = auto_fix_drift(store, report, dry_run=dry_run)
+
+    def _run() -> dict:
+        write_store = Store(config)
+        try:
+            # Fail fast for interactive web requests instead of sitting on SQLite locks.
+            write_store.conn.execute("PRAGMA busy_timeout=750")
+            report = run_drift_check(write_store, check_functions=False)
+            return auto_fix_drift(write_store, report, dry_run=dry_run)
+        finally:
+            write_store.close()
+
+    try:
+        result = await asyncio.to_thread(_run)
+    except sqlite3.OperationalError as exc:
+        return JSONResponse({"error": f"database busy during drift fix: {exc}"}, status_code=503)
     push_event("drift_fix", {"total": result["total_actions"], "dry_run": dry_run})
     return result
 

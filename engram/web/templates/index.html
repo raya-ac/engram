@@ -1068,8 +1068,8 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
       <div class="section-title">Memory Drift Detection</div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
         <button onclick="loadDrift()">Run Drift Check</button>
-        <button class="secondary" onclick="runDriftFix(true)">Preview Fix</button>
-        <button class="secondary" onclick="runDriftFix(false)" style="background:var(--red);color:#fff">Fix Now</button>
+        <button id="drift-preview-btn" type="button" class="secondary" onclick="return previewDriftFix()">Preview Fix</button>
+        <button id="drift-fix-btn" type="button" class="secondary" onclick="return applyDriftFix()" style="background:var(--red);color:#fff">Fix Now</button>
       </div>
       <div id="drift-score" style="margin-bottom:16px"></div>
       <div id="drift-stats" class="health-grid" style="margin-bottom:16px"></div>
@@ -1767,7 +1767,9 @@ function fireNeuronByName(name, fireType = 'read') {
 
 // poll SQLite for fires from MCP server (every 2s)
 let lastFireTimestamp = 0;
+let firesPollHandle = null;
 async function pollFires() {
+  if (!shouldPollFires()) return;
   if (neuralNodes.length === 0) return;
   if (lastFireTimestamp === 0) lastFireTimestamp = Date.now() / 1000 - 120;
   try {
@@ -1792,7 +1794,6 @@ async function pollFires() {
     }
   } catch(e) {}
 }
-setInterval(pollFires, 2000);
 
 // ============================================================
 // VIEWS (kept functions: loadMemories, loadLayer, loadEntities, loadTimeline)
@@ -1924,6 +1925,53 @@ function memoryCard(m) {
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+let activeView = 'neural';
+let neuralLoaded = false;
+let initialBootComplete = false;
+
+function getVisibleViewName() {
+  const current = document.querySelector('.view-panel:not([style*="display: none"]):not([style*="display:none"])');
+  return current ? current.id.replace('view-', '') : activeView;
+}
+
+function shouldPollEvents() {
+  return document.visibilityState === 'visible';
+}
+
+function shouldPollPulse() {
+  return document.visibilityState === 'visible';
+}
+
+function shouldPollFires() {
+  return document.visibilityState === 'visible' && activeView === 'neural' && neuralLoaded;
+}
+
+function restartPollers() {
+  if (eventsPollHandle) clearInterval(eventsPollHandle);
+  if (firesPollHandle) clearInterval(firesPollHandle);
+  if (pulsePollHandle) clearInterval(pulsePollHandle);
+  if (statsPollHandle) clearInterval(statsPollHandle);
+
+  eventsPollHandle = setInterval(() => { if (shouldPollEvents()) pollEvents(); }, 4000);
+  firesPollHandle = setInterval(() => { if (shouldPollFires()) pollFires(); }, 4000);
+  pulsePollHandle = setInterval(() => { if (shouldPollPulse()) pollPulse(); }, 12000);
+  statsPollHandle = setInterval(() => { if (document.visibilityState === 'visible') loadStats(); }, 60000);
+}
+
+async function bootDashboard() {
+  activeView = getVisibleViewName() || 'neural';
+  await loadStats();
+  await loadDiary();
+  if (activeView === 'neural') {
+    await loadNeuralData();
+    neuralLoaded = true;
+  }
+  initialBootComplete = true;
+  if (shouldPollEvents()) await pollEvents();
+  if (shouldPollPulse()) await pollPulse();
+  restartPollers();
+}
+
 // --- Stats ---
 async function loadStats() {
   const data = await fetchJSON('/api/stats');
@@ -1941,7 +1989,11 @@ async function loadStats() {
 
 // --- Live Events (poll SQLite events table — works across MCP + web processes) ---
 let lastEventId = 0;
+let eventsPollHandle = null;
+let statsPollHandle = null;
+let pulsePollHandle = null;
 async function pollEvents() {
+  if (!shouldPollEvents()) return;
   try {
     const data = await fetchJSON('/api/events?limit=30');
     const el = document.getElementById('event-stream');
@@ -1984,8 +2036,6 @@ async function pollEvents() {
     }
   } catch(e) {}
 }
-setInterval(pollEvents, 2000);
-pollEvents(); // initial load
 
 // --- Toast notifications ---
 function toast(msg, type='info') {
@@ -2958,7 +3008,24 @@ async function loadDrift() {
   document.getElementById('drift-stats').innerHTML = '';
   document.getElementById('drift-issues').innerHTML = '';
 
-  const data = await fetchJSON('/api/drift');
+  let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    response = await fetch(API + '/api/drift', { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timeout);
+    const message = e && e.name === 'AbortError' ? 'Drift check timed out after 12s' : `Drift check failed: ${e}`;
+    document.getElementById('drift-score').innerHTML = `<div class="empty" style="color:var(--red)">${escapeHtml(message)}</div>`;
+    return;
+  }
+  clearTimeout(timeout);
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    const message = data.error || `Drift check failed (${response.status})`;
+    document.getElementById('drift-score').innerHTML = `<div class="empty" style="color:var(--red)">${escapeHtml(message)}</div>`;
+    return;
+  }
   const score = data.score || 0;
   const color = score >= 80 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--red)';
 
@@ -3015,18 +3082,61 @@ async function loadDrift() {
 }
 
 async function runDriftFix(dryRun) {
+  const button = document.getElementById(dryRun ? 'drift-preview-btn' : 'drift-fix-btn');
+  const previousLabel = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = dryRun ? 'Previewing…' : 'Fixing…';
+  }
   const label = dryRun ? 'Previewing drift fix...' : 'Fixing drift issues...';
   toast(label, 'info');
-  const data = await postJSON('/api/drift/fix', {dry_run: dryRun});
-  if (!data.total_actions) {
-    toast('No drift issues to fix', 'info');
-    return;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(API + '/api/drift/fix', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: dryRun}),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const data = await response.json();
+    if (!response.ok) {
+      toast(`Drift fix failed: ${data.error || response.statusText}`, 'error');
+      return;
+    }
+    if (data.error) {
+      toast(`Drift fix failed: ${data.error}`, 'error');
+      return;
+    }
+    if (!data.total_actions) {
+      toast('No drift issues to fix', 'info');
+      return;
+    }
+    const msg = dryRun
+      ? `Would fix ${data.total_actions} issues (${data.invalidated} invalidate, ${data.flagged_stale} flag, ${data.forgotten} forget)`
+      : `Fixed ${data.total_actions} issues (${data.invalidated} invalidated, ${data.flagged_stale} flagged, ${data.forgotten} forgotten)`;
+    toast(msg, dryRun ? 'info' : 'success');
+    if (!dryRun) loadDrift();
+  } catch (e) {
+    const timedOut = e && e.name === 'AbortError';
+    toast(timedOut ? 'Drift fix timed out after 15s' : `Drift fix failed: ${e}`, 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
   }
-  const msg = dryRun
-    ? `Would fix ${data.total_actions} issues (${data.invalidated} invalidate, ${data.flagged_stale} flag, ${data.forgotten} forget)`
-    : `Fixed ${data.total_actions} issues (${data.invalidated} invalidated, ${data.flagged_stale} flagged, ${data.forgotten} forgotten)`;
-  toast(msg, dryRun ? 'info' : 'success');
-  if (!dryRun) loadDrift();
+}
+
+function previewDriftFix() {
+  runDriftFix(true);
+  return false;
+}
+
+function applyDriftFix() {
+  runDriftFix(false);
+  return false;
 }
 
 // --- Pattern extraction ---
@@ -3148,6 +3258,7 @@ async function bulkAction(action) {
 
 // --- View switcher (updated) ---
 function showView(name) {
+  activeView = name;
   document.querySelectorAll('[id^="view-"]').forEach(el => el.style.display = 'none');
   document.getElementById('view-' + name).style.display = 'block';
   // highlight the correct nav item by matching onclick content
@@ -3160,7 +3271,12 @@ function showView(name) {
     }
   });
 
-  if (name === 'neural') { resizeCanvas(); loadNeuralData(); }
+  if (name === 'neural') {
+    resizeCanvas();
+    if (!neuralLoaded) {
+      loadNeuralData().then(() => { neuralLoaded = true; }).catch(() => {});
+    }
+  }
   if (name === 'memories') loadMemories();
   if (name === 'continuity') loadContinuity();
   if (name === 'entities') loadEntities();
@@ -3172,8 +3288,8 @@ function showView(name) {
   if (name === 'heatmap') loadHeatmap();
   if (name === 'cognition') { loadRerankerStatus(); drawRetentionCurves(); drawSurpriseGauge(0); }
   if (name === 'bridges') loadBridges();
-  if (name === 'drift') loadDrift();
   if (name === 'patterns') loadPatterns();
+  if (initialBootComplete) restartPollers();
 }
 
 // --- Keyboard shortcuts ---
@@ -3194,6 +3310,7 @@ document.addEventListener('keydown', (e) => {
 
 // --- Session Pulse ---
 async function pollPulse() {
+  if (!shouldPollPulse()) return;
   try {
     const data = await fetchJSON('/api/pulse');
     document.getElementById('pulse-created').textContent = data.created;
@@ -3282,12 +3399,16 @@ async function loadHeatmap() {
 
 // --- Init ---
 resizeCanvas();
-loadStats();
-loadNeuralData();
-loadDiary();
-pollPulse();
-setInterval(loadStats, 30000);
-setInterval(pollPulse, 5000);
+bootDashboard();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    restartPollers();
+    if (activeView === 'neural' && neuralLoaded) pollFires();
+    pollEvents();
+    pollPulse();
+    loadStats();
+  }
+});
 window.addEventListener('resize', () => { resizeCanvas(); });
 </script>
 </body>
