@@ -5,39 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Engram</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 <style>
 :root {
-  --bg: #06060e;
-  --bg2: #0c0c18;
-  --bg3: #14142a;
-  --glass: rgba(255,255,255,0.03);
-  --glass2: rgba(255,255,255,0.06);
-  --border: rgba(255,255,255,0.08);
-  --border-glow: rgba(124,58,237,0.3);
-  --text: #e0e0ec;
-  --text2: #7878a0;
-  --accent: #7c3aed;
-  --accent2: #a78bfa;
+  --bg: #06111f;
+  --bg2: #0d1729;
+  --bg3: #14233a;
+  --glass: rgba(14, 24, 42, 0.72);
+  --glass2: rgba(18, 32, 57, 0.9);
+  --border: rgba(148, 163, 184, 0.14);
+  --border-glow: rgba(34, 211, 238, 0.24);
+  --text: #edf4ff;
+  --text2: #8da3c7;
+  --accent: #22d3ee;
+  --accent2: #7dd3fc;
   --green: #34d399;
   --yellow: #fbbf24;
   --red: #f87171;
-  --cyan: #22d3ee;
-  --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
-  --sans: 'Inter', -apple-system, sans-serif;
+  --cyan: #38bdf8;
+  --mono: 'IBM Plex Mono', 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  --sans: 'Space Grotesk', -apple-system, sans-serif;
+  --shadow-lg: 0 22px 60px rgba(2, 6, 23, 0.32);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 13px;
-  /* mesh gradient background */
   background-image:
-    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(124,58,237,0.08), transparent),
-    radial-gradient(ellipse 60% 50% at 80% 80%, rgba(34,211,238,0.05), transparent),
-    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(52,211,153,0.03), transparent);
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(34,211,238,0.1), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 80%, rgba(125,211,252,0.05), transparent),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(52,211,153,0.04), transparent),
+    linear-gradient(180deg, rgba(10,16,29,0.96), rgba(6,17,31,1));
   background-attachment: fixed;
 }
 a { color: var(--accent2); text-decoration: none; }
@@ -50,50 +52,87 @@ a:hover { color: var(--cyan); text-decoration: none; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.5); }
 
 /* layout */
-.layout { display: grid; grid-template-columns: 240px 1fr 300px; grid-template-rows: 56px 1fr 36px; height: 100vh; }
+.layout { display: grid; grid-template-columns: 270px 1fr 340px; grid-template-rows: 86px 1fr 36px; height: 100vh; }
 
 /* header */
 .header {
   grid-column: 1/-1;
-  background: rgba(12,12,24,0.8);
-  backdrop-filter: blur(20px);
+  background: rgba(6,17,31,0.86);
+  backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; padding: 0 20px; gap: 16px;
+  display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; gap: 18px;
   position: relative;
 }
 .header::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), var(--cyan), transparent);
-  opacity: 0.4;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--green), transparent);
+  opacity: 0.5;
 }
 .header h1 {
-  font-family: var(--sans); font-size: 16px; font-weight: 700;
-  background: linear-gradient(135deg, var(--accent2), var(--cyan));
+  font-family: var(--sans); font-size: 22px; font-weight: 700;
+  background: linear-gradient(135deg, #ffffff, var(--accent2));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text; letter-spacing: 1.5px;
+  background-clip: text; letter-spacing: -0.03em;
 }
-.header .stats { color: var(--text2); font-size: 11px; margin-left: auto; font-family: var(--sans); }
+.header .stats { color: var(--text2); font-size: 11px; font-family: var(--mono); }
+.brand-stack { display:flex; align-items:center; gap:14px; }
+.brand-mark {
+  width: 42px; height: 42px; border-radius: 14px;
+  border: 1px solid rgba(125,211,252,0.28);
+  background:
+    radial-gradient(circle at 28% 30%, rgba(125,211,252,0.42), transparent 38%),
+    linear-gradient(135deg, rgba(34,211,238,0.18), rgba(52,211,153,0.12));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 26px rgba(34,211,238,0.12);
+  position: relative;
+}
+.brand-mark::before,
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(237,244,255,0.16);
+}
+.brand-mark::before { inset: 9px; }
+.brand-mark::after { inset: 15px; border-color: rgba(125,211,252,0.36); }
+.brand-copy { display:flex; flex-direction:column; gap:4px; }
+.brand-kicker {
+  color: var(--accent2);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+}
+.header-actions { display:flex; align-items:center; gap:10px; }
+.header-chip {
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(18,32,57,0.7);
+  color: var(--text2);
+  font-size: 11px;
+  font-family: var(--mono);
+}
 
 /* sidebar */
 .sidebar {
-  background: rgba(12,12,24,0.6);
-  backdrop-filter: blur(16px);
+  background: rgba(8,18,34,0.72);
+  backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(16px);
   border-right: 1px solid var(--border);
-  overflow-y: auto; padding: 14px;
+  overflow-y: auto; padding: 18px;
 }
 
 /* main */
-.main { overflow-y: auto; padding: 20px; position: relative; }
+.main { overflow-y: auto; padding: 24px; position: relative; }
 
 /* right panel */
 .panel {
-  background: rgba(12,12,24,0.6);
-  backdrop-filter: blur(16px);
+  background: rgba(8,18,34,0.72);
+  backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(16px);
   border-left: 1px solid var(--border);
-  overflow-y: auto; padding: 14px;
+  overflow-y: auto; padding: 18px;
 }
 
 /* sections */
@@ -112,22 +151,22 @@ a:hover { color: var(--cyan); text-decoration: none; }
 
 /* inputs */
 input, textarea, select, button {
-  font-family: var(--mono); font-size: 13px;
+  font-family: var(--sans); font-size: 13px;
   background: var(--glass); color: var(--text);
-  border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 12px; outline: none;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; outline: none;
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,211,238,0.12); }
 button {
   cursor: pointer; font-family: var(--sans); font-weight: 500;
-  background: linear-gradient(135deg, var(--accent), #6d28d9);
-  color: white; border: none; padding: 8px 16px; border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(124,58,237,0.25);
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #04111d; border: none; padding: 9px 16px; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(34,211,238,0.18);
   transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
 }
-button:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,0.4); }
+button:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(34,211,238,0.24); }
 button:active { transform: translateY(0); }
 button.secondary {
   background: var(--glass2); border: 1px solid var(--border); color: var(--text);
@@ -260,8 +299,8 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 }
 .nav-item:hover { background: var(--glass2); color: var(--text); text-decoration: none; }
 .nav-item.active {
-  background: linear-gradient(135deg, var(--accent), #6d28d9);
-  color: white; box-shadow: 0 2px 12px rgba(124,58,237,0.3);
+  background: linear-gradient(135deg, rgba(34,211,238,0.14), rgba(52,211,153,0.12));
+  color: var(--text); box-shadow: inset 0 0 0 1px rgba(125,211,252,0.16);
 }
 
 /* debug panel */
@@ -370,6 +409,170 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 .health-card.bad .hc-value { color: var(--red); }
 .health-card.bad:hover { box-shadow: 0 0 20px rgba(248,113,113,0.1); }
 
+.shell-card {
+  background: linear-gradient(180deg, rgba(13,23,41,0.88), rgba(8,18,34,0.92));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
+}
+.sidebar-meta {
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.sidebar-meta p {
+  color: var(--text2);
+  line-height: 1.6;
+  font-size: 12px;
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.hero-card {
+  padding: 22px;
+  min-height: 190px;
+}
+.hero-title {
+  font-size: 38px;
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+  max-width: 10ch;
+  margin-bottom: 16px;
+}
+.hero-copy {
+  color: var(--text2);
+  line-height: 1.7;
+  max-width: 58ch;
+}
+.hero-side { display: flex; flex-direction: column; gap: 12px; }
+.hero-metric {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(13,23,41,0.76);
+}
+.hero-metric .eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-family: var(--mono);
+}
+.hero-metric strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 24px;
+}
+.hero-metric p {
+  color: var(--text2);
+  line-height: 1.55;
+}
+.search-shell {
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.search-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text2);
+  font-family: var(--mono);
+}
+.debug-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.debug-pill {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(8,18,34,0.72);
+}
+.debug-pill b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.token-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.token {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(34,211,238,0.18);
+  background: rgba(34,211,238,0.08);
+  color: var(--accent2);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.continuity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.continuity-card { padding: 16px 18px; }
+.continuity-card h3 { font-size: 15px; margin-bottom: 8px; }
+.continuity-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: var(--mono);
+  margin-bottom: 10px;
+}
+.continuity-summary { color: var(--text); line-height: 1.65; margin-bottom: 12px; }
+.continuity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.continuity-block {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(13,23,41,0.62);
+}
+.continuity-block h4 {
+  margin-bottom: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text2);
+  font-family: var(--mono);
+}
+.continuity-block ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.continuity-block li { color: var(--text); line-height: 1.45; font-size: 12px; }
+.events-empty { color: var(--text2); font-size: 11px; line-height: 1.5; }
+.inspector-shell { padding: 14px; }
+
 /* importance breakdown */
 .imp-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .imp-bar .imp-label { width: 70px; font-size: 11px; color: var(--text2); }
@@ -465,37 +668,57 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 .export-form.open { display: block; }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: 56px auto; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; height: auto; min-height: 100vh; }
   .sidebar, .panel { display: none; }
+  .hero-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
 <div class="layout">
   <div class="header">
-    <h1>engram</h1>
-    <span id="status-line" class="stats">loading...</span>
+    <div class="brand-stack">
+      <div class="brand-mark"></div>
+      <div class="brand-copy">
+        <span class="brand-kicker">Cognitive Memory System</span>
+        <h1>Engram</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="header-chip">retrieval + continuity</span>
+      <span id="status-line" class="stats">loading...</span>
+    </div>
   </div>
 
   <div class="sidebar">
+    <div class="sidebar-meta shell-card">
+      <div class="section-title" style="margin-bottom:12px">Workspace</div>
+      <p>Query the graph, inspect retrieval behavior, and resume prior sessions from saved handoff state without leaving the dashboard.</p>
+    </div>
+
     <div class="section">
-      <div class="section-title">Navigate</div>
+      <div class="section-title">Core Views</div>
       <a class="nav-item active" href="#" onclick="showView('neural')">Neural Map</a>
       <a class="nav-item" href="#" onclick="showView('search')">Search</a>
+      <a class="nav-item" href="#" onclick="showView('continuity')">Continuity</a>
       <a class="nav-item" href="#" onclick="showView('memories')">Memories</a>
       <a class="nav-item" href="#" onclick="showView('entities')">Entities</a>
       <a class="nav-item" href="#" onclick="showView('timeline')">Timeline</a>
       <a class="nav-item" href="#" onclick="showView('remember')">Remember</a>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Analysis</div>
       <a class="nav-item" href="#" onclick="showView('analytics')">Analytics</a>
       <a class="nav-item" href="#" onclick="showView('heatmap')">Heatmap</a>
       <a class="nav-item" href="#" onclick="showView('context')">Context</a>
-      <a class="nav-item" href="#" onclick="showView('ingest')">Ingest</a>
       <a class="nav-item" href="#" onclick="showView('health')">Health</a>
       <a class="nav-item" href="#" onclick="showView('dedup')">Dedup</a>
       <a class="nav-item" href="#" onclick="showView('cognition')">Cognition</a>
       <a class="nav-item" href="#" onclick="showView('bridges')">Bridges</a>
       <a class="nav-item" href="#" onclick="showView('drift')">Drift</a>
       <a class="nav-item" href="#" onclick="showView('patterns')">Patterns</a>
+      <a class="nav-item" href="#" onclick="showView('ingest')">Ingest</a>
     </div>
 
     <div class="section">
@@ -540,6 +763,27 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
   <div class="main" id="main-content">
     <!-- Neural view (default) -->
     <div id="view-neural" class="view-panel">
+      <div class="hero-grid">
+        <div class="hero-card shell-card">
+          <span class="brand-kicker">Live Memory Surface</span>
+          <div class="hero-title">See memory move, connect, and decay in one place.</div>
+          <div class="hero-copy">
+            Engram’s dashboard is now built around two loops: inspect what retrieval is doing right now, and resume what the last session left behind without reconstructing the state manually.
+          </div>
+        </div>
+        <div class="hero-side">
+          <div class="hero-metric shell-card">
+            <span class="eyebrow">Retrieval</span>
+            <strong>Explain the search path</strong>
+            <p>Intent, expansion terms, cache hits, and candidate counts are exposed directly instead of being buried in backend-only debug output.</p>
+          </div>
+          <div class="hero-metric shell-card">
+            <span class="eyebrow">Continuity</span>
+            <strong>Resume from actual handoffs</strong>
+            <p>Session handoffs, checkpoint notes, touched entities, and next-query suggestions can be browsed from the same interface.</p>
+          </div>
+        </div>
+      </div>
       <div id="neural-container">
         <canvas id="neural-canvas" width="900" height="560"></canvas>
         <div id="neural-tooltip">
@@ -552,16 +796,22 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 
     <!-- Search view -->
     <div id="view-search" class="view-panel" style="display:none">
-      <div class="search-box" style="position:relative">
-        <input type="text" id="search-input" placeholder="Search memories... (press /)" onkeydown="if(event.key==='Enter'){doSearch();hideSearchHistory()}" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,200)">
-        <div id="search-history" class="search-history"></div>
-        <button onclick="doSearch()">Search</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2)">
-          <input type="checkbox" id="search-debug"> Debug
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2)">
-          <input type="checkbox" id="search-hints"> Hints
-        </label>
+      <div class="search-shell shell-card">
+        <div class="section-title">Search Memory</div>
+        <div class="search-box" style="position:relative;margin-bottom:0">
+          <input type="text" id="search-input" placeholder="Search memories... (press /)" onkeydown="if(event.key==='Enter'){doSearch();hideSearchHistory()}" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,200)">
+          <div id="search-history" class="search-history"></div>
+          <button onclick="doSearch()">Search</button>
+        </div>
+        <div class="search-toolbar">
+          <label class="toggle-inline">
+            <input type="checkbox" id="search-debug"> Explain retrieval
+          </label>
+          <label class="toggle-inline">
+            <input type="checkbox" id="search-hints"> Hint mode
+          </label>
+          <span class="header-chip">press <span style="color:var(--text)">/</span> to jump here</span>
+        </div>
       </div>
       <div class="filter-bar">
         <span style="font-size:10px;color:var(--text2)">Layer:</span>
@@ -577,6 +827,14 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
         <button class="secondary" style="font-size:10px;padding:3px 10px" onclick="toggleSelectMode()">Select</button>
       </div>
       <div id="search-results"></div>
+    </div>
+
+    <div id="view-continuity" class="view-panel" style="display:none">
+      <div class="section-title">Session Continuity</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button onclick="loadContinuity()">Refresh Handoffs</button>
+      </div>
+      <div id="continuity-list" class="continuity-list"></div>
     </div>
 
     <div id="view-memories" class="view-panel" style="display:none">
@@ -839,13 +1097,13 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 
   <div class="panel">
     <div class="section">
-      <div class="section-title">Live Events</div>
-      <div id="event-stream"></div>
+      <div class="section-title">Live Stream</div>
+      <div id="event-stream"><div class="events-empty">Listening for reads, writes, recalls, promotions, and edits.</div></div>
     </div>
 
     <div class="section" id="inspector">
       <div class="section-title">Inspector</div>
-      <div id="inspector-content"></div>
+      <div id="inspector-content" class="inspector-shell"></div>
     </div>
 
     <div class="section">
@@ -1879,7 +2137,19 @@ async function doSearch() {
   const el = document.getElementById('search-results');
   let html = '';
   if (debug && data.debug) {
-    html += `<div class="debug-panel"><b>Latency:</b> ${data.debug.latency_ms}ms | <b>Dense:</b> ${data.debug.dense_count} | <b>BM25:</b> ${data.debug.bm25_count} | <b>Graph:</b> ${data.debug.graph_count} | <b>RRF:</b> ${data.debug.rrf_count}</div>`;
+    html += `<div class="debug-panel">
+      <div><b>Latency:</b> ${data.debug.latency_ms}ms</div>
+      <div class="debug-grid">
+        <div class="debug-pill"><b>Intent</b>${escapeHtml(data.debug.intent || 'what')}</div>
+        <div class="debug-pill"><b>Cache</b>${data.debug.cache_hit ? 'hit' : 'miss'}</div>
+        <div class="debug-pill"><b>Dense</b>${data.debug.dense_count}</div>
+        <div class="debug-pill"><b>BM25</b>${data.debug.bm25_count}</div>
+        <div class="debug-pill"><b>Graph</b>${data.debug.graph_count}</div>
+        <div class="debug-pill"><b>RRF</b>${data.debug.rrf_count}</div>
+      </div>
+      ${(data.debug.expanded_terms || []).length ? `<div class="token-row">${data.debug.expanded_terms.map(term => `<span class="token">${escapeHtml(term)}</span>`).join('')}</div>` : ''}
+      ${(data.debug.phrase_terms || []).length ? `<div class="token-row">${data.debug.phrase_terms.map(term => `<span class="token">"${escapeHtml(term)}"</span>`).join('')}</div>` : ''}
+    </div>`;
   }
   const results = data.results || [];
   if (!results.length) html += '<div class="empty">No memories found</div>';
@@ -1895,6 +2165,57 @@ async function doSearch() {
   } else {
     q.split(/\s+/).forEach(w => fireNeuronByName(w));
   }
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return 'unknown';
+  const delta = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  if (delta < 60) return `${delta}s ago`;
+  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+  return `${Math.floor(delta / 86400)}d ago`;
+}
+
+function continuityList(items = []) {
+  if (!items.length) return '<div class="empty">No saved handoffs yet</div>';
+  return items.map(item => {
+    const meta = item.metadata || {};
+    const loops = meta.open_loops || [];
+    const entities = meta.touched_entities || [];
+    const queries = meta.suggested_queries || meta.recent_queries || [];
+    const decisions = meta.decisions || [];
+    return `<div class="continuity-card shell-card">
+      <div class="continuity-meta">
+        <span>${escapeHtml(item.session_id || 'session')}</span>
+        <span>updated ${formatRelativeTime(item.updated_at)}</span>
+      </div>
+      <h3>${escapeHtml(meta.summary || item.summary || 'Session handoff')}</h3>
+      <div class="continuity-summary">${escapeHtml(meta.summary || item.summary || 'No summary available.')}</div>
+      <div class="continuity-grid">
+        <div class="continuity-block">
+          <h4>Open loops</h4>
+          <ul>${(loops.length ? loops : ['No active open loops']).slice(0, 5).map(loop => `<li>${escapeHtml(loop)}</li>`).join('')}</ul>
+        </div>
+        <div class="continuity-block">
+          <h4>Touched entities</h4>
+          <ul>${(entities.length ? entities : ['No touched entities recorded']).slice(0, 6).map(entity => `<li>${escapeHtml(entity)}</li>`).join('')}</ul>
+        </div>
+        <div class="continuity-block">
+          <h4>Suggested queries</h4>
+          <ul>${(queries.length ? queries : ['No suggested resume queries']).slice(0, 6).map(query => `<li>${escapeHtml(query)}</li>`).join('')}</ul>
+        </div>
+        <div class="continuity-block">
+          <h4>Decisions</h4>
+          <ul>${(decisions.length ? decisions.map(d => d.content || d.summary || JSON.stringify(d)) : ['No recent decisions']).slice(0, 4).map(decision => `<li>${escapeHtml(decision)}</li>`).join('')}</ul>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadContinuity() {
+  const data = await fetchJSON('/api/session-handoffs?limit=12');
+  document.getElementById('continuity-list').innerHTML = continuityList(data.handoffs || []);
 }
 
 // --- Hint cards ---
@@ -2841,6 +3162,7 @@ function showView(name) {
 
   if (name === 'neural') { resizeCanvas(); loadNeuralData(); }
   if (name === 'memories') loadMemories();
+  if (name === 'continuity') loadContinuity();
   if (name === 'entities') loadEntities();
   if (name === 'analytics') loadAnalytics();
   if (name === 'context') loadContext();
@@ -2861,6 +3183,7 @@ document.addEventListener('keydown', (e) => {
     case '/': e.preventDefault(); showView('search'); setTimeout(() => document.getElementById('search-input').focus(), 50); break;
     case 'n': showView('neural'); break;
     case 's': showView('search'); break;
+    case 'h': showView('continuity'); break;
     case 'r': showView('remember'); break;
     case 'a': showView('analytics'); break;
     case 'c': showView('cognition'); break;
