@@ -124,21 +124,26 @@ def generate_community_summaries(store: Store, config=None) -> int:
         from engram.config import Config
         config = Config.load()
 
-    # find communities from entity metadata
-    rows = store.conn.execute(
-        """SELECT json_extract(metadata, '$.community_id') as cid,
-                  canonical_name, entity_type, id
-           FROM entities
-           WHERE json_extract(metadata, '$.community_id') IS NOT NULL
-           ORDER BY cid"""
-    ).fetchall()
+    rows = store.conn.execute("SELECT * FROM entities ORDER BY canonical_name").fetchall()
+    entities = [store._row_to_entity(r) for r in rows]
+    members_with_community = []
+    for entity in entities:
+        cid = entity.metadata.get("community_id")
+        if cid is None:
+            continue
+        members_with_community.append({
+            "cid": cid,
+            "canonical_name": entity.canonical_name,
+            "entity_type": entity.entity_type,
+            "id": entity.id,
+        })
 
-    if not rows:
+    if not members_with_community:
         return 0
 
     # group by community
     communities: dict[str, list[dict]] = {}
-    for r in rows:
+    for r in members_with_community:
         cid = r["cid"]
         communities.setdefault(cid, []).append(dict(r))
 
@@ -148,10 +153,12 @@ def generate_community_summaries(store: Store, config=None) -> int:
             continue
 
         # check if we already have a summary for this community
-        existing = store.conn.execute(
-            "SELECT id FROM memories WHERE forgotten=0 AND json_extract(metadata, '$.community_id') = ?",
-            (cid,),
-        ).fetchone()
+        existing = False
+        for row in store.conn.execute("SELECT * FROM memories WHERE forgotten=0").fetchall():
+            mem = store._row_to_memory(row)
+            if mem.metadata.get("community_id") == cid:
+                existing = True
+                break
         if existing:
             continue
 

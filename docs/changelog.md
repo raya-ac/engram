@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2 (April 24, 2026)
+
+### new features
+- **memory intelligence workbench** — added query briefing, query comparison, and recent hotspot surfacing to the web dashboard so Engram can summarize what matters instead of only exposing raw tables and graph views
+- **3 new MCP tools** — `focus_brief`, `compare_queries`, and `hotspots` expose the same higher-level intelligence surface to agent clients over MCP
+
+### fixes
+- **postgres-safe drift dashboard** — web drift check and drift fix now avoid SQLite-only `PRAGMA busy_timeout` and `BEGIN IMMEDIATE` calls when Engram is running on Postgres
+- **drift metadata compatibility** — invalidated-memory drift checks no longer rely on SQLite `json_extract(...)`, so the drift panel works correctly against Postgres `jsonb`
+- **better drift API errors** — drift routes now return clean JSON errors for unexpected backend failures instead of surfacing broken frontend syntax errors
+- **postgres compatibility sweep** — neural map aggregation, bridges, community summaries, quality metrics, and benchmark helpers now avoid SQLite-only query functions on Postgres-backed installs
+
 ## 0.5.1 (April 24, 2026)
 
 ### fixes

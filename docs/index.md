@@ -16,9 +16,10 @@ starts with one sqlite file for local installs, can switch to postgres for multi
 - **memory layers** — working, episodic, semantic, procedural, codebase. memories promote upward when useful, decay if unused
 - **entity graph** — extracts people, tools, projects from every memory. multi-hop traversal via recursive SQL CTEs
 - **session continuity** — active MCP sessions now maintain a structured handoff packet with recent work, decisions, open loops, touched entities, and search history. new sessions can call `resume_context` instead of reconstructing state from raw logs
-- **66 MCP tools** — plugs into Claude Code or any MCP client. 72 tests. docker-ready
+- **memory intelligence** — query briefing, retrieval comparison, and recent hotspot surfacing help you see what matters without manually stitching together raw results
+- **83 MCP tools** — plugs into Claude Code or any MCP client. docker-ready
 - **multi-backend embeddings** — local (MLX/CPU), Voyage AI, OpenAI, Google Gemini. auto-detects from model name
-- **web dashboard** — 17 panels including neural map, search, analytics, cognition, drift detection
+- **web dashboard** — neural map, search, continuity, intelligence, analytics, cognition, drift detection, and more in one surface
 
 ## install
 
@@ -38,7 +39,7 @@ cd engram && pip install -e .
 - [Installation](getting-started/installation.md) — full setup guide
 - [Quick Start](getting-started/quickstart.md) — first steps
 - [Postgres Migration](guides/postgres-migration.md) — move an existing sqlite install without losing data
-- [MCP Tools Reference](reference/mcp-tools.md) — all 66 tools
+- [MCP Tools Reference](reference/mcp-tools.md) — all 83 tools
 - [Architecture](architecture/overview.md) — how it works inside
 - [Benchmarks](architecture/benchmarks.md) — LongMemEval results
 
@@ -47,7 +48,7 @@ cd engram && pip install -e .
 | system | what |
 |--------|------|
 | [Claude Code](getting-started/claude-code.md) | native MCP integration |
-| [Any MCP client](reference/mcp-tools.md) | 66-tool JSON-RPC server |
+| [Any MCP client](reference/mcp-tools.md) | 83-tool JSON-RPC server |
 | [REST API](reference/rest-api.md) | 57 HTTP endpoints |
 | [CLI](reference/cli.md) | 16 commands |
 | [Docker](guides/docker.md) | single container deployment |

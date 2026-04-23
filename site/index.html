@@ -1662,9 +1662,10 @@
 <li><strong>memory layers</strong> — working, episodic, semantic, procedural, codebase. memories promote upward when useful, decay if unused</li>
 <li><strong>entity graph</strong> — extracts people, tools, projects from every memory. multi-hop traversal via recursive SQL CTEs</li>
 <li><strong>session continuity</strong> — active MCP sessions now maintain a structured handoff packet with recent work, decisions, open loops, touched entities, and search history. new sessions can call <code>resume_context</code> instead of reconstructing state from raw logs</li>
-<li><strong>66 MCP tools</strong> — plugs into Claude Code or any MCP client. 72 tests. docker-ready</li>
+<li><strong>memory intelligence</strong> — query briefing, retrieval comparison, and recent hotspot surfacing help you see what matters without manually stitching together raw results</li>
+<li><strong>83 MCP tools</strong> — plugs into Claude Code or any MCP client. docker-ready</li>
 <li><strong>multi-backend embeddings</strong> — local (MLX/CPU), Voyage AI, OpenAI, Google Gemini. auto-detects from model name</li>
-<li><strong>web dashboard</strong> — 17 panels including neural map, search, analytics, cognition, drift detection</li>
+<li><strong>web dashboard</strong> — neural map, search, continuity, intelligence, analytics, cognition, drift detection, and more in one surface</li>
 </ul>
 <h2 id="install">install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>engram-memory-system
@@ -1678,7 +1679,7 @@
 <li><a href="getting-started/installation/">Installation</a> — full setup guide</li>
 <li><a href="getting-started/quickstart/">Quick Start</a> — first steps</li>
 <li><a href="guides/postgres-migration/">Postgres Migration</a> — move an existing sqlite install without losing data</li>
-<li><a href="reference/mcp-tools/">MCP Tools Reference</a> — all 66 tools</li>
+<li><a href="reference/mcp-tools/">MCP Tools Reference</a> — all 83 tools</li>
 <li><a href="architecture/overview/">Architecture</a> — how it works inside</li>
 <li><a href="architecture/benchmarks/">Benchmarks</a> — LongMemEval results</li>
 </ul>
@@ -1697,7 +1698,7 @@
 </tr>
 <tr>
 <td><a href="reference/mcp-tools/">Any MCP client</a></td>
-<td>66-tool JSON-RPC server</td>
+<td>83-tool JSON-RPC server</td>
 </tr>
 <tr>
 <td><a href="reference/rest-api/">REST API</a></td>

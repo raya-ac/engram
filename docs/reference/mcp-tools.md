@@ -1,4 +1,4 @@
-# MCP Tools (68)
+# MCP Tools (83)
 
 all tools available via the engram MCP server (`engram serve --mcp`).
 
@@ -102,6 +102,9 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `session_handoff` | `session_id`, `save` (default: true), `limit` (default: 8) | build a structured handoff packet for the current or specified session and optionally persist it |
 | `session_checkpoint` | `note`, `limit` (default: 8) | append an optional checkpoint note and persist a richer handoff packet for the current session |
 | `resume_context` | `session_id`, `limit` (default: 3) | load the latest saved handoff packet so a new agent session can resume quickly |
+| `focus_brief` | `query` (required), `top_k` (default: 8) | build a compact briefing with dominant entities, layer mix, key memories, and suggested follow-up pulls |
+| `compare_queries` | `query_a` (required), `query_b` (required), `top_k` (default: 8) | compare overlap, divergence, and entity differences across two retrieval paths |
+| `hotspots` | `hours` (default: 72.0), `limit` (default: 8) | surface the hottest entities, layers, sources, and memories in a recent window |
 
 ## system & context
 

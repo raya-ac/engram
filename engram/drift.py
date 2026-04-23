@@ -445,19 +445,21 @@ def check_staleness(memory: Memory, days_warn: int = 60, days_error: int = 180) 
 def check_invalidated_still_referenced(store: Store) -> list[DriftIssue]:
     """Find memories that reference entities also referenced by invalidated memories."""
     issues = []
-    # find invalidated memory IDs
-    inv_rows = store.conn.execute(
-        "SELECT id, content FROM memories WHERE forgotten = 0 AND json_extract(metadata, '$.invalidated') = 1"
+    rows = store.conn.execute(
+        "SELECT * FROM memories WHERE forgotten = 0"
     ).fetchall()
 
-    for row in inv_rows:
+    for row in rows:
+        mem = store._row_to_memory(row)
+        if not mem.metadata.get("invalidated"):
+            continue
         issues.append(DriftIssue(
             code="INVALIDATED_ACTIVE",
             severity="info",
-            memory_id=row["id"],
+            memory_id=mem.id,
             claim="invalidated=true but not forgotten",
             message="Memory is marked invalidated but still active — consider forgetting it",
-            memory_preview=row["content"][:150],
+            memory_preview=mem.content[:150],
         ))
     return issues
 
@@ -588,6 +590,8 @@ def auto_fix_drift(store: Store, report: DriftReport, dry_run: bool = True) -> d
     actions = []
 
     def _begin_write_transaction() -> None:
+        if getattr(store.config, "normalized_storage_backend", "sqlite") != "sqlite":
+            return
         attempts = 40
         for attempt in range(attempts):
             try:

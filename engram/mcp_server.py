@@ -1,4 +1,4 @@
-"""MCP tool server — JSON-RPC over stdio with 66 tools."""
+"""MCP tool server — JSON-RPC over stdio with 83 tools."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from engram.patterns import extract_patterns_from_session, store_patterns
 from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmation,
                               get_source_trust, classify_write_operation,
                               annotate_causal_parent, canonicalize_content)
+from engram.intelligence import build_query_brief, compare_queries, activity_hotspots
 
 TOOLS = [
     # Read tools
@@ -82,6 +83,9 @@ TOOLS = [
     {"name": "session_handoff", "description": "Build a structured handoff snapshot for the current session or a specific session. Can also persist the snapshot for later resume.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional specific session id. Defaults to the current MCP session."}, "save": {"type": "boolean", "default": True, "description": "Persist the generated handoff snapshot."}, "limit": {"type": "integer", "default": 8, "description": "Max items returned per section."}}}},
     {"name": "session_checkpoint", "description": "Write an optional checkpoint note and persist a richer handoff packet for the current session so another session can resume from a clean stop point.", "inputSchema": {"type": "object", "properties": {"note": {"type": "string", "description": "Optional checkpoint note to store in the session diary before saving the handoff."}, "limit": {"type": "integer", "default": 8, "description": "Max items returned per section."}}}},
     {"name": "resume_context", "description": "Get the latest structured handoff snapshot plus recent related activity so a new agent session can resume quickly.", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Optional exact session id to resume."}, "limit": {"type": "integer", "default": 3, "description": "How many recent handoffs to include if session_id is omitted."}}}},
+    {"name": "focus_brief", "description": "Build a high-level briefing for a query with dominant entities, layers, key memories, and suggested follow-up queries.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 8}}, "required": ["query"]}},
+    {"name": "compare_queries", "description": "Compare two retrieval queries and surface overlap, divergence, and entity differences between them.", "inputSchema": {"type": "object", "properties": {"query_a": {"type": "string"}, "query_b": {"type": "string"}, "top_k": {"type": "integer", "default": 8}}, "required": ["query_a", "query_b"]}},
+    {"name": "hotspots", "description": "Surface the hottest memories, entities, layers, and source types in a recent time window.", "inputSchema": {"type": "object", "properties": {"hours": {"type": "number", "default": 72.0}, "limit": {"type": "integer", "default": 8}}}},
     # Backlinks
     {"name": "backlinks", "description": "Find all memories that reference or are linked to a specific memory", "inputSchema": {"type": "object", "properties": {"memory_id": {"type": "string"}}, "required": ["memory_id"]}},
     # Batch operations
@@ -170,7 +174,7 @@ class MCPServer:
             return self._response(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "engram", "version": "0.1.0"},
+                "serverInfo": {"name": "engram", "version": "0.5.2"},
             })
         elif method == "tools/list":
             return self._response(req_id, {"tools": TOOLS})
@@ -242,6 +246,9 @@ class MCPServer:
             "session_handoff": self._session_handoff,
             "session_checkpoint": self._session_checkpoint,
             "resume_context": self._resume_context,
+            "focus_brief": self._focus_brief,
+            "compare_queries": self._compare_queries,
+            "hotspots": self._hotspots,
             "backlinks": self._backlinks,
             "batch_tag": self._batch_tag,
             "recompute_importance": self._recompute_importance,
@@ -1178,6 +1185,32 @@ class MCPServer:
             "note": "Use the latest handoff summary, open loops, and decisions to resume work quickly."
         }
 
+    def _focus_brief(self, args: dict):
+        self._sweep_working()
+        return build_query_brief(
+            args["query"],
+            self.store,
+            self.config,
+            top_k=args.get("top_k", 8),
+        )
+
+    def _compare_queries(self, args: dict):
+        self._sweep_working()
+        return compare_queries(
+            args["query_a"],
+            args["query_b"],
+            self.store,
+            self.config,
+            top_k=args.get("top_k", 8),
+        )
+
+    def _hotspots(self, args: dict):
+        return activity_hotspots(
+            self.store,
+            hours=args.get("hours", 72.0),
+            limit=args.get("limit", 8),
+        )
+
     # --- Backlinks ---
 
     def _backlinks(self, args: dict):
@@ -1269,31 +1302,29 @@ class MCPServer:
 
     def _list_projects(self, args: dict):
         rows = self.store.conn.execute(
-            """SELECT json_extract(metadata, '$.project') as project,
-                      COUNT(*) as memory_count,
-                      json_extract(metadata, '$.type') as types
-               FROM memories
-               WHERE layer = 'codebase' AND forgotten = 0
-                 AND json_extract(metadata, '$.project') IS NOT NULL
-               GROUP BY project"""
+            """SELECT * FROM memories
+               WHERE layer = 'codebase' AND forgotten = 0"""
         ).fetchall()
         projects = {}
         for r in rows:
-            p = r["project"]
+            mem = self.store._row_to_memory(r)
+            p = mem.metadata.get("project")
+            if not p:
+                continue
             if p not in projects:
                 projects[p] = {"name": p, "memories": 0}
-            projects[p]["memories"] += r["memory_count"]
+            projects[p]["memories"] += 1
 
         # get type breakdown per project
         for p in projects:
-            type_rows = self.store.conn.execute(
-                """SELECT json_extract(metadata, '$.type') as type, COUNT(*) as cnt
-                   FROM memories WHERE layer='codebase' AND forgotten=0
-                   AND json_extract(metadata, '$.project') = ?
-                   GROUP BY type""",
-                (p,),
-            ).fetchall()
-            projects[p]["types"] = {r["type"]: r["cnt"] for r in type_rows}
+            projects[p]["types"] = {}
+        for r in rows:
+            mem = self.store._row_to_memory(r)
+            project = mem.metadata.get("project")
+            if not project or project not in projects:
+                continue
+            mtype = mem.metadata.get("type") or "unknown"
+            projects[project]["types"][mtype] = projects[project]["types"].get(mtype, 0) + 1
 
         return {"projects": list(projects.values())}
 
@@ -1478,12 +1509,16 @@ class MCPServer:
         storage_quality = round(accessed / max(1, total), 3)
 
         # curation ratio: how many memories have been actively curated?
-        curated = self.store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
-            "(json_extract(metadata, '$.invalidated') = 1 OR "
-            " json_extract(metadata, '$.evolution_count') > 0 OR "
-            " json_extract(metadata, '$.confirmations') > 0)"
-        ).fetchone()["cnt"]
+        rows = self.store.conn.execute(
+            "SELECT * FROM memories WHERE forgotten=0"
+        ).fetchall()
+        memories = [self.store._row_to_memory(r) for r in rows]
+        curated = sum(
+            1 for mem in memories
+            if mem.metadata.get("invalidated")
+            or (mem.metadata.get("evolution_count") or 0) > 0
+            or (mem.metadata.get("confirmations") or 0) > 0
+        )
         curation_ratio = round(curated / max(1, total), 3)
 
         # retrieval relevance: average access count of recently accessed memories
@@ -1492,23 +1527,14 @@ class MCPServer:
         ).fetchone()["avg_access"] or 0
 
         # enrichment coverage: how many memories have enriched metadata?
-        enriched = self.store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
-            "json_extract(metadata, '$.keywords') IS NOT NULL"
-        ).fetchone()["cnt"]
+        enriched = sum(1 for mem in memories if mem.metadata.get("keywords") is not None)
         enrichment_ratio = round(enriched / max(1, total), 3)
 
         # evolved memories count
-        evolved = self.store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
-            "json_extract(metadata, '$.evolution_count') > 0"
-        ).fetchone()["cnt"]
+        evolved = sum(1 for mem in memories if (mem.metadata.get("evolution_count") or 0) > 0)
 
         # confirmed memories count
-        confirmed = self.store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND "
-            "json_extract(metadata, '$.confirmations') > 0"
-        ).fetchone()["cnt"]
+        confirmed = sum(1 for mem in memories if (mem.metadata.get("confirmations") or 0) > 0)
 
         return {
             "storage_quality": storage_quality,
@@ -1661,7 +1687,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.5.1")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.5.2")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

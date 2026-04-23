@@ -317,18 +317,12 @@ def _bench_coverage(store: Store, config: Config) -> dict:
 def _bench_enrichment(store: Store) -> dict:
     """How many memories have enriched metadata?"""
     total = store.conn.execute("SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0").fetchone()["cnt"]
-    enriched = store.conn.execute(
-        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND json_extract(metadata, '$.keywords') IS NOT NULL"
-    ).fetchone()["cnt"]
-    evolved = store.conn.execute(
-        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND json_extract(metadata, '$.evolution_count') > 0"
-    ).fetchone()["cnt"]
-    confirmed = store.conn.execute(
-        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND json_extract(metadata, '$.confirmations') > 0"
-    ).fetchone()["cnt"]
-    with_surprise = store.conn.execute(
-        "SELECT COUNT(*) as cnt FROM memories WHERE forgotten=0 AND json_extract(metadata, '$.surprise') IS NOT NULL"
-    ).fetchone()["cnt"]
+    rows = store.conn.execute("SELECT * FROM memories WHERE forgotten=0").fetchall()
+    memories = [store._row_to_memory(r) for r in rows]
+    enriched = sum(1 for mem in memories if mem.metadata.get("keywords") is not None)
+    evolved = sum(1 for mem in memories if (mem.metadata.get("evolution_count") or 0) > 0)
+    confirmed = sum(1 for mem in memories if (mem.metadata.get("confirmations") or 0) > 0)
+    with_surprise = sum(1 for mem in memories if mem.metadata.get("surprise") is not None)
 
     return {
         "total": total,
@@ -370,9 +364,17 @@ def _bench_graph(store: Store) -> dict:
         avg_degree = 0
 
     # connected components estimate (via largest community)
-    communities = store.conn.execute(
-        "SELECT json_extract(metadata, '$.community_id') as cid, COUNT(*) as cnt FROM entities WHERE json_extract(metadata, '$.community_id') IS NOT NULL GROUP BY cid ORDER BY cnt DESC LIMIT 5"
-    ).fetchall()
+    entities = [store._row_to_entity(r) for r in store.conn.execute("SELECT * FROM entities").fetchall()]
+    community_counts = {}
+    for entity in entities:
+        cid = entity.metadata.get("community_id")
+        if cid is None:
+            continue
+        community_counts[cid] = community_counts.get(cid, 0) + 1
+    communities = [
+        {"cid": cid, "cnt": cnt}
+        for cid, cnt in sorted(community_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+    ]
 
     return {
         "entities": entity_count,
@@ -488,8 +490,9 @@ def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict
     import json as _json
     print("Storing...")
     t_store = time.time()
-    store.conn.execute("PRAGMA synchronous = OFF")
-    store.conn.execute("PRAGMA journal_mode = MEMORY")
+    if getattr(store.config, "normalized_storage_backend", "sqlite") == "sqlite":
+        store.conn.execute("PRAGMA synchronous = OFF")
+        store.conn.execute("PRAGMA journal_mode = MEMORY")
     for i, mem in enumerate(memories):
         emb_blob = all_embeddings[i].astype(np.float32).tobytes() if i < len(all_embeddings) else None
         store.conn.execute(

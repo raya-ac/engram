@@ -572,6 +572,90 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
 .continuity-block li { color: var(--text); line-height: 1.45; font-size: 12px; }
 .events-empty { color: var(--text2); font-size: 11px; line-height: 1.5; }
 .inspector-shell { padding: 14px; }
+.intel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.intel-card {
+  padding: 18px;
+}
+.intel-card h3 {
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+.intel-card p {
+  color: var(--text2);
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+.intel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.intel-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(13,23,41,0.62);
+  font-size: 11px;
+}
+.intel-row b {
+  color: var(--text);
+}
+.intel-row span {
+  color: var(--text2);
+  text-align: right;
+}
+.compare-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.brief-summary {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(13,23,41,0.62);
+  color: var(--text);
+  line-height: 1.65;
+}
+.brief-memory {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(13,23,41,0.56);
+  margin-bottom: 8px;
+}
+.brief-memory .meta {
+  margin-top: 6px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text2);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.followup-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(34,211,238,0.18);
+  background: rgba(34,211,238,0.08);
+  color: var(--accent2);
+  padding: 5px 10px;
+  font-size: 10px;
+  font-family: var(--mono);
+}
 
 /* importance breakdown */
 .imp-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -701,6 +785,7 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
       <a class="nav-item active" href="#" onclick="showView('neural')">Neural Map</a>
       <a class="nav-item" href="#" onclick="showView('search')">Search</a>
       <a class="nav-item" href="#" onclick="showView('continuity')">Continuity</a>
+      <a class="nav-item" href="#" onclick="showView('intelligence')">Intelligence</a>
       <a class="nav-item" href="#" onclick="showView('memories')">Memories</a>
       <a class="nav-item" href="#" onclick="showView('entities')">Entities</a>
       <a class="nav-item" href="#" onclick="showView('timeline')">Timeline</a>
@@ -835,6 +920,50 @@ button.secondary:hover { border-color: rgba(255,255,255,0.15); background: var(-
         <button onclick="loadContinuity()">Refresh Handoffs</button>
       </div>
       <div id="continuity-list" class="continuity-list"></div>
+    </div>
+
+    <div id="view-intelligence" class="view-panel" style="display:none">
+      <div class="section-title">Intelligence</div>
+      <div class="intel-grid">
+        <div class="intel-card shell-card">
+          <h3>Focus Brief</h3>
+          <p>Turn a query into a compact operating brief: dominant entities, layer mix, key memories, and follow-up pulls.</p>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input type="text" id="brief-query" placeholder="What should Engram brief?" style="flex:1" onkeydown="if(event.key==='Enter'){loadFocusBrief()}">
+            <button onclick="loadFocusBrief()">Brief</button>
+          </div>
+          <div id="brief-results" class="intel-list"></div>
+        </div>
+
+        <div class="intel-card shell-card">
+          <h3>Query Compare</h3>
+          <p>Compare two retrieval paths and see where they overlap, where they diverge, and which entities only appear on one side.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            <input type="text" id="compare-query-a" placeholder="Query A" onkeydown="if(event.key==='Enter'){loadQueryCompare()}">
+            <input type="text" id="compare-query-b" placeholder="Query B" onkeydown="if(event.key==='Enter'){loadQueryCompare()}">
+            <button onclick="loadQueryCompare()">Compare</button>
+          </div>
+          <div id="compare-results" class="intel-list"></div>
+        </div>
+      </div>
+
+      <div class="intel-card shell-card" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+          <div>
+            <h3 style="margin-bottom:4px">Recent Hotspots</h3>
+            <p style="margin:0">See what has actually been hot lately across entities, layers, memories, and source types.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="hotspots-hours">
+              <option value="24">24h</option>
+              <option value="72" selected>72h</option>
+              <option value="168">7d</option>
+            </select>
+            <button onclick="loadHotspots()">Refresh</button>
+          </div>
+        </div>
+        <div id="hotspots-results" class="intel-grid"></div>
+      </div>
     </div>
 
     <div id="view-memories" class="view-panel" style="display:none">
@@ -2217,6 +2346,111 @@ async function doSearch() {
   }
 }
 
+async function loadFocusBrief() {
+  const q = document.getElementById('brief-query').value.trim();
+  const el = document.getElementById('brief-results');
+  if (!q) {
+    el.innerHTML = '<div class="empty">Enter a query to build a brief.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty">Building brief...</div>';
+  const data = await fetchJSON(`/api/intelligence/brief?q=${encodeURIComponent(q)}&top_k=8`);
+  const memories = data.key_memories || [];
+  const entities = data.top_entities || [];
+  const layers = data.top_layers || [];
+  const followups = data.suggested_queries || [];
+  el.innerHTML = `
+    <div class="brief-summary">${escapeHtml(data.summary || 'No summary available.')}</div>
+    <div class="compare-columns" style="margin-bottom:12px">
+      <div class="continuity-block">
+        <h4>Dominant entities</h4>
+        <div class="intel-list">${entities.length ? entities.map(item => `<div class="intel-row"><b>${escapeHtml(item.name)}</b><span>${item.count}</span></div>`).join('') : '<div class="events-empty">No linked entities</div>'}</div>
+      </div>
+      <div class="continuity-block">
+        <h4>Layer mix</h4>
+        <div class="intel-list">${layers.length ? layers.map(item => `<div class="intel-row"><b>${escapeHtml(item.name)}</b><span>${item.count}</span></div>`).join('') : '<div class="events-empty">No layer signal</div>'}</div>
+      </div>
+    </div>
+    <div class="continuity-block" style="margin-bottom:12px">
+      <h4>Key memories</h4>
+      ${memories.length ? memories.map(m => `<div class="brief-memory"><div>${escapeHtml(m.content)}</div><div class="meta"><span>${escapeHtml(m.layer)}</span><span>${escapeHtml(m.memory_type || 'memory')}</span><span>imp ${Number(m.importance || 0).toFixed(2)}</span></div></div>`).join('') : '<div class="events-empty">No memories found</div>'}
+    </div>
+    <div class="continuity-block">
+      <h4>Suggested pulls</h4>
+      <div class="followups">${followups.length ? followups.map(item => `<span class="followup-chip">${escapeHtml(item)}</span>`).join('') : '<span class="events-empty">No follow-up suggestions</span>'}</div>
+    </div>
+  `;
+}
+
+async function loadQueryCompare() {
+  const q1 = document.getElementById('compare-query-a').value.trim();
+  const q2 = document.getElementById('compare-query-b').value.trim();
+  const el = document.getElementById('compare-results');
+  if (!q1 || !q2) {
+    el.innerHTML = '<div class="empty">Enter two queries to compare.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty">Comparing retrieval paths...</div>';
+  const data = await fetchJSON(`/api/intelligence/compare?q1=${encodeURIComponent(q1)}&q2=${encodeURIComponent(q2)}&top_k=8`);
+  const renderLane = (title, lane, accent) => `
+    <div class="continuity-block" style="border-color:${accent}">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="intel-list" style="margin-bottom:10px">
+        <div class="intel-row"><b>memories</b><span>${lane.memory_count || 0}</span></div>
+        <div class="intel-row"><b>entities</b><span>${lane.entity_count || 0}</span></div>
+      </div>
+      <div class="intel-list">
+        ${(lane.entities || []).slice(0, 4).map(item => `<div class="intel-row"><b>${escapeHtml(item.name)}</b><span>${item.count}</span></div>`).join('') || '<div class="events-empty">No entity signal</div>'}
+      </div>
+    </div>
+  `;
+  el.innerHTML = `
+    <div class="compare-columns" style="margin-bottom:12px">
+      ${renderLane('Overlap', data.overlap || {}, 'rgba(52,211,153,0.28)')}
+      ${renderLane('Only A', data.only_a || {}, 'rgba(34,211,238,0.28)')}
+      ${renderLane('Only B', data.only_b || {}, 'rgba(251,191,36,0.28)')}
+    </div>
+    <div class="compare-columns">
+      <div class="continuity-block">
+        <h4>Shared memories</h4>
+        ${((data.overlap || {}).memories || []).map(m => `<div class="brief-memory">${escapeHtml(m.content)}</div>`).join('') || '<div class="events-empty">No shared memories</div>'}
+      </div>
+      <div class="continuity-block">
+        <h4>Only A memories</h4>
+        ${((data.only_a || {}).memories || []).map(m => `<div class="brief-memory">${escapeHtml(m.content)}</div>`).join('') || '<div class="events-empty">No unique A memories</div>'}
+      </div>
+      <div class="continuity-block">
+        <h4>Only B memories</h4>
+        ${((data.only_b || {}).memories || []).map(m => `<div class="brief-memory">${escapeHtml(m.content)}</div>`).join('') || '<div class="events-empty">No unique B memories</div>'}
+      </div>
+    </div>
+  `;
+}
+
+async function loadHotspots() {
+  const hours = document.getElementById('hotspots-hours').value;
+  const el = document.getElementById('hotspots-results');
+  el.innerHTML = '<div class="empty">Loading hotspots...</div>';
+  const data = await fetchJSON(`/api/intelligence/hotspots?hours=${encodeURIComponent(hours)}&limit=8`);
+  const section = (title, rows) => `
+    <div class="continuity-block">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="intel-list">
+        ${rows.length ? rows.map(item => `<div class="intel-row"><b>${escapeHtml(item.name || item.bucket || 'item')}</b><span>${item.count ?? ''}</span></div>`).join('') : '<div class="events-empty">No signal</div>'}
+      </div>
+    </div>
+  `;
+  el.innerHTML = `
+    ${section('Hot entities', data.hot_entities || [])}
+    ${section('Hot layers', data.hot_layers || [])}
+    ${section('Hot sources', data.hot_sources || [])}
+    <div class="continuity-block">
+      <h4>Hot memories</h4>
+      ${(data.hot_memories || []).length ? data.hot_memories.map(item => `<div class="brief-memory"><div>${escapeHtml(item.content)}</div><div class="meta"><span>${escapeHtml(item.layer)}</span><span>imp ${Number(item.importance || 0).toFixed(2)}</span></div></div>`).join('') : '<div class="events-empty">No hot memories yet</div>'}
+    </div>
+  `;
+}
+
 function formatRelativeTime(ts) {
   if (!ts) return 'unknown';
   const delta = Math.max(0, Math.round(Date.now() / 1000 - ts));
@@ -3277,6 +3511,7 @@ function showView(name) {
       loadNeuralData().then(() => { neuralLoaded = true; }).catch(() => {});
     }
   }
+  if (name === 'intelligence') loadHotspots();
   if (name === 'memories') loadMemories();
   if (name === 'continuity') loadContinuity();
   if (name === 'entities') loadEntities();
@@ -3298,6 +3533,7 @@ document.addEventListener('keydown', (e) => {
   switch(e.key) {
     case '/': e.preventDefault(); showView('search'); setTimeout(() => document.getElementById('search-input').focus(), 50); break;
     case 'n': showView('neural'); break;
+    case 'i': showView('intelligence'); break;
     case 's': showView('search'); break;
     case 'h': showView('continuity'); break;
     case 'r': showView('remember'); break;

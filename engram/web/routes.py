@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import sqlite3
 import time
@@ -27,6 +28,7 @@ from engram.deep_retrieval import DeepReranker
 from engram.skill_select import select_skills, format_skills
 from engram.drift import run_drift_check, auto_fix_drift
 from engram.patterns import extract_patterns_from_session, store_patterns
+from engram.intelligence import build_query_brief, compare_queries, activity_hotspots
 
 router = APIRouter()
 
@@ -183,6 +185,33 @@ async def get_session_handoff(request: Request, session_id: str):
     return handoff
 
 
+@router.get("/api/intelligence/brief")
+async def intelligence_brief(request: Request, q: str, top_k: int = 8):
+    store = _fresh_store(request)
+    try:
+        return build_query_brief(q, store, _config(request), top_k=top_k)
+    finally:
+        store.close()
+
+
+@router.get("/api/intelligence/compare")
+async def intelligence_compare(request: Request, q1: str, q2: str, top_k: int = 8):
+    store = _fresh_store(request)
+    try:
+        return compare_queries(q1, q2, store, _config(request), top_k=top_k)
+    finally:
+        store.close()
+
+
+@router.get("/api/intelligence/hotspots")
+async def intelligence_hotspots(request: Request, hours: float = 72.0, limit: int = 8):
+    store = _fresh_store(request)
+    try:
+        return activity_hotspots(store, hours=hours, limit=limit)
+    finally:
+        store.close()
+
+
 @router.get("/api/entities")
 async def list_entities(request: Request, limit: int = 100):
     store = _store(request)
@@ -276,32 +305,48 @@ async def neural_graph(request: Request, limit: int = 80):
                 edges.append(dict(r))
 
         cutoff = time.time() - 300
-        read_fires = store.conn.execute(
-            """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
-                      GROUP_CONCAT(e.id) as entity_ids, 'read' as fire_type
+        read_rows = store.conn.execute(
+            """SELECT al.id as event_id, al.memory_id, al.accessed_at as ts, al.query_text, e.id as entity_id
                FROM access_log al
                JOIN entity_mentions em ON em.memory_id = al.memory_id
                JOIN entities e ON e.id = em.entity_id
                WHERE al.accessed_at > ?
-               GROUP BY al.id
                ORDER BY al.accessed_at DESC
-               LIMIT 30""",
+               LIMIT 240""",
             (cutoff,),
         ).fetchall()
-        write_fires = store.conn.execute(
-            """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
-                      GROUP_CONCAT(e.id) as entity_ids, 'write' as fire_type
+        write_rows = store.conn.execute(
+            """SELECT ev.id as event_id, ev.memory_id, ev.created_at as ts, ev.detail as query_text, e.id as entity_id
                FROM events ev
                JOIN entity_mentions em ON em.memory_id = ev.memory_id
                JOIN entities e ON e.id = em.entity_id
                WHERE ev.created_at > ?
                  AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
-               GROUP BY ev.id
                ORDER BY ev.created_at DESC
-               LIMIT 30""",
+               LIMIT 240""",
             (cutoff,),
         ).fetchall()
-        fires = [dict(r) for r in read_fires] + [dict(r) for r in write_fires]
+
+        def _collapse(rows, fire_type: str) -> list[dict]:
+            grouped = collections.OrderedDict()
+            for row in rows:
+                event_id = row["event_id"]
+                item = grouped.setdefault(event_id, {
+                    "memory_id": row["memory_id"],
+                    "ts": row["ts"],
+                    "query_text": row["query_text"],
+                    "entity_ids": [],
+                    "fire_type": fire_type,
+                })
+                entity_id = row["entity_id"]
+                if entity_id and entity_id not in item["entity_ids"]:
+                    item["entity_ids"].append(entity_id)
+            return [
+                {**item, "entity_ids": ",".join(item["entity_ids"])}
+                for item in grouped.values()
+            ]
+
+        fires = _collapse(read_rows, "read") + _collapse(write_rows, "write")
         fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
         return {"nodes": nodes, "edges": edges, "fires": fires[:30]}
     finally:
@@ -314,36 +359,58 @@ async def neural_fires(request: Request, since: float = 0):
     store = _fresh_store(request)
     try:
         cutoff = since if since > 0 else time.time() - 10
-        reads = store.conn.execute(
-            """SELECT al.memory_id, al.accessed_at as ts, al.query_text,
-                      GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
-                      GROUP_CONCAT(DISTINCT e.id) as entity_ids,
-                      'read' as fire_type
+        read_rows = store.conn.execute(
+            """SELECT al.id as event_id, al.memory_id, al.accessed_at as ts, al.query_text,
+                      e.canonical_name as entity_name, e.id as entity_id
                FROM access_log al
                JOIN entity_mentions em ON em.memory_id = al.memory_id
                JOIN entities e ON e.id = em.entity_id
                WHERE al.accessed_at > ?
-               GROUP BY al.id
                ORDER BY al.accessed_at DESC
-               LIMIT 50""",
+               LIMIT 400""",
             (cutoff,),
         ).fetchall()
-        writes = store.conn.execute(
-            """SELECT ev.memory_id, ev.created_at as ts, ev.detail as query_text,
-                      GROUP_CONCAT(DISTINCT e.canonical_name) as entity_names,
-                      GROUP_CONCAT(DISTINCT e.id) as entity_ids,
-                      'write' as fire_type
+        write_rows = store.conn.execute(
+            """SELECT ev.id as event_id, ev.memory_id, ev.created_at as ts, ev.detail as query_text,
+                      e.canonical_name as entity_name, e.id as entity_id
                FROM events ev
                JOIN entity_mentions em ON em.memory_id = ev.memory_id
                JOIN entities e ON e.id = em.entity_id
                WHERE ev.created_at > ?
                  AND ev.event_type IN ('memory_write', 'memory_promote', 'memory_forget')
-               GROUP BY ev.id
                ORDER BY ev.created_at DESC
-               LIMIT 50""",
+               LIMIT 400""",
             (cutoff,),
         ).fetchall()
-        fires = [dict(r) for r in reads] + [dict(r) for r in writes]
+
+        def _collapse(rows, fire_type: str) -> list[dict]:
+            grouped = collections.OrderedDict()
+            for row in rows:
+                event_id = row["event_id"]
+                item = grouped.setdefault(event_id, {
+                    "memory_id": row["memory_id"],
+                    "ts": row["ts"],
+                    "query_text": row["query_text"],
+                    "entity_names": [],
+                    "entity_ids": [],
+                    "fire_type": fire_type,
+                })
+                entity_name = row["entity_name"]
+                entity_id = row["entity_id"]
+                if entity_name and entity_name not in item["entity_names"]:
+                    item["entity_names"].append(entity_name)
+                if entity_id and entity_id not in item["entity_ids"]:
+                    item["entity_ids"].append(entity_id)
+            return [
+                {
+                    **item,
+                    "entity_names": ",".join(item["entity_names"]),
+                    "entity_ids": ",".join(item["entity_ids"]),
+                }
+                for item in grouped.values()
+            ]
+
+        fires = _collapse(read_rows, "read") + _collapse(write_rows, "write")
         fires.sort(key=lambda f: f.get("ts", 0), reverse=True)
         return {"fires": fires[:50], "timestamp": time.time()}
     finally:
@@ -740,7 +807,8 @@ async def drift_check(request: Request,
     def _run() -> dict:
         store = Store(config)
         try:
-            store.conn.execute("PRAGMA busy_timeout=750")
+            if getattr(config, "normalized_storage_backend", "sqlite") == "sqlite":
+                store.conn.execute("PRAGMA busy_timeout=750")
             report = run_drift_check(store, search_roots=roots, check_functions=check_functions)
             result = report.to_dict()
             error_count = sum(1 for i in report.issues if i.severity == "error")
@@ -758,6 +826,8 @@ async def drift_check(request: Request,
         return await asyncio.to_thread(_run)
     except sqlite3.OperationalError as exc:
         return JSONResponse({"error": f"database busy during drift check: {exc}"}, status_code=503)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @router.post("/api/drift/fix")
@@ -770,7 +840,8 @@ async def drift_fix(request: Request):
         write_store = Store(config)
         try:
             # Fail fast for interactive web requests instead of sitting on SQLite locks.
-            write_store.conn.execute("PRAGMA busy_timeout=750")
+            if getattr(config, "normalized_storage_backend", "sqlite") == "sqlite":
+                write_store.conn.execute("PRAGMA busy_timeout=750")
             report = run_drift_check(write_store, check_functions=False)
             return auto_fix_drift(write_store, report, dry_run=dry_run)
         finally:
@@ -780,6 +851,8 @@ async def drift_fix(request: Request):
         result = await asyncio.to_thread(_run)
     except sqlite3.OperationalError as exc:
         return JSONResponse({"error": f"database busy during drift fix: {exc}"}, status_code=503)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
     push_event("drift_fix", {"total": result["total_actions"], "dry_run": dry_run})
     return result
 
@@ -1066,19 +1139,22 @@ async def list_bridges(request: Request, limit: int = 20):
     store = _store(request)
     rows = store.conn.execute(
         """SELECT * FROM memories
-           WHERE forgotten = 0 AND json_extract(metadata, '$.type') = 'cross_domain_bridge'
-           ORDER BY created_at DESC LIMIT ?""",
-        (limit,),
+           WHERE forgotten = 0
+           ORDER BY created_at DESC"""
     ).fetchall()
     bridges = []
     for row in rows:
         mem = store._row_to_memory(row)
+        if mem.metadata.get("type") != "cross_domain_bridge":
+            continue
         bridges.append({
             **_mem_dict(mem),
             "entity_a": mem.metadata.get("entity_a"),
             "entity_b": mem.metadata.get("entity_b"),
             "similarity": mem.metadata.get("similarity"),
         })
+        if len(bridges) >= limit:
+            break
     return {"bridges": bridges}
 
 
