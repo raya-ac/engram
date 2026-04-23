@@ -6,7 +6,8 @@
 
 <p align="center">
   <a href="https://pypi.org/project/engram-memory-system/"><img src="https://img.shields.io/pypi/v/engram-memory-system.svg?cacheSeconds=300" alt="PyPI"></a>
-  <a href="https://github.com/raya-ac/engram/actions"><img src="https://github.com/raya-ac/engram/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/raya-ac/engram/actions/workflows/test.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/raya-ac/engram/actions/workflows/publish.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/publish.yml/badge.svg" alt="Publish to PyPI"></a>
   <a href="https://engram-memory.dev"><img src="https://img.shields.io/badge/docs-engram--memory.dev-blue" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
 </p>
@@ -57,7 +58,7 @@ engram sits in the middle. it starts as one sqlite file for local use, can gradu
 
 **status tracking** — memories have lifecycle states: `active`, `challenged`, `invalidated`, `merged`, `superseded`. every transition is recorded in a `status_history` audit table with timestamp and reason. non-active memories are filtered from retrieval results. use `update_status` to transition, `status_history` to audit. designed for the "which status is current?" problem — one canonical state per memory, no conflicting duplicates.
 
-**66 MCP tools** — plugs into claude code (or any MCP client) as a tool server. 72 tests. docker-ready. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, consolidation, batch operations, export, health checks, the works.
+**83 MCP tools** — plugs into claude code (or any MCP client) as a tool server. docker-ready. recall, remember, entity lookup, codebase scanning, conversation extraction, semantic dedup, drift detection, pattern extraction, negative knowledge, quality metrics, embedding compression, community detection, timeline queries, similarity search, backlinks, briefing, query comparison, hotspot surfacing, consolidation, batch operations, export, health checks, the works.
 
 ## the retrieval pipeline
 

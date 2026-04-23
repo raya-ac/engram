@@ -44,8 +44,14 @@ def _memory_payload(memory) -> dict[str, Any]:
     }
 
 
-def build_query_brief(query: str, store: Store, config, top_k: int = 8) -> dict[str, Any]:
-    results = hybrid_search(query, store, config, top_k=top_k, mode="full_context")
+def build_query_brief(
+    query: str,
+    store: Store,
+    config,
+    top_k: int = 8,
+    rerank: bool = True,
+) -> dict[str, Any]:
+    results = hybrid_search(query, store, config, top_k=top_k, mode="full_context", rerank=rerank)
     memories = [r.memory for r in results]
     memory_ids = [m.id for m in memories]
 
@@ -113,9 +119,16 @@ def build_query_brief(query: str, store: Store, config, top_k: int = 8) -> dict[
     }
 
 
-def compare_queries(query_a: str, query_b: str, store: Store, config, top_k: int = 8) -> dict[str, Any]:
-    left = hybrid_search(query_a, store, config, top_k=top_k, mode="full_context")
-    right = hybrid_search(query_b, store, config, top_k=top_k, mode="full_context")
+def compare_queries(
+    query_a: str,
+    query_b: str,
+    store: Store,
+    config,
+    top_k: int = 8,
+    rerank: bool = True,
+) -> dict[str, Any]:
+    left = hybrid_search(query_a, store, config, top_k=top_k, mode="full_context", rerank=rerank)
+    right = hybrid_search(query_b, store, config, top_k=top_k, mode="full_context", rerank=rerank)
 
     left_memories = [r.memory for r in left]
     right_memories = [r.memory for r in right]

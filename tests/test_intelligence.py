@@ -10,7 +10,7 @@ from engram.store import Entity, Memory
 
 
 def test_build_query_brief_surfaces_key_sections(store_with_memories, config):
-    result = build_query_brief("Engram search", store_with_memories, config, top_k=5)
+    result = build_query_brief("Engram search", store_with_memories, config, top_k=5, rerank=False)
 
     assert result["query"] == "Engram search"
     assert result["result_count"] > 0
@@ -27,6 +27,7 @@ def test_compare_queries_returns_overlap_and_unique_sections(store_with_memories
         store_with_memories,
         config,
         top_k=5,
+        rerank=False,
     )
 
     assert result["query_a"] == "Engram nearest neighbor"
