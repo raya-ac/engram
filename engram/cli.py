@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import sys
@@ -11,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from engram.config import Config
+from engram.store import _json_loads_maybe
 
 
 def main():
@@ -95,6 +97,14 @@ def main():
     p_import.add_argument("input", help="Input file path (.json or .jsonl)")
     p_import.add_argument("--skip-duplicates", action="store_true", help="Skip memories with matching chunk_hash")
 
+    # postgres migration
+    p_pg = sub.add_parser("migrate-postgres", help="Copy an existing SQLite Engram store into PostgreSQL")
+    p_pg.add_argument("--dsn", help="Postgres DSN; defaults to postgres_dsn from config")
+    p_pg.add_argument("--from-sqlite", help="SQLite database path; defaults to current config db_path")
+    p_pg.add_argument("--switch-config", action="store_true", help="Update config.yaml to use Postgres after a successful migration")
+    p_pg.add_argument("--force-reset", action="store_true", help="Wipe target Postgres tables before importing")
+    p_pg.add_argument("--verify-only", action="store_true", help="Check connectivity + compare counts without copying data")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
@@ -137,6 +147,8 @@ def main():
         cmd_export(args, config)
     elif args.command == "import":
         cmd_import(args, config)
+    elif args.command == "migrate-postgres":
+        cmd_migrate_postgres(args, config)
     elif args.command == "demo":
         from engram.demo import run_demo
         run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
@@ -394,7 +406,11 @@ def cmd_status(args, config: Config):
     stats = store.get_stats()
     print(f"\nEngram Memory System")
     print(f"{'='*40}")
-    print(f"Database: {config.resolved_db_path}")
+    if config.normalized_storage_backend == "postgres":
+        print(f"Database: postgres")
+        print(f"DSN: {config.postgres_dsn}")
+    else:
+        print(f"Database: {config.resolved_db_path}")
     print(f"Size: {stats['db_size_mb']} MB")
     print(f"\nMemories:")
     for layer, count in stats["memories"].items():
@@ -741,7 +757,7 @@ def cmd_export(args, config: Config):
             "fact_date_end": row["fact_date_end"],
             "emotional_valence": row["emotional_valence"],
             "chunk_hash": row["chunk_hash"],
-            "metadata": json.loads(row["metadata"]),
+            "metadata": _json_loads_maybe(row["metadata"], {}),
         }
         if args.include_embeddings and row["embedding"]:
             mem["embedding_b64"] = base64.b64encode(row["embedding"]).decode()
@@ -752,8 +768,8 @@ def cmd_export(args, config: Config):
     # also export entities and relationships
     entities = [dict(r) for r in store.conn.execute("SELECT * FROM entities").fetchall()]
     for e in entities:
-        e["aliases"] = json.loads(e["aliases"])
-        e["metadata"] = json.loads(e["metadata"])
+        e["aliases"] = _json_loads_maybe(e["aliases"], [])
+        e["metadata"] = _json_loads_maybe(e["metadata"], {})
 
     relationships = [dict(r) for r in store.conn.execute("SELECT * FROM relationships").fetchall()]
 
@@ -906,6 +922,229 @@ def cmd_import(args, config: Config):
         print(f"  ANN index rebuilt: {store.ann_index.count} vectors")
 
     store.close()
+
+
+def cmd_migrate_postgres(args, config: Config):
+    import yaml
+    from engram.store import Store
+
+    sqlite_path = str(Path(args.from_sqlite or config.db_path).expanduser())
+    postgres_dsn = args.dsn or config.postgres_dsn
+    if not postgres_dsn:
+        print("Error: provide --dsn or set postgres_dsn in config.")
+        sys.exit(1)
+
+    sqlite_cfg = copy.deepcopy(config)
+    sqlite_cfg.storage_backend = "sqlite"
+    sqlite_cfg.db_path = sqlite_path
+
+    pg_cfg = copy.deepcopy(config)
+    pg_cfg.storage_backend = "postgres"
+    pg_cfg.postgres_dsn = postgres_dsn
+
+    src = Store(sqlite_cfg)
+    dst = Store(pg_cfg)
+    src.init_db()
+    dst.init_db()
+
+    source_counts = {
+        "memories": src.conn.execute("SELECT COUNT(*) AS cnt FROM memories").fetchone()["cnt"],
+        "entities": src.conn.execute("SELECT COUNT(*) AS cnt FROM entities").fetchone()["cnt"],
+        "relationships": src.conn.execute("SELECT COUNT(*) AS cnt FROM relationships").fetchone()["cnt"],
+        "entity_mentions": src.conn.execute("SELECT COUNT(*) AS cnt FROM entity_mentions").fetchone()["cnt"],
+        "diary_entries": src.conn.execute("SELECT COUNT(*) AS cnt FROM diary_entries").fetchone()["cnt"],
+        "session_handoffs": src.conn.execute("SELECT COUNT(*) AS cnt FROM session_handoffs").fetchone()["cnt"],
+    }
+
+    print("Migration plan:")
+    print(f"  source sqlite: {sqlite_path}")
+    print(f"  target postgres: {postgres_dsn}")
+    print(f"  source counts: {source_counts}")
+
+    if args.verify_only:
+        target_counts = {
+            "memories": dst.conn.execute("SELECT COUNT(*) AS cnt FROM memories").fetchone()["cnt"],
+            "entities": dst.conn.execute("SELECT COUNT(*) AS cnt FROM entities").fetchone()["cnt"],
+            "relationships": dst.conn.execute("SELECT COUNT(*) AS cnt FROM relationships").fetchone()["cnt"],
+            "entity_mentions": dst.conn.execute("SELECT COUNT(*) AS cnt FROM entity_mentions").fetchone()["cnt"],
+            "diary_entries": dst.conn.execute("SELECT COUNT(*) AS cnt FROM diary_entries").fetchone()["cnt"],
+            "session_handoffs": dst.conn.execute("SELECT COUNT(*) AS cnt FROM session_handoffs").fetchone()["cnt"],
+        }
+        print(f"  target counts: {target_counts}")
+        src.close()
+        dst.close()
+        return
+
+    if args.force_reset:
+        for table in [
+            "memories_fts", "hypothetical_queries", "entity_mentions", "relationships",
+            "access_log", "events", "diary_entries", "session_handoffs",
+            "importance_history", "status_history", "ingest_log", "entities", "memories",
+        ]:
+            dst.conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+        dst.conn.commit()
+        print("  target reset: done")
+
+    print("Copying rows...")
+
+    memories = src.conn.execute("SELECT * FROM memories ORDER BY created_at").fetchall()
+    entities = src.conn.execute("SELECT * FROM entities").fetchall()
+    relationships = src.conn.execute("SELECT * FROM relationships").fetchall()
+    entity_mentions = src.conn.execute("SELECT * FROM entity_mentions").fetchall()
+    access_log = src.conn.execute("SELECT * FROM access_log").fetchall()
+    ingest_log = src.conn.execute("SELECT * FROM ingest_log").fetchall()
+    events = src.conn.execute("SELECT * FROM events").fetchall()
+    diary_entries = src.conn.execute("SELECT * FROM diary_entries").fetchall()
+    session_handoffs = src.conn.execute("SELECT * FROM session_handoffs").fetchall()
+    importance_history = src.conn.execute("SELECT * FROM importance_history").fetchall()
+    status_history = src.conn.execute("SELECT * FROM status_history").fetchall()
+    hqs = src.conn.execute("SELECT * FROM hypothetical_queries").fetchall()
+
+    for row in memories:
+        dst.conn.execute(
+            """INSERT INTO memories
+               (id, content, source_file, source_type, layer, memory_type, status, embedding,
+                importance, access_count, created_at, last_accessed, fact_date, fact_date_end,
+                emotional_valence, chunk_hash, metadata, forgotten, previous_memory_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (id) DO NOTHING""",
+            (
+                row["id"], row["content"], row["source_file"], row["source_type"], row["layer"],
+                row["memory_type"] if "memory_type" in row.keys() else "narrative",
+                row["status"] if "status" in row.keys() else "active",
+                row["embedding"], row["importance"], row["access_count"], row["created_at"],
+                row["last_accessed"], row["fact_date"], row["fact_date_end"],
+                row["emotional_valence"], row["chunk_hash"], row["metadata"],
+                row["forgotten"], row["previous_memory_id"] if "previous_memory_id" in row.keys() else None,
+            ),
+        )
+    dst.conn.commit()
+
+    hq_map: dict[str, list[str]] = {}
+    for row in hqs:
+        dst.conn.execute(
+            "INSERT INTO hypothetical_queries (memory_id, query_text) VALUES (?, ?)",
+            (row["memory_id"], row["query_text"]),
+        )
+        hq_map.setdefault(row["memory_id"], []).append(row["query_text"])
+    dst.conn.commit()
+
+    for row in memories:
+        dst.refresh_fts_entry(row["id"], row["content"], " ".join(hq_map.get(row["id"], [])))
+    dst.conn.commit()
+
+    for row in entities:
+        dst.conn.execute(
+            """INSERT INTO entities (id, canonical_name, aliases, entity_type, first_seen, last_seen, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (id) DO NOTHING""",
+            (row["id"], row["canonical_name"], row["aliases"], row["entity_type"], row["first_seen"], row["last_seen"], row["metadata"]),
+        )
+    for row in relationships:
+        dst.conn.execute(
+            """INSERT INTO relationships
+               (source_entity_id, target_entity_id, relation_type, strength, evidence_count,
+                created_at, last_seen, valid_from, valid_to, embedding)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO NOTHING""",
+            (
+                row["source_entity_id"], row["target_entity_id"], row["relation_type"], row["strength"],
+                row["evidence_count"], row["created_at"], row["last_seen"],
+                row["valid_from"] if "valid_from" in row.keys() else None,
+                row["valid_to"] if "valid_to" in row.keys() else None,
+                row["embedding"] if "embedding" in row.keys() else None,
+            ),
+        )
+    for row in entity_mentions:
+        dst.conn.execute(
+            "INSERT INTO entity_mentions (entity_id, memory_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            (row["entity_id"], row["memory_id"]),
+        )
+    for row in access_log:
+        dst.conn.execute(
+            "INSERT INTO access_log (memory_id, accessed_at, query_text) VALUES (?, ?, ?)",
+            (row["memory_id"], row["accessed_at"], row["query_text"]),
+        )
+    for row in ingest_log:
+        dst.conn.execute(
+            """INSERT INTO ingest_log (file_path, file_hash, last_ingested, memory_count)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (file_path) DO NOTHING""",
+            (row["file_path"], row["file_hash"], row["last_ingested"], row["memory_count"]),
+        )
+    for row in events:
+        dst.conn.execute(
+            "INSERT INTO events (event_type, memory_id, entity_id, detail, created_at) VALUES (?, ?, ?, ?, ?)",
+            (row["event_type"], row["memory_id"], row["entity_id"], row["detail"], row["created_at"]),
+        )
+    for row in diary_entries:
+        dst.conn.execute(
+            "INSERT INTO diary_entries (text, session_id, created_at) VALUES (?, ?, ?)",
+            (row["text"], row["session_id"], row["created_at"]),
+        )
+    for row in session_handoffs:
+        dst.conn.execute(
+            """INSERT INTO session_handoffs (session_id, summary, metadata, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (session_id) DO NOTHING""",
+            (row["session_id"], row["summary"], row["metadata"], row["created_at"], row["updated_at"]),
+        )
+    for row in importance_history:
+        dst.conn.execute(
+            "INSERT INTO importance_history (memory_id, score, recorded_at) VALUES (?, ?, ?)",
+            (row["memory_id"], row["score"], row["recorded_at"]),
+        )
+    for row in status_history:
+        dst.conn.execute(
+            "INSERT INTO status_history (memory_id, old_status, new_status, reason, changed_at) VALUES (?, ?, ?, ?, ?)",
+            (row["memory_id"], row["old_status"], row["new_status"], row["reason"], row["changed_at"]),
+        )
+    dst.conn.commit()
+
+    migrated_counts = {
+        "memories": dst.conn.execute("SELECT COUNT(*) AS cnt FROM memories").fetchone()["cnt"],
+        "entities": dst.conn.execute("SELECT COUNT(*) AS cnt FROM entities").fetchone()["cnt"],
+        "relationships": dst.conn.execute("SELECT COUNT(*) AS cnt FROM relationships").fetchone()["cnt"],
+        "entity_mentions": dst.conn.execute("SELECT COUNT(*) AS cnt FROM entity_mentions").fetchone()["cnt"],
+        "diary_entries": dst.conn.execute("SELECT COUNT(*) AS cnt FROM diary_entries").fetchone()["cnt"],
+        "session_handoffs": dst.conn.execute("SELECT COUNT(*) AS cnt FROM session_handoffs").fetchone()["cnt"],
+    }
+    print(f"  target counts after copy: {migrated_counts}")
+
+    mismatches = {
+        key: (source_counts[key], migrated_counts[key])
+        for key in source_counts
+        if source_counts[key] != migrated_counts[key]
+    }
+    if mismatches:
+        print(f"Error: migration verification failed: {mismatches}")
+        src.close()
+        dst.close()
+        sys.exit(1)
+
+    print("  verification: passed")
+
+    if args.switch_config:
+        config_path = Path(args.config).expanduser() if args.config else (Path.home() / ".config" / "engram" / "config.yaml")
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if config_path.exists():
+            with open(config_path) as f:
+                existing = yaml.safe_load(f) or {}
+            backup = config_path.with_suffix(config_path.suffix + ".bak")
+            backup.write_text(config_path.read_text())
+            print(f"  backed up config to {backup}")
+        existing["storage_backend"] = "postgres"
+        existing["postgres_dsn"] = postgres_dsn
+        with open(config_path, "w") as f:
+            yaml.safe_dump(existing, f, sort_keys=False)
+        print(f"  updated config at {config_path}")
+        print("  next step: restart any running engram web or MCP processes so they reconnect to Postgres")
+    else:
+        print("  next step: rerun with --switch-config when you're ready to flip the default backend")
+
+    src.close()
+    dst.close()
 
 
 if __name__ == "__main__":

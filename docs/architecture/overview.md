@@ -1,6 +1,6 @@
 # Architecture Overview
 
-everything lives in one sqlite file. no external services.
+local installs can live in one sqlite file. service-style deployments can switch to postgres when they need concurrent clients.
 
 ## module map
 

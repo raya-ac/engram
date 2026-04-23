@@ -68,7 +68,9 @@ class WebConfig:
 
 @dataclass
 class Config:
+    storage_backend: str = "sqlite"  # sqlite | postgres
     db_path: str = "~/.local/share/engram/memory.db"
+    postgres_dsn: str = ""
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     embedding_backend: str = "auto"  # auto | mlx | sentence_transformers | voyage | openai | gemini
@@ -84,6 +86,11 @@ class Config:
         p = Path(os.path.expanduser(self.db_path))
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def normalized_storage_backend(self) -> str:
+        backend = (self.storage_backend or "sqlite").strip().lower()
+        return backend if backend in {"sqlite", "postgres"} else "sqlite"
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
@@ -101,7 +108,7 @@ class Config:
                 break
 
         cfg = cls()
-        for k in ("db_path", "embedding_model", "cross_encoder_model", "embedding_backend", "embedding_dim"):
+        for k in ("storage_backend", "db_path", "postgres_dsn", "embedding_model", "cross_encoder_model", "embedding_backend", "embedding_dim"):
             env = os.environ.get(f"ENGRAM_{k.upper()}")
             if env:
                 setattr(cfg, k, type(getattr(cfg, k))(env))

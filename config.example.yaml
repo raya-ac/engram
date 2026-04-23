@@ -1,4 +1,6 @@
+storage_backend: sqlite          # sqlite | postgres
 db_path: ~/.local/share/engram/memory.db
+postgres_dsn: ""                 # e.g. postgresql://user:pass@localhost:5432/engram
 
 # embedding model — local or API
 # local:  BAAI/bge-small-en-v1.5 (384d, free, default)

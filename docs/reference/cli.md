@@ -1,4 +1,4 @@
-# CLI Commands (15)
+# CLI Commands (16)
 
 all commands available via `engram <command>`.
 
@@ -75,6 +75,13 @@ export to JSON or JSONL. `--include-embeddings` adds base64 vectors for portable
 engram import <input> [--skip-duplicates]
 ```
 restore from exported file. `--skip-duplicates` skips memories with matching content hash.
+
+### migrate-postgres
+```bash
+engram migrate-postgres --dsn postgresql://user:pass@localhost:5432/engram [--from-sqlite PATH] [--switch-config] [--force-reset]
+engram migrate-postgres --verify-only --dsn postgresql://user:pass@localhost:5432/engram
+```
+copy an existing sqlite Engram store into postgres, verify the migrated counts, and optionally rewrite `config.yaml` to switch the default backend. `--verify-only` just checks connectivity and shows source/target counts. `--force-reset` truncates the target tables before copying.
 
 ### watch
 ```bash

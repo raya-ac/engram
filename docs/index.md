@@ -6,7 +6,7 @@
 
 a cognitive memory system that actually remembers things.
 
-one sqlite file, hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time.
+starts with one sqlite file for local installs, can switch to postgres for multi-client deployments, and keeps hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time.
 
 **98.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — highest published score, beating MemPalace (96.6%), Emergence AI (86%), and every other memory system benchmarked.
 
@@ -37,6 +37,7 @@ cd engram && pip install -e .
 
 - [Installation](getting-started/installation.md) — full setup guide
 - [Quick Start](getting-started/quickstart.md) — first steps
+- [Postgres Migration](guides/postgres-migration.md) — move an existing sqlite install without losing data
 - [MCP Tools Reference](reference/mcp-tools.md) — all 66 tools
 - [Architecture](architecture/overview.md) — how it works inside
 - [Benchmarks](architecture/benchmarks.md) — LongMemEval results
@@ -48,6 +49,6 @@ cd engram && pip install -e .
 | [Claude Code](getting-started/claude-code.md) | native MCP integration |
 | [Any MCP client](reference/mcp-tools.md) | 66-tool JSON-RPC server |
 | [REST API](reference/rest-api.md) | 57 HTTP endpoints |
-| [CLI](reference/cli.md) | 15 commands |
+| [CLI](reference/cli.md) | 16 commands |
 | [Docker](guides/docker.md) | single container deployment |
 | [Python API](tutorials/build-an-agent.md) | direct library usage |

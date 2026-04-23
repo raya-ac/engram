@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 (April 24, 2026)
+
+### new features
+- **postgres backend** — engram can now use postgres as its primary storage backend for concurrent web + MCP deployments, while keeping sqlite as the default local-first option
+- **sqlite to postgres migration command** — new `engram migrate-postgres` command copies an existing sqlite store into postgres, rebuilds full-text search rows, verifies key row counts, and can switch `config.yaml` automatically
+- **config-level backend selection** — `storage_backend` and `postgres_dsn` are now first-class config fields and can also be driven by `ENGRAM_STORAGE_BACKEND` / `ENGRAM_POSTGRES_DSN`
+
+### docs
+- added postgres migration guide
+- updated install, config, CLI, and README docs for mixed sqlite/postgres deployments
+
 ## 0.4.1 (April 23, 2026)
 
 ### fixes

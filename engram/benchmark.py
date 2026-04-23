@@ -504,12 +504,7 @@ def run_stress_test(n_memories: int = 500, config: Config | None = None) -> dict
         )
         # FTS for a subset only (bulk FTS is slow)
         if i < 10000:
-            row = store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (mem.id,)).fetchone()
-            if row:
-                store.conn.execute(
-                    "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, '')",
-                    (row[0], mem.content),
-                )
+            store.refresh_fts_entry(mem.id, mem.content, "")
         if i > 0 and i % 10000 == 0:
             store.conn.commit()
             print(f"  {i}/{len(memories)} stored ({i/(time.time()-t_store):.0f}/sec)")

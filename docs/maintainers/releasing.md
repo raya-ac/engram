@@ -20,7 +20,7 @@ Use this checklist when cutting a new release.
 1. commit the release prep
 2. push `main`
 3. create a GitHub release with the matching tag, for example:
-   - `v0.4.1`
+   - `v0.5.0`
 
 Engram publishes to PyPI on `release.published`, not on normal pushes.
 

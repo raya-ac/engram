@@ -16,6 +16,7 @@ class TestConfigDefaults:
         assert cfg.embedding_model == "BAAI/bge-small-en-v1.5"
         assert cfg.embedding_dim == 384
         assert cfg.embedding_backend == "auto"
+        assert cfg.storage_backend == "sqlite"
         assert cfg.retrieval.top_k == 10
         assert cfg.ann.enabled is True
         assert cfg.ann.m == 32
@@ -37,6 +38,8 @@ class TestConfigFile:
     def test_load_from_yaml(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump({
+                "storage_backend": "postgres",
+                "postgres_dsn": "postgresql://localhost:5432/engram",
                 "embedding_model": "voyage-3.5",
                 "embedding_backend": "voyage",
                 "retrieval": {"top_k": 20},
@@ -46,6 +49,8 @@ class TestConfigFile:
             f.flush()
 
             cfg = Config.load(f.name)
+            assert cfg.normalized_storage_backend == "postgres"
+            assert cfg.postgres_dsn == "postgresql://localhost:5432/engram"
             assert cfg.embedding_model == "voyage-3.5"
             assert cfg.embedding_backend == "voyage"
             assert cfg.embedding_dim == 1024  # auto-detected from model
@@ -91,3 +96,14 @@ class TestEnvOverride:
             assert cfg.embedding_dim == 768
         finally:
             del os.environ["ENGRAM_EMBEDDING_DIM"]
+
+    def test_storage_backend_env_override(self):
+        os.environ["ENGRAM_STORAGE_BACKEND"] = "postgres"
+        os.environ["ENGRAM_POSTGRES_DSN"] = "postgresql://db/engram"
+        try:
+            cfg = Config.load()
+            assert cfg.normalized_storage_backend == "postgres"
+            assert cfg.postgres_dsn == "postgresql://db/engram"
+        finally:
+            del os.environ["ENGRAM_STORAGE_BACKEND"]
+            del os.environ["ENGRAM_POSTGRES_DSN"]

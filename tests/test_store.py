@@ -5,7 +5,15 @@ import uuid
 import numpy as np
 import pytest
 
-from engram.store import Store, Memory, Entity, Relationship, MemoryLayer
+from engram.config import Config
+from engram.store import Store, PostgresStore, Memory, Entity, Relationship, MemoryLayer
+
+
+class TestStoreFactory:
+    def test_postgres_backend_returns_postgres_store(self):
+        cfg = Config(storage_backend="postgres", postgres_dsn="postgresql://localhost/engram")
+        store = Store(cfg)
+        assert isinstance(store, PostgresStore)
 
 
 class TestMemoryCRUD:

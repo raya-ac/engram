@@ -57,6 +57,7 @@ nav:
   - Guides:
     - Session Continuity: guides/session-continuity.md
     - Client Configs: guides/client-configs.md
+    - Postgres Migration: guides/postgres-migration.md
     - Embedding Backends: guides/embedding-backends.md
     - Retrieval Pipeline: guides/retrieval-pipeline.md
     - Memory Lifecycle: guides/memory-lifecycle.md
@@ -68,7 +69,7 @@ nav:
   - Reference:
     - MCP Tools (63): reference/mcp-tools.md
     - REST API (57): reference/rest-api.md
-    - CLI Commands (15): reference/cli.md
+    - CLI Commands (16): reference/cli.md
     - Configuration: reference/config.md
   - Architecture:
     - Overview: architecture/overview.md

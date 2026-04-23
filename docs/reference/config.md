@@ -5,7 +5,9 @@ lives at `config.yaml` (project root), `~/.config/engram/config.yaml` (user), or
 ## full reference
 
 ```yaml
+storage_backend: sqlite
 db_path: ~/.local/share/engram/memory.db
+postgres_dsn: ""
 
 # embedding model — auto-detects backend from model name
 # local:  BAAI/bge-small-en-v1.5 (384d), BAAI/bge-base-en-v1.5 (768d)
@@ -66,12 +68,30 @@ ann:
   index_path: ~/.local/share/engram/hnsw.index
 ```
 
+## storage
+
+`storage_backend` controls which database Engram uses:
+
+- `sqlite` — local file-backed default
+- `postgres` — concurrent service backend
+
+when `storage_backend: postgres`, `postgres_dsn` is required and `db_path` is ignored for live reads/writes.
+
+example:
+
+```yaml
+storage_backend: postgres
+postgres_dsn: postgresql://user:pass@localhost:5432/engram
+```
+
 ## environment variables
 
 any config field can be overridden with `ENGRAM_` prefix:
 
 ```bash
 export ENGRAM_DB_PATH=/custom/path/memory.db
+export ENGRAM_STORAGE_BACKEND=postgres
+export ENGRAM_POSTGRES_DSN=postgresql://user:pass@localhost:5432/engram
 export ENGRAM_EMBEDDING_MODEL=voyage-3.5
 export ENGRAM_EMBEDDING_DIM=1024
 export ENGRAM_EMBEDDING_BACKEND=voyage

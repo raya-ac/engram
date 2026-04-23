@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import struct
 import time
@@ -109,6 +110,16 @@ def _pack_embedding(vec: np.ndarray) -> bytes:
 
 def _unpack_embedding(blob: bytes, dim: int = 384) -> np.ndarray:
     return np.frombuffer(blob, dtype=np.float32).copy()
+
+
+def _json_loads_maybe(value: Any, default):
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        return json.loads(value) if value else default
+    return default
 
 
 SCHEMA = """
@@ -251,6 +262,11 @@ CREATE INDEX IF NOT EXISTS idx_status_hist_memory ON status_history(memory_id);
 
 
 class Store:
+    def __new__(cls, config: Config):
+        if cls is Store and getattr(config, "normalized_storage_backend", "sqlite") == "postgres":
+            return super().__new__(PostgresStore)
+        return super().__new__(cls)
+
     def __init__(self, config: Config):
         self.config = config
         self.db_path = config.resolved_db_path
@@ -335,7 +351,7 @@ class Store:
             type_map = {"factual": "fact", "procedural": "procedure", "experiential": "narrative"}
             updated = 0
             for row in rows:
-                meta = json.loads(row["metadata"]) if row["metadata"] else {}
+                meta = _json_loads_maybe(row["metadata"], {})
                 raw_type = meta.get("type", "")
                 # infer from metadata or layer
                 if raw_type in type_map:
@@ -496,6 +512,17 @@ class Store:
         self._emit_event("memory_write", memory_id=mem.id,
                          detail=f"layer={mem.layer} source={mem.source_type}")
         self.conn.commit()
+
+    def refresh_fts_entry(self, memory_id: str, content: str, hypothetical_queries: str = ""):
+        row = self.conn.execute("SELECT rowid FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        if not row:
+            return
+        rowid = row[0]
+        self.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (rowid,))
+        self.conn.execute(
+            "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, ?)",
+            (rowid, content, hypothetical_queries),
+        )
 
     def get_memory(self, memory_id: str) -> Memory | None:
         row = self.conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
@@ -674,7 +701,7 @@ class Store:
         # search aliases
         rows = self.conn.execute("SELECT * FROM entities").fetchall()
         for r in rows:
-            aliases = json.loads(r["aliases"])
+            aliases = _json_loads_maybe(r["aliases"], [])
             if any(a.lower() == name_lower for a in aliases):
                 return self._row_to_entity(r)
         return None
@@ -851,7 +878,7 @@ class Store:
         if not row:
             return None
         result = dict(row)
-        result["metadata"] = json.loads(result["metadata"])
+        result["metadata"] = _json_loads_maybe(result["metadata"], {})
         return result
 
     def list_session_handoffs(self, limit: int = 10) -> list[dict]:
@@ -862,7 +889,7 @@ class Store:
         results = []
         for row in rows:
             item = dict(row)
-            item["metadata"] = json.loads(item["metadata"])
+            item["metadata"] = _json_loads_maybe(item["metadata"], {})
             results.append(item)
         return results
 
@@ -916,7 +943,7 @@ class Store:
             fact_date_end=row["fact_date_end"],
             emotional_valence=row["emotional_valence"],
             chunk_hash=row["chunk_hash"],
-            metadata=json.loads(row["metadata"]),
+            metadata=_json_loads_maybe(row["metadata"], {}),
             forgotten=bool(row["forgotten"]),
         )
 
@@ -924,9 +951,461 @@ class Store:
         return Entity(
             id=row["id"],
             canonical_name=row["canonical_name"],
-            aliases=json.loads(row["aliases"]),
+            aliases=_json_loads_maybe(row["aliases"], []),
             entity_type=row["entity_type"],
             first_seen=row["first_seen"],
             last_seen=row["last_seen"],
-            metadata=json.loads(row["metadata"]),
+            metadata=_json_loads_maybe(row["metadata"], {}),
         )
+
+
+POSTGRES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    source_file TEXT,
+    source_type TEXT NOT NULL DEFAULT 'ingest',
+    layer TEXT NOT NULL DEFAULT 'episodic',
+    memory_type TEXT NOT NULL DEFAULT 'narrative',
+    status TEXT NOT NULL DEFAULT 'active',
+    embedding BYTEA,
+    importance DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    access_count INTEGER NOT NULL DEFAULT 0,
+    created_at DOUBLE PRECISION NOT NULL,
+    last_accessed DOUBLE PRECISION NOT NULL,
+    fact_date TEXT,
+    fact_date_end TEXT,
+    emotional_valence DOUBLE PRECISION DEFAULT 0.0,
+    chunk_hash TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    forgotten INTEGER DEFAULT 0,
+    previous_memory_id TEXT DEFAULT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer);
+CREATE INDEX IF NOT EXISTS idx_memories_chunk_hash ON memories(chunk_hash);
+CREATE INDEX IF NOT EXISTS idx_memories_fact_date ON memories(fact_date);
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_forgotten ON memories(forgotten);
+CREATE INDEX IF NOT EXISTS idx_memories_memory_type ON memories(memory_type);
+CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
+
+CREATE TABLE IF NOT EXISTS memories_fts (
+    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    hypothetical_queries TEXT NOT NULL DEFAULT '',
+    search_vector tsvector
+);
+CREATE INDEX IF NOT EXISTS idx_memories_fts_vector
+    ON memories_fts USING GIN (search_vector);
+
+CREATE TABLE IF NOT EXISTS hypothetical_queries (
+    id BIGSERIAL PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    query_text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hq_memory ON hypothetical_queries(memory_id);
+
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    canonical_name TEXT NOT NULL UNIQUE,
+    aliases JSONB DEFAULT '[]'::jsonb,
+    entity_type TEXT DEFAULT 'concept',
+    first_seen DOUBLE PRECISION NOT NULL,
+    last_seen DOUBLE PRECISION NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(canonical_name);
+
+CREATE TABLE IF NOT EXISTS entity_mentions (
+    entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    PRIMARY KEY (entity_id, memory_id)
+);
+
+CREATE TABLE IF NOT EXISTS relationships (
+    source_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    target_entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL,
+    strength DOUBLE PRECISION DEFAULT 1.0,
+    evidence_count INTEGER DEFAULT 1,
+    created_at DOUBLE PRECISION NOT NULL,
+    last_seen DOUBLE PRECISION NOT NULL,
+    valid_from DOUBLE PRECISION DEFAULT NULL,
+    valid_to DOUBLE PRECISION DEFAULT NULL,
+    embedding BYTEA DEFAULT NULL,
+    PRIMARY KEY (source_entity_id, target_entity_id, relation_type)
+);
+
+CREATE TABLE IF NOT EXISTS access_log (
+    id BIGSERIAL PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    accessed_at DOUBLE PRECISION NOT NULL,
+    query_text TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_access_log_memory ON access_log(memory_id);
+
+CREATE TABLE IF NOT EXISTS ingest_log (
+    file_path TEXT PRIMARY KEY,
+    file_hash TEXT NOT NULL,
+    last_ingested DOUBLE PRECISION NOT NULL,
+    memory_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    memory_id TEXT,
+    entity_id TEXT,
+    detail TEXT,
+    created_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS diary_entries (
+    id BIGSERIAL PRIMARY KEY,
+    text TEXT NOT NULL,
+    session_id TEXT,
+    created_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_diary_created ON diary_entries(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS session_handoffs (
+    session_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    metadata JSONB NOT NULL,
+    created_at DOUBLE PRECISION NOT NULL,
+    updated_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_handoffs_updated ON session_handoffs(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS importance_history (
+    id BIGSERIAL PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    score DOUBLE PRECISION NOT NULL,
+    recorded_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_imp_hist_memory ON importance_history(memory_id);
+
+CREATE TABLE IF NOT EXISTS status_history (
+    id BIGSERIAL PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    old_status TEXT NOT NULL,
+    new_status TEXT NOT NULL,
+    reason TEXT,
+    changed_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_status_hist_memory ON status_history(memory_id);
+"""
+
+
+class _PostgresCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return row
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self._cursor)
+
+
+class _PostgresConnectionAdapter:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def _rewrite(self, query: str) -> str:
+        return re.sub(r"\?", "%s", query)
+
+    def execute(self, query: str, params: tuple | list | None = None):
+        cur = self._conn.cursor()
+        cur.execute(self._rewrite(query), params or ())
+        return _PostgresCursor(cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+class PostgresStore(Store):
+    def __init__(self, config: Config):
+        self.config = config
+        self.db_path = None
+        self._conn = None
+        self._embedding_cache = None
+        self._search_cache = {}
+        self._search_cache_version = 0
+        self.ann_index = None
+
+    @property
+    def conn(self):
+        if self._conn is None:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError("Postgres backend requires psycopg. Reinstall engram with postgres support.") from exc
+            dsn = self.config.postgres_dsn or ""
+            if not dsn:
+                raise RuntimeError("storage_backend=postgres requires postgres_dsn to be configured")
+            raw = psycopg.connect(dsn, autocommit=False, row_factory=dict_row)
+            self._conn = _PostgresConnectionAdapter(raw)
+        return self._conn
+
+    def init_db(self):
+        for stmt in POSTGRES_SCHEMA.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                self.conn.execute(stmt)
+        self.conn.commit()
+
+    def _migrate(self):
+        return
+
+    def save_memory(self, mem: Memory, hypothetical_queries: list[str] | None = None):
+        emb_blob = _pack_embedding(mem.embedding) if mem.embedding is not None else None
+        prev_id = None
+        prev_row = self.conn.execute(
+            "SELECT id FROM memories WHERE forgotten=0 AND id != %s ORDER BY created_at DESC LIMIT 1",
+            (mem.id,),
+        ).fetchone()
+        if prev_row:
+            prev_id = prev_row["id"]
+
+        self.conn.execute(
+            """INSERT INTO memories
+            (id, content, source_file, source_type, layer, memory_type, status,
+             embedding, importance, access_count, created_at, last_accessed,
+             fact_date, fact_date_end, emotional_valence, chunk_hash, metadata,
+             forgotten, previous_memory_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                content = EXCLUDED.content,
+                source_file = EXCLUDED.source_file,
+                source_type = EXCLUDED.source_type,
+                layer = EXCLUDED.layer,
+                memory_type = EXCLUDED.memory_type,
+                status = EXCLUDED.status,
+                embedding = EXCLUDED.embedding,
+                importance = EXCLUDED.importance,
+                access_count = EXCLUDED.access_count,
+                created_at = EXCLUDED.created_at,
+                last_accessed = EXCLUDED.last_accessed,
+                fact_date = EXCLUDED.fact_date,
+                fact_date_end = EXCLUDED.fact_date_end,
+                emotional_valence = EXCLUDED.emotional_valence,
+                chunk_hash = EXCLUDED.chunk_hash,
+                metadata = EXCLUDED.metadata,
+                forgotten = EXCLUDED.forgotten,
+                previous_memory_id = EXCLUDED.previous_memory_id""",
+            (mem.id, mem.content, mem.source_file, mem.source_type, mem.layer,
+             mem.memory_type, mem.status, emb_blob, mem.importance, mem.access_count,
+             mem.created_at, mem.last_accessed, mem.fact_date, mem.fact_date_end,
+             mem.emotional_valence, mem.chunk_hash, json.dumps(mem.metadata),
+             int(mem.forgotten), prev_id),
+        )
+
+        self.conn.execute("DELETE FROM hypothetical_queries WHERE memory_id = %s", (mem.id,))
+        hq_text = ""
+        if hypothetical_queries:
+            hq_text = " ".join(hypothetical_queries)
+            for q in hypothetical_queries:
+                self.conn.execute(
+                    "INSERT INTO hypothetical_queries (memory_id, query_text) VALUES (%s, %s)",
+                    (mem.id, q),
+                )
+
+        self.refresh_fts_entry(mem.id, mem.content, hq_text)
+        self._embedding_cache = None
+        self.invalidate_search_cache()
+        if self.ann_index and self.ann_index.ready and mem.embedding is not None:
+            self.ann_index.add(mem.id, mem.embedding)
+        self._emit_event("memory_write", memory_id=mem.id,
+                         detail=f"layer={mem.layer} source={mem.source_type}")
+        self.conn.commit()
+
+    def refresh_fts_entry(self, memory_id: str, content: str, hypothetical_queries: str = ""):
+        self.conn.execute(
+            """INSERT INTO memories_fts (memory_id, content, hypothetical_queries, search_vector)
+               VALUES (%s, %s, %s, to_tsvector('english', %s || ' ' || %s))
+               ON CONFLICT (memory_id) DO UPDATE SET
+                   content = EXCLUDED.content,
+                   hypothetical_queries = EXCLUDED.hypothetical_queries,
+                   search_vector = EXCLUDED.search_vector""",
+            (memory_id, content, hypothetical_queries, content, hypothetical_queries),
+        )
+
+    def search_fts(self, query: str, limit: int = 30) -> list[tuple[str, float]]:
+        words = []
+        for w in query.split():
+            cleaned = "".join(c for c in w if c.isalnum())
+            if len(cleaned) >= 2:
+                words.append(cleaned)
+        if not words:
+            return []
+        ts_query = " | ".join(words)
+        rows = self.conn.execute(
+            """SELECT memory_id AS id,
+                      ts_rank_cd(search_vector, to_tsquery('english', %s)) AS score
+               FROM memories_fts
+               JOIN memories m ON m.id = memories_fts.memory_id
+               WHERE m.forgotten = 0 AND search_vector @@ to_tsquery('english', %s)
+               ORDER BY score DESC
+               LIMIT %s""",
+            (ts_query, ts_query, limit),
+        ).fetchall()
+        return [(r["id"], -float(r["score"])) for r in rows]
+
+    def save_entity(self, entity: Entity):
+        self.conn.execute(
+            """INSERT INTO entities
+            (id, canonical_name, aliases, entity_type, first_seen, last_seen, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                canonical_name = EXCLUDED.canonical_name,
+                aliases = EXCLUDED.aliases,
+                entity_type = EXCLUDED.entity_type,
+                first_seen = EXCLUDED.first_seen,
+                last_seen = EXCLUDED.last_seen,
+                metadata = EXCLUDED.metadata""",
+            (entity.id, entity.canonical_name, json.dumps(entity.aliases),
+             entity.entity_type, entity.first_seen, entity.last_seen,
+             json.dumps(entity.metadata)),
+        )
+        self.conn.commit()
+
+    def find_entity_by_name(self, name: str) -> Entity | None:
+        name_lower = name.lower()
+        row = self.conn.execute(
+            """SELECT *
+               FROM entities
+               WHERE LOWER(canonical_name) = %s
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements_text(aliases) AS alias(value)
+                      WHERE LOWER(alias.value) = %s
+                  )
+               LIMIT 1""",
+            (name_lower, name_lower),
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_entity(row)
+
+    def link_entity_memory(self, entity_id: str, memory_id: str):
+        self.conn.execute(
+            """INSERT INTO entity_mentions (entity_id, memory_id)
+               VALUES (%s, %s)
+               ON CONFLICT DO NOTHING""",
+            (entity_id, memory_id),
+        )
+        self.conn.commit()
+
+    def save_relationship(self, rel: Relationship):
+        self.conn.execute(
+            """INSERT INTO relationships
+               (source_entity_id, target_entity_id, relation_type, strength,
+                evidence_count, created_at, last_seen, valid_from)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (source_entity_id, target_entity_id, relation_type)
+               DO UPDATE SET
+                   strength = GREATEST(relationships.strength, EXCLUDED.strength),
+                   evidence_count = relationships.evidence_count + 1,
+                   last_seen = EXCLUDED.last_seen,
+                   valid_from = COALESCE(relationships.valid_from, EXCLUDED.valid_from)""",
+            (
+                rel.source_entity_id,
+                rel.target_entity_id,
+                rel.relation_type,
+                rel.strength,
+                rel.evidence_count,
+                rel.created_at,
+                rel.last_seen,
+                getattr(rel, "valid_from", rel.created_at),
+            ),
+        )
+        self.conn.commit()
+
+    def get_related_entities(self, entity_id: str, max_hops: int = 2) -> list[dict]:
+        rows = self.conn.execute(
+            """WITH RECURSIVE traversal(eid, depth, path) AS (
+                   SELECT %s::text, 0, ARRAY[%s::text]
+                   UNION ALL
+                   SELECT
+                       CASE
+                           WHEN r.source_entity_id = t.eid THEN r.target_entity_id
+                           ELSE r.source_entity_id
+                       END,
+                       t.depth + 1,
+                       t.path || CASE
+                           WHEN r.source_entity_id = t.eid THEN r.target_entity_id
+                           ELSE r.source_entity_id
+                       END
+                   FROM traversal t
+                   JOIN relationships r
+                     ON (r.source_entity_id = t.eid OR r.target_entity_id = t.eid)
+                   WHERE t.depth < %s
+                     AND NOT (
+                         CASE
+                             WHEN r.source_entity_id = t.eid THEN r.target_entity_id
+                             ELSE r.source_entity_id
+                         END = ANY(t.path)
+                     )
+               )
+               SELECT DISTINCT t.eid, t.depth, e.canonical_name, e.entity_type
+               FROM traversal t
+               JOIN entities e ON e.id = t.eid
+               WHERE t.eid != %s
+               ORDER BY t.depth, e.canonical_name""",
+            (entity_id, entity_id, max_hops, entity_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_file_hash(self, file_path: str, file_hash: str, memory_count: int = 0):
+        self.conn.execute(
+            """INSERT INTO ingest_log (file_path, file_hash, last_ingested, memory_count)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (file_path) DO UPDATE SET
+                   file_hash = EXCLUDED.file_hash,
+                   last_ingested = EXCLUDED.last_ingested,
+                   memory_count = EXCLUDED.memory_count""",
+            (file_path, file_hash, time.time(), memory_count),
+        )
+        self.conn.commit()
+
+    def save_session_handoff(self, session_id: str, summary: str, metadata: dict):
+        now = time.time()
+        row = self.conn.execute(
+            "SELECT created_at FROM session_handoffs WHERE session_id = %s",
+            (session_id,),
+        ).fetchone()
+        created_at = row["created_at"] if row else now
+        self.conn.execute(
+            """INSERT INTO session_handoffs
+               (session_id, summary, metadata, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (session_id) DO UPDATE SET
+                   summary = EXCLUDED.summary,
+                   metadata = EXCLUDED.metadata,
+                   updated_at = EXCLUDED.updated_at""",
+            (session_id, summary, json.dumps(metadata), created_at, now),
+        )
+        self.conn.commit()
+
+    def get_stats(self) -> dict:
+        counts = self.count_memories()
+        entity_count = self.conn.execute("SELECT COUNT(*) as cnt FROM entities").fetchone()["cnt"]
+        rel_count = self.conn.execute("SELECT COUNT(*) as cnt FROM relationships").fetchone()["cnt"]
+        db_size = self.conn.execute("SELECT pg_database_size(current_database()) AS size").fetchone()["size"]
+        return {
+            "memories": counts,
+            "entities": entity_count,
+            "relationships": rel_count,
+            "db_size_mb": round(float(db_size) / (1024 * 1024), 2),
+        }

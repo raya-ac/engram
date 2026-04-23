@@ -830,17 +830,11 @@ class MCPServer:
             (new_content, emb_blob, mem.id),
         )
         # rebuild FTS entry
-        row = self.store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (mem.id,)).fetchone()
-        if row:
-            self.store.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (row[0],))
-            hqs = self.store.conn.execute(
-                "SELECT query_text FROM hypothetical_queries WHERE memory_id = ?", (mem.id,)
-            ).fetchall()
-            hq_text = " ".join(r["query_text"] for r in hqs)
-            self.store.conn.execute(
-                "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, ?)",
-                (row[0], new_content, hq_text),
-            )
+        hqs = self.store.conn.execute(
+            "SELECT query_text FROM hypothetical_queries WHERE memory_id = ?", (mem.id,)
+        ).fetchall()
+        hq_text = " ".join(r["query_text"] for r in hqs)
+        self.store.refresh_fts_entry(mem.id, new_content, hq_text)
         self.store.invalidate_embedding_cache()
         self.store.invalidate_search_cache()
         self.store._emit_event("memory_edit", memory_id=mem.id, detail=f"content updated ({len(new_content)} chars)")
@@ -1667,7 +1661,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.4.1")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.5.0")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

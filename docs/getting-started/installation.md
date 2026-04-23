@@ -21,6 +21,26 @@ requires python 3.11+. first run downloads two small models (~100MB total):
 - `BAAI/bge-small-en-v1.5` (33MB) — embeddings
 - `cross-encoder/ms-marco-MiniLM-L-6-v2` (22MB) — reranking
 
+## storage backends
+
+engram supports:
+
+- `sqlite` for local-first installs
+- `postgres` for concurrent web + MCP deployments
+
+sqlite is still the default and requires no extra setup.
+
+if you want postgres from day one, point config at it:
+
+```yaml
+storage_backend: postgres
+postgres_dsn: postgresql://user:pass@localhost:5432/engram
+```
+
+if you're already using sqlite and want to move later, use the migration guide:
+
+- [Postgres Migration](../guides/postgres-migration.md)
+
 ## optional: API embedding backends
 
 use cloud embedding APIs for higher quality:

@@ -13,7 +13,7 @@
 
 a cognitive memory system that actually remembers things. built because flat markdown files don't scale and every "memory" tool i tried was either too simple (just embeddings) or too complex (needs redis + neo4j + a PhD).
 
-engram sits in the middle. one sqlite file, hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time. **98.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — highest published score, beating MemPalace (96.6%), Emergence AI (86%), and every other memory system benchmarked.
+engram sits in the middle. it starts as one sqlite file for local use, can graduate to postgres when you want a real concurrent service, keeps hybrid retrieval that fuses five signals, memory layers that model how brains actually work, and a neural visualization that shows the whole thing firing in real time. **98.1% R@5 on [LongMemEval](https://arxiv.org/abs/2410.10813)** (ICLR 2025) — highest published score, beating MemPalace (96.6%), Emergence AI (86%), and every other memory system benchmarked.
 
 ## what it does
 
@@ -198,9 +198,47 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+or from PyPI:
+
+```bash
+pip install engram-memory-system
+```
+
 needs python 3.11+. first run will download two small models (~100MB total):
 - `BAAI/bge-small-en-v1.5` (33MB) — embeddings
 - `cross-encoder/ms-marco-MiniLM-L-6-v2` (22MB) — reranking
+
+## storage backends
+
+engram now supports both:
+
+- `sqlite` for local single-user installs and quick starts
+- `postgres` for always-on web + MCP deployments where multiple clients are hitting the same memory store
+
+default config still uses sqlite:
+
+```yaml
+storage_backend: sqlite
+db_path: ~/.local/share/engram/memory.db
+postgres_dsn: ""
+```
+
+to migrate an existing local install to postgres:
+
+```bash
+engram migrate-postgres \
+  --dsn postgresql://user:pass@localhost:5432/engram \
+  --switch-config
+```
+
+that command:
+
+- copies your current sqlite database into postgres
+- verifies the migrated counts before switching
+- backs up `config.yaml`
+- flips `storage_backend` + `postgres_dsn` for the next restart
+
+the original sqlite database is left untouched as a rollback path.
 
 ### optional: API backends
 
@@ -727,7 +765,7 @@ POST /api/ingest/sessions             ingest recent Claude Code sessions
 
 ## architecture
 
-everything lives in one sqlite file (`~/.local/share/engram/memory.db`). no external services.
+local installs can live in one sqlite file (`~/.local/share/engram/memory.db`). if you run engram as a concurrent web + MCP service, you can switch the primary store to postgres.
 
 ```
 engram/

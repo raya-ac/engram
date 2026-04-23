@@ -159,20 +159,12 @@ def evolve_neighbors(new_memory: Memory, neighbors: list[Memory],
                 )
 
                 # rebuild FTS
-                row = store.conn.execute(
-                    "SELECT rowid FROM memories WHERE id = ?", (neighbor.id,)
-                ).fetchone()
-                if row:
-                    store.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (row[0],))
-                    hqs = store.conn.execute(
-                        "SELECT query_text FROM hypothetical_queries WHERE memory_id = ?",
-                        (neighbor.id,),
-                    ).fetchall()
-                    hq_text = " ".join(r["query_text"] for r in hqs)
-                    store.conn.execute(
-                        "INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, ?)",
-                        (row[0], new_content, hq_text),
-                    )
+                hqs = store.conn.execute(
+                    "SELECT query_text FROM hypothetical_queries WHERE memory_id = ?",
+                    (neighbor.id,),
+                ).fetchall()
+                hq_text = " ".join(r["query_text"] for r in hqs)
+                store.refresh_fts_entry(neighbor.id, new_content, hq_text)
 
                 store.invalidate_embedding_cache()
                 evolved_ids.append(neighbor.id)

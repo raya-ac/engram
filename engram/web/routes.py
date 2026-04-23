@@ -1122,11 +1122,7 @@ async def edit_memory(request: Request, memory_id: str):
     emb_blob = emb[0].astype('float32').tobytes() if emb.size > 0 else None
     store.conn.execute("UPDATE memories SET content = ?, embedding = ? WHERE id = ?",
                        (new_content, emb_blob, memory_id))
-    row = store.conn.execute("SELECT rowid FROM memories WHERE id = ?", (memory_id,)).fetchone()
-    if row:
-        store.conn.execute("DELETE FROM memories_fts WHERE rowid = ?", (row[0],))
-        store.conn.execute("INSERT INTO memories_fts (rowid, content, hypothetical_queries) VALUES (?, ?, '')",
-                           (row[0], new_content))
+    store.refresh_fts_entry(memory_id, new_content, "")
     store.invalidate_embedding_cache()
     store.invalidate_search_cache()
     store._emit_event("memory_edit", memory_id=memory_id)
