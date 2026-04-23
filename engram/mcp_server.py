@@ -1661,7 +1661,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.5.0")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.5.1")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

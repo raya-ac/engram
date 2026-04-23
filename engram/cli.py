@@ -1033,6 +1033,15 @@ def cmd_migrate_postgres(args, config: Config):
         dst.refresh_fts_entry(row["id"], row["content"], " ".join(hq_map.get(row["id"], [])))
     dst.conn.commit()
 
+    valid_memory_ids = {row["id"] for row in memories}
+    valid_entity_ids = {row["id"] for row in entities}
+    skipped_counts = {
+        "entity_mentions": 0,
+        "relationships": 0,
+        "importance_history": 0,
+        "status_history": 0,
+    }
+
     for row in entities:
         dst.conn.execute(
             """INSERT INTO entities (id, canonical_name, aliases, entity_type, first_seen, last_seen, metadata)
@@ -1041,6 +1050,9 @@ def cmd_migrate_postgres(args, config: Config):
             (row["id"], row["canonical_name"], row["aliases"], row["entity_type"], row["first_seen"], row["last_seen"], row["metadata"]),
         )
     for row in relationships:
+        if row["source_entity_id"] not in valid_entity_ids or row["target_entity_id"] not in valid_entity_ids:
+            skipped_counts["relationships"] += 1
+            continue
         dst.conn.execute(
             """INSERT INTO relationships
                (source_entity_id, target_entity_id, relation_type, strength, evidence_count,
@@ -1056,6 +1068,9 @@ def cmd_migrate_postgres(args, config: Config):
             ),
         )
     for row in entity_mentions:
+        if row["entity_id"] not in valid_entity_ids or row["memory_id"] not in valid_memory_ids:
+            skipped_counts["entity_mentions"] += 1
+            continue
         dst.conn.execute(
             "INSERT INTO entity_mentions (entity_id, memory_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             (row["entity_id"], row["memory_id"]),
@@ -1090,11 +1105,17 @@ def cmd_migrate_postgres(args, config: Config):
             (row["session_id"], row["summary"], row["metadata"], row["created_at"], row["updated_at"]),
         )
     for row in importance_history:
+        if row["memory_id"] not in valid_memory_ids:
+            skipped_counts["importance_history"] += 1
+            continue
         dst.conn.execute(
             "INSERT INTO importance_history (memory_id, score, recorded_at) VALUES (?, ?, ?)",
             (row["memory_id"], row["score"], row["recorded_at"]),
         )
     for row in status_history:
+        if row["memory_id"] not in valid_memory_ids:
+            skipped_counts["status_history"] += 1
+            continue
         dst.conn.execute(
             "INSERT INTO status_history (memory_id, old_status, new_status, reason, changed_at) VALUES (?, ?, ?, ?, ?)",
             (row["memory_id"], row["old_status"], row["new_status"], row["reason"], row["changed_at"]),
@@ -1111,10 +1132,15 @@ def cmd_migrate_postgres(args, config: Config):
     }
     print(f"  target counts after copy: {migrated_counts}")
 
+    expected_counts = dict(source_counts)
+    for key, skipped in skipped_counts.items():
+        if key in expected_counts:
+            expected_counts[key] = max(0, expected_counts[key] - skipped)
+
     mismatches = {
-        key: (source_counts[key], migrated_counts[key])
-        for key in source_counts
-        if source_counts[key] != migrated_counts[key]
+        key: (expected_counts[key], migrated_counts[key])
+        for key in expected_counts
+        if expected_counts[key] != migrated_counts[key]
     }
     if mismatches:
         print(f"Error: migration verification failed: {mismatches}")
@@ -1123,6 +1149,9 @@ def cmd_migrate_postgres(args, config: Config):
         sys.exit(1)
 
     print("  verification: passed")
+    skipped_counts = {key: value for key, value in skipped_counts.items() if value}
+    if skipped_counts:
+        print(f"  skipped stale references: {skipped_counts}")
 
     if args.switch_config:
         config_path = Path(args.config).expanduser() if args.config else (Path.home() / ".config" / "engram" / "config.yaml")

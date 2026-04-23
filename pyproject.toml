@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-memory-system"
-version = "0.5.0"
+version = "0.5.1"
 description = "Cognitive memory system with hybrid retrieval, entity graphs, and memory lifecycle. 98.1% R@5 on LongMemEval."
 license = "MIT"
 requires-python = ">=3.11"

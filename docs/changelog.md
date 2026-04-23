@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 (April 24, 2026)
+
+### fixes
+- **postgres migration hardening** — `engram migrate-postgres` now tolerates stale SQLite references during real-world migrations instead of failing on orphaned `entity_mentions`, `importance_history`, or `status_history` rows
+- **migration verification** — post-copy verification now compares against valid migratable rows, so installations with historical SQLite inconsistencies can still complete a clean verified move to postgres
+
 ## 0.5.0 (April 24, 2026)
 
 ### new features
