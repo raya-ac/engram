@@ -5,12 +5,14 @@
 <h1 align="center">engram</h1>
 
 <p align="center">
-  <a href="https://pypi.org/project/engram-memory-system/"><img src="https://img.shields.io/pypi/v/engram-memory-system.svg?cacheSeconds=300" alt="PyPI"></a>
-  <a href="https://github.com/raya-ac/engram/actions/workflows/test.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
-  <a href="https://github.com/raya-ac/engram/actions/workflows/publish.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/publish.yml/badge.svg" alt="Publish to PyPI"></a>
+  <a href="https://pypi.org/project/engram-memory-system/"><img src="https://img.shields.io/pypi/v/engram-memory-system?logo=pypi&cacheSeconds=60" alt="PyPI"></a>
+  <a href="https://github.com/raya-ac/engram/actions/workflows/test.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/test.yml/badge.svg?branch=main&event=push" alt="Tests"></a>
+  <a href="https://github.com/raya-ac/engram/actions/workflows/publish.yml"><img src="https://github.com/raya-ac/engram/actions/workflows/publish.yml/badge.svg?event=release" alt="Publish to PyPI"></a>
   <a href="https://engram-memory.dev"><img src="https://img.shields.io/badge/docs-engram--memory.dev-blue" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
 </p>
+
+<p align="center"><strong>current release:</strong> <a href="https://pypi.org/project/engram-memory-system/0.5.2/">0.5.2</a></p>
 
 a cognitive memory system that actually remembers things. built because flat markdown files don't scale and every "memory" tool i tried was either too simple (just embeddings) or too complex (needs redis + neo4j + a PhD).
 
