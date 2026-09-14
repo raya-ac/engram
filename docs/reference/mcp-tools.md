@@ -1,4 +1,4 @@
-# MCP Tools (83)
+# MCP tools
 
 all tools available via the engram MCP server (`engram serve --mcp`).
 
@@ -136,3 +136,27 @@ for resumable agent work, the default flow is:
 4. `session_checkpoint` or `session_handoff` near a stop point if you want to explicitly persist the current packet
 
 the active MCP session also refreshes its handoff automatically after recalls, memory writes, diary writes, and memory edits.
+
+## dormant review
+
+The core server also exposes `dormant_review`, `dormant_inspect` and
+`dormant_feedback`. Review lists bounded metadata, inspect explicitly exposes a
+still-eligible candidate, and feedback records Useful/Irrelevant/Dismissed without
+ordinary memory reinforcement. None is automatically inserted into normal recall.
+See [dormant recall](../dormant-recall.md) for schemas, defaults and limitations.
+
+## separate Codex adapter
+
+`codex_context`, `codex_checkpoint` and `codex_diagnostics` belong to the separate
+project-bound adapter server, not the core tool list. See the
+[adapter guide](../codex-adapter.md) for supported setup and task workflows.
+
+## structured check evidence
+
+`evidence_put`, `evidence_get` and `evidence_list` expose the same harness-neutral
+contract as the [native local API](../native-api.md). records are caller-supplied
+observations, not independently verified claims. reads preserve access history;
+expiry and referenced memory lifecycle affect whether evidence remains eligible.
+Engram does not execute check instructions embedded in these records.
+
+the server's `tools/list` is the authoritative schema for the running revision.

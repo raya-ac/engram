@@ -83,7 +83,7 @@
 
 ### new features
 - **HNSW ANN index** — approximate nearest neighbor via hnswlib, 100% recall@10, 0.09ms search, scales to 1M vectors
-- **98.1% R@5 on LongMemEval** — new SOTA, beating MemPalace (96.6%) and all others
+- historically reported **98.1% session recall-any@5** on a 470-question LongMemEval subset; see [measurement scope and limitations](architecture/benchmarks.md)
 - **multi-backend embeddings** — Voyage AI, OpenAI, Google Gemini alongside local MLX/sentence-transformers
 - **Voyage cloud reranker** — rerank-2.5/2.5-lite alongside local cross-encoder
 - **SSE MCP transport** — `engram serve --mcp-sse` for HTTP clients

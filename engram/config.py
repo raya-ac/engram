@@ -30,6 +30,8 @@ class DormantRecallConfig:
     dormancy_days: float = 30.0
     min_relevance: float = 0.75  # raw cosine, not truth/confidence
     max_bonus: float = 0.05
+    rerank_candidates: int = 12
+    min_rerank_score: float = 0.6  # model score, not a probability
     cooldown_days: float = 7.0
     feedback_cooldown_days: float = 30.0
     log_max_events: int = 1000
@@ -43,6 +45,7 @@ class DormantRecallConfig:
         bounds = {
             "candidate_limit": (1, 200), "dormancy_days": (1, 3650),
             "min_relevance": (0.5, 1), "max_bonus": (0, 0.1),
+            "rerank_candidates": (1, 50), "min_rerank_score": (-10, 10),
             "cooldown_days": (1, 365), "feedback_cooldown_days": (1, 365),
             "log_max_events": (1, 10000), "log_retention_days": (1, 365),
         }
@@ -50,7 +53,7 @@ class DormantRecallConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f"dormant_recall.{name} must be between {low} and {high}")
-        for name in ("candidate_limit", "log_max_events"):
+        for name in ("candidate_limit", "log_max_events", "rerank_candidates"):
             if not isinstance(getattr(self, name), int):
                 raise ValueError(f"dormant_recall.{name} must be an integer")
 

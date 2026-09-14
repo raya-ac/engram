@@ -1,4 +1,4 @@
-# CLI Commands (16)
+# CLI commands
 
 all commands available via `engram <command>`.
 
@@ -111,3 +111,31 @@ memory counts by layer, entities, relationships, DB size, ANN index status.
 engram demo [--keep] [--web] [--port PORT]
 ```
 interactive walkthrough with sample data. `--keep` preserves the demo database. `--web` starts the dashboard.
+
+## dormant review and Codex adapter
+
+```sh
+engram --config /absolute/config.yaml dormant review --limit 20
+engram --config /absolute/config.yaml dormant inspect EVENT_ID
+engram --config /absolute/config.yaml dormant feedback EVENT_ID dismissed
+engram --config /absolute/config.yaml codex setup --project /absolute/project
+engram --config /absolute/config.yaml codex serve --project /absolute/project
+engram --config /absolute/config.yaml codex context --project /absolute/project
+engram --config /absolute/config.yaml codex diagnostics --project /absolute/project
+```
+
+Dormant commands are an explicit review flow; the adapter is a separate stdio
+server for a bound project. `codex setup` only prints a registration command.
+See [dormant recall](../dormant-recall.md) and the [Codex adapter](../codex-adapter.md).
+
+## native local API
+
+```sh
+engram --config /absolute/path/to/config.yaml api
+```
+
+serves sequential JSONL requests until EOF, with no network listener or MCP
+framing. the config must be an existing absolute path. use the `operations`
+request for the running [native API schemas](../native-api.md). storage
+operations require an initialized database; startup does not run legacy
+backfills or load models. semantic search loads its models on demand.

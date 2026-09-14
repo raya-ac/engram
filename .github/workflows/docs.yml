@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
 
 permissions:
   contents: write
@@ -21,7 +22,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install MkDocs
-        run: pip install mkdocs mkdocs-material
+        run: pip install 'mkdocs>=1.6,<2' 'mkdocs-material>=9,<10'
 
       - name: Deploy
-        run: mkdocs gh-deploy --force
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("docs/build.json").write_text(json.dumps({"source_revision": os.environ["GITHUB_SHA"], "workflow_run": os.environ["GITHUB_RUN_ID"]}) + "\n")
+          PY
+          mkdocs gh-deploy --force

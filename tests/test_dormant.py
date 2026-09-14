@@ -39,6 +39,7 @@ def isolated(request, tmp_path, monkeypatch):
     store = Store(cfg)
     store.init_db()
     monkeypatch.setattr("engram.dormant.time.time", lambda: NOW)
+    monkeypatch.setattr("engram.dormant.cross_encoder_rerank", lambda q, docs, model: [(i, 1.0) for i in range(len(docs))])
     yield store, cfg
     store.close()
     if schema:
@@ -55,7 +56,7 @@ def memory(store, name="dormant", days=90, **kwargs):
 
 
 def candidates(monkeypatch, hits):
-    monkeypatch.setattr(retrieval, "_dense_search", lambda q, s, c, limit: hits[:limit])
+    monkeypatch.setattr("engram.dormant._candidate_search", lambda q, s, c, types: hits[:c.dormant_recall.candidate_limit])
 
 
 def snapshot(store, mid):
@@ -131,7 +132,7 @@ def test_semantic_only_connection_without_invented_bridge(isolated, monkeypatch)
     assert "solved" not in detail["connection"]
     # The extra dense query must be the original, not ordinary query expansion.
     observed = []
-    monkeypatch.setattr(retrieval, "_dense_search", lambda q, *a: observed.append(q) or [])
+    monkeypatch.setattr("engram.dormant._candidate_search", lambda q, *a: observed.append(q) or [])
     evaluate_shadow("memory", store, cfg, set(), TYPES)
     assert observed == ["memory"]
 
@@ -246,6 +247,7 @@ def test_ordinary_results_unchanged_independent_candidates_and_cache(isolated, m
         calls.append(limit)
         return hits[:limit]
     monkeypatch.setattr(retrieval, "_dense_search", dense)
+    monkeypatch.setattr("engram.dormant._candidate_search", lambda q, s, c, types: dense(q, s, c, c.dormant_recall.candidate_limit))
     monkeypatch.setattr(retrieval, "_bm25_search", lambda *a: [])
     monkeypatch.setattr(retrieval, "_graph_search", lambda *a: [])
     monkeypatch.setattr(retrieval, "_hopfield_search", lambda *a: [])
@@ -265,7 +267,7 @@ def test_ordinary_results_unchanged_independent_candidates_and_cache(isolated, m
 def test_disabled_no_schema_or_search(isolated, monkeypatch):
     store, cfg = isolated
     cfg.dormant_recall.mode = "off"
-    monkeypatch.setattr(retrieval, "_dense_search", lambda *a: pytest.fail("called when off"))
+    monkeypatch.setattr("engram.dormant._candidate_search", lambda *a: pytest.fail("called when off"))
     assert evaluate_shadow(QUERY, store, cfg, set(), TYPES) is None
     if cfg.storage_backend == "sqlite":
         assert not store.conn.execute("SELECT name FROM sqlite_master WHERE name LIKE 'dormant_%'").fetchall()
@@ -320,8 +322,36 @@ def test_real_dense_search_not_ordinary_candidate_pool(isolated, monkeypatch):
     mem = store.get_memory("dormant")
     mem.embedding = np.array([1, 0, 0], dtype=np.float32)
     store.save_memory(mem)
-    monkeypatch.setattr(retrieval, "embed_query", lambda *a: np.array([1, 0, 0], dtype=np.float32))
+    monkeypatch.setattr("engram.dormant.embed_query", lambda *a: np.array([1, 0, 0], dtype=np.float32))
     assert event(store, cfg)["memory_id"] == "dormant"
+
+
+def test_stale_ann_and_embedding_cache_cannot_hide_target(isolated, monkeypatch):
+    from types import SimpleNamespace
+    store, cfg = isolated
+    memory(store)
+    mem = store.get_memory("dormant")
+    mem.embedding = np.array([2, 0, 0], dtype=np.float32)
+    store.save_memory(mem)
+    store.ann_index = SimpleNamespace(ready=True, search=lambda *a, **kw: [], save=lambda: None)
+    store._embedding_cache = ([], np.array([]))
+    monkeypatch.setattr("engram.dormant.embed_query", lambda *a: np.array([3, 0, 0], dtype=np.float32))
+    row = event(store, cfg)
+    assert row["memory_id"] == "dormant" and row["relevance"] == 1.0
+
+
+def test_candidate_budget_applies_after_active_dormant_profile_filters(isolated, monkeypatch):
+    from engram.dormant import _candidate_search
+    store, cfg = isolated
+    cfg.dormant_recall.candidate_limit = 1
+    for name, kwargs in [("recent", {"days":1}), ("forgotten", {"forgotten":True}),
+                         ("inactive", {"status":"superseded"}), ("wrongtype", {"memory_type":"narrative"}),
+                         ("eligible", {"memory_type":"fact"})]:
+        m = memory(store, name, **kwargs)
+        m.embedding = np.array([1, 0.2 if name == "eligible" else 0, 0], dtype=np.float32)
+        store.save_memory(m)
+    monkeypatch.setattr("engram.dormant.embed_query", lambda *a: np.array([1, 0, 0], dtype=np.float32))
+    assert _candidate_search(QUERY, store, cfg, {"fact"})[0][0] == "eligible"
 
 
 def test_config_switch_and_bounds(tmp_path, monkeypatch):
@@ -336,3 +366,41 @@ def test_config_switch_and_bounds(tmp_path, monkeypatch):
                          ("log_max_events", 0), ("cooldown_days", True)]:
         with pytest.raises(ValueError):
             replace(DormantRecallConfig(), **{field: value}).validate()
+
+
+def test_generic_topic_match_rejected_by_independent_relevance_check(isolated, monkeypatch):
+    store, cfg = isolated
+    memory(store)
+    candidates(monkeypatch, [("dormant", 0.95)])
+    monkeypatch.setattr("engram.dormant.cross_encoder_rerank", lambda *a: [(0, -2.7)])
+    assert event(store, cfg)["outcome"] == "none"
+
+
+def test_relevance_failure_fails_open_without_reinforcing(isolated, monkeypatch):
+    store, cfg = isolated
+    memory(store)
+    candidates(monkeypatch, [("dormant", 0.9)])
+    def fail(*a):
+        raise RuntimeError("unavailable")
+    monkeypatch.setattr("engram.dormant.cross_encoder_rerank", fail)
+    before = snapshot(store, "dormant")
+    assert evaluate_shadow(QUERY, store, cfg, set(), TYPES) is None
+    assert snapshot(store, "dormant") == before
+
+
+def test_old_event_schema_upgrades_without_rewriting_rows(isolated, monkeypatch):
+    from engram.dormant import SCHEMA
+    store, cfg = isolated
+    memory(store)
+    for statement in SCHEMA.split(';'):
+        if statement.strip():
+            store.conn.execute(statement)
+    store.conn.execute("INSERT INTO dormant_recall_events (id,sequence,created_at,outcome,candidate_count,query_term_count) VALUES ('old',1,?,'none',0,1)", (NOW,))
+    store.conn.commit()
+    candidates(monkeypatch, [("dormant", 0.9)])
+    before = snapshot(store, "dormant")
+    row = event(store, cfg)
+    assert row['algorithm'] == 'current-db-relevance-v2' and row['rerank_score'] == 1.0
+    old = next(r for r in review(cfg) if r['id'] == 'old')
+    assert old['algorithm'] == 'ann-cosine-v1' and old['rerank_score'] is None
+    assert snapshot(store, 'dormant') == before

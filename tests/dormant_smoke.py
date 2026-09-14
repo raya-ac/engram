@@ -24,7 +24,7 @@ from engram.store import Memory, Store
 QUERY = "Is offline voice transcription possible?"
 CONTENTS = {
     "current": "Offline voice transcription is possible with a compact local speech model on a laptop.",
-    "blocker": "Speech recognition cannot run without internet access.",
+    "blocker": "An offline voice transcription prototype was blocked by the cost of a local acoustic model. Test compact recognizers on a laptop before shipping it.",
     "irrelevant": "Bread dough needs water and a long fermentation before baking.",
     "forgotten": "Offline voice transcription previously needed a cloud service.",
     "superseded": "Offline voice transcription previously required an internet connection.",
@@ -138,11 +138,10 @@ def main():
     set_backend("sentence_transformers")
     vectors = embed_documents(list(CONTENTS.values()))
     similarities = {mid: float(score) for mid, score in zip(CONTENTS, vectors @ embed_query(QUERY))}
-    assert not _terms(QUERY) & _terms(CONTENTS["blocker"])
     assert 0.70 <= similarities["blocker"] < 0.75
     assert similarities["irrelevant"] < 0.70
     report = {"synthetic_data_only": True, "embedding_model": "BAAI/bge-small-en-v1.5",
-              "semantic_only_cosine": similarities["blocker"], "literal_overlap": 0,
+              "fixture_cosine": similarities["blocker"], "literal_overlap": len(_terms(QUERY) & _terms(CONTENTS["blocker"])),
               "default_threshold": 0.75, "isolated_pilot_threshold": 0.70}
 
     def cli(path, *arguments):
@@ -161,7 +160,7 @@ def main():
     assert len(rows) == 1 and rows[0]["memory_id"] == "blocker"
     eid = rows[0]["id"]
     inspected = cli(path, "dormant", "inspect", eid)
-    assert "embedding-only" in inspected["connection"]
+    assert "Separate query/content relevance check" in inspected["connection"]
     assert cli(path, "dormant", "feedback", eid, "useful")["feedback"] == "useful"
     after = snapshot(cfg)
     assert all(after[mid] == before[mid] for mid in CONTENTS if mid != "current")
@@ -172,7 +171,7 @@ def main():
     cfg, path = prepare(root, "default-threshold", vectors, "shadow", 0.75)
     cli(path, "search", QUERY, "-k", "1", "--json")
     assert cli(path, "dormant", "review")[0]["outcome"] == "none"
-    report["default_threshold_result"] = "abstained on this semantic-only fixture"
+    report["default_threshold_result"] = "abstained on this paraphrased fixture"
 
     ordinary = None
     for mode in ("off", "shadow"):
@@ -193,7 +192,7 @@ def main():
                 rows = mcp.call("dormant_review")
                 assert len(rows) == 1 and rows[0]["memory_id"] == "blocker"
                 eid = rows[0]["id"]
-                assert "embedding-only" in mcp.call("dormant_inspect", {"event_id": eid})["connection"]
+                assert "Separate query/content relevance check" in mcp.call("dormant_inspect", {"event_id": eid})["connection"]
                 assert mcp.call("dormant_feedback", {"event_id": eid, "category": "dismissed"})["feedback"] == "dismissed"
                 assert [r["id"] for r in mcp.call("recall", {"query": QUERY, "top_k": 1})] == ids
                 assert mcp.call("dormant_review")[0]["outcome"] == "none"

@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(prog="engram", description="Cognitive memory system")
     parser.add_argument("--config", help="Path to config.yaml")
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("api", help="Native persistent JSONL API for local harnesses (no network listener)")
 
     # ingest
     p_ingest = sub.add_parser("ingest", help="Ingest files into memory")
@@ -43,6 +44,15 @@ def main():
     p_dormant_feedback = dormant_sub.add_parser("feedback", help="Record explicit feedback; useful means actually used")
     p_dormant_feedback.add_argument("event_id")
     p_dormant_feedback.add_argument("category", choices=["useful", "irrelevant", "dismissed"])
+
+    p_codex = sub.add_parser("codex", help="Project-scoped Codex adapter (does not install host hooks)")
+    codex_sub = p_codex.add_subparsers(dest="action", required=True)
+    for action in ("setup", "serve", "context", "diagnostics"):
+        command = codex_sub.add_parser(action)
+        command.add_argument("--project", required=True, help="Absolute project directory")
+        if action == "context":
+            command.add_argument("--task", help="Exact checkpoint task label")
+            command.add_argument("--limit", type=int, default=8)
 
     # remember
     p_remember = sub.add_parser("remember", help="Store a memory directly")
@@ -123,7 +133,15 @@ def main():
     p_serve.add_argument("--port", type=int, help="Port override")
 
     args = parser.parse_args()
+    if args.command == "api" and (not args.config or not Path(args.config).is_absolute()
+                                  or not Path(args.config).is_file()):
+        parser.error("api requires --config with an existing absolute config file")
     config = Config.load(args.config)
+
+    if args.command == "api":
+        from engram.service import run_stdio
+        run_stdio(config)
+        return
 
     # set embedding backend + default model from config
     from engram.embeddings import set_backend, set_default_model
@@ -144,6 +162,20 @@ def main():
         else:
             result = feedback(config, args.event_id, args.category)
         print(json.dumps(result, indent=2))
+    elif args.command == "codex":
+        from engram.adapters.codex import CodexAdapter, run_stdio, setup_command
+        if args.action == "setup":
+            print(setup_command(args.project, args.config))
+        elif args.action == "serve":
+            run_stdio(config, args.project)
+        else:
+            adapter = CodexAdapter(config, args.project)
+            try:
+                result = (adapter.context(args.task, args.limit) if args.action == "context"
+                          else adapter.diagnostics())
+                print(json.dumps(result, indent=2))
+            finally:
+                adapter.close()
     elif args.command == "remember":
         cmd_remember(args, config)
     elif args.command == "entity":

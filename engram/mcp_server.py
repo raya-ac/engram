@@ -27,8 +27,10 @@ from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmatio
                               get_source_trust, classify_write_operation,
                               annotate_causal_parent, canonicalize_content)
 from engram.intelligence import build_query_brief, compare_queries, activity_hotspots
+from engram.evidence import TOOLS as EVIDENCE_TOOLS, evidence_put, evidence_get, evidence_list
 
 TOOLS = [
+    *EVIDENCE_TOOLS,
     {"name": "dormant_review", "description": "Explicitly review metadata-only dormant shadow evaluations; never inject into ordinary recall", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
     {"name": "dormant_inspect", "description": "Explicitly inspect one dormant shadow candidate without reinforcing it; rechecks active/non-forgotten eligibility", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}}, "required": ["event_id"]}},
     {"name": "dormant_feedback", "description": "Record explicit feedback for an inspected dormant candidate. Useful means actually used; silence is never usefulness. Does not change memory importance or access fields.", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}, "category": {"type": "string", "enum": ["useful", "irrelevant", "dismissed"]}}, "required": ["event_id", "category"]}},
@@ -196,6 +198,9 @@ class MCPServer:
 
     def _call_tool(self, name: str, args: dict) -> Any:
         handlers = {
+            "evidence_put": lambda args: evidence_put(self.store, **args),
+            "evidence_get": lambda args: evidence_get(self.store, **args),
+            "evidence_list": lambda args: evidence_list(self.store, **args),
             "dormant_review": self._dormant_review,
             "dormant_inspect": self._dormant_inspect,
             "dormant_feedback": self._dormant_feedback,

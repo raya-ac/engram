@@ -8,6 +8,8 @@ No full query, memory text, literal matching terms or query hashes are persisted
 from __future__ import annotations
 
 import logging
+import heapq
+import hashlib
 import math
 import re
 import time
@@ -15,11 +17,15 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import replace
 
+import numpy as np
+
 from engram.config import Config
 from engram.store import Memory, Store
+from engram.embeddings import embed_query, cross_encoder_rerank
 
 logger = logging.getLogger(__name__)
 DAY = 86400
+ALGORITHM = "current-db-relevance-v2"
 STOP_WORDS = frozenset("a an and are as at be been but by can could did do does for from had has have how i if in is it its me my of on or our please show that the their them then there these they this to was we were what when where which who why will with would you your".split())
 
 # DOUBLE PRECISION keeps Unix timestamp precision on both SQLite and PostgreSQL.
@@ -65,6 +71,49 @@ def _terms(text: str) -> set[str]:
             if len(t) > 2 and t not in STOP_WORDS}
 
 
+def _candidate_search(query: str, store: Store, config: Config,
+                      allowed_types: set[str]) -> list[tuple[str, float]]:
+    """Exact current-store search, independent of ordinary ANN/cache contents.
+
+    Filter eligibility and ordinary last use before ranking. Stream vectors into
+    a bounded heap: O(N*dimension) work, O(candidate_limit + dimension) memory.
+    No index load/rebuild, access recording, or full memory text is needed here.
+    """
+    types = sorted(getattr(t, "value", t) for t in allowed_types)
+    if not types:
+        return []
+    vector = np.asarray(embed_query(query, config.embedding_model), dtype=np.float32)
+    norm = float(np.linalg.norm(vector))
+    if vector.ndim != 1 or not math.isfinite(norm) or norm <= 0:
+        return []
+    vector = vector / norm
+    cutoff = time.time() - config.dormant_recall.dormancy_days * DAY
+    placeholders = ",".join("?" for _ in types)
+    rows = store.conn.execute(f"""SELECT id, embedding FROM memories
+        WHERE forgotten = 0 AND (status = 'active' OR status IS NULL)
+        AND embedding IS NOT NULL AND created_at <= ? AND last_accessed <= ?
+        AND memory_type IN ({placeholders})""", (cutoff, cutoff, *types))
+    heap = []
+    limit = config.dormant_recall.candidate_limit
+    for row in rows:
+        blob = row["embedding"]
+        if len(blob) != vector.size * 4:
+            continue
+        doc = np.frombuffer(blob, dtype=np.float32)
+        doc_norm = float(np.linalg.norm(doc))
+        if not math.isfinite(doc_norm) or doc_norm <= 0:
+            continue
+        score = float(np.dot(doc, vector) / doc_norm)
+        if not math.isfinite(score):
+            continue
+        item = (min(1.0, max(-1.0, score)), row["id"])
+        if len(heap) < limit:
+            heapq.heappush(heap, item)
+        elif item > heap[0]:
+            heapq.heapreplace(heap, item)
+    return [(mid, score) for score, mid in sorted(heap, key=lambda x: (-x[0], x[1]))]
+
+
 @contextmanager
 def _transaction(config: Config):
     """Serialize cooldown decisions, without touching the caller's transaction."""
@@ -85,6 +134,16 @@ def _transaction(config: Config):
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 db.conn.execute(statement)
+        # Additive upgrade from the initial shadow schema. Preserve old events.
+        if config.normalized_storage_backend == "postgres":
+            columns = {r["column_name"] for r in db.conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'dormant_recall_events'")}
+        else:
+            columns = {r["name"] for r in db.conn.execute("PRAGMA table_info(dormant_recall_events)")}
+        for name, definition in (("rerank_score", "DOUBLE PRECISION"),
+                                 ("algorithm", "TEXT NOT NULL DEFAULT 'ann-cosine-v1'")):
+            if name not in columns:
+                db.conn.execute(f"ALTER TABLE dormant_recall_events ADD COLUMN {name} {definition}")
         yield db
         db.conn.commit()
     finally:
@@ -116,25 +175,45 @@ def evaluate_shadow(query: str, store: Store, config: Config, ordinary_ids: set[
     if config.dormant_recall.mode != "shadow":
         return None
     try:
-        from engram.retrieval import _dense_search
-
         cfg = config.dormant_recall
         cfg.validate()
         terms = _terms(query)
         # Original query only: expansions cannot manufacture the connection.
         # Independent of ordinary top_k, RRF cutoff, recency/frequency and cache.
-        candidates = _dense_search(query, store, config, cfg.candidate_limit) if terms else []
+        candidates = _candidate_search(query, store, config, allowed_types) if terms else []
+        shortlist = []
+        for memory_id, score in candidates:
+            if memory_id in ordinary_ids or not math.isfinite(score) or not cfg.min_relevance <= score <= 1.00001:
+                continue
+            mem = store.get_memory(memory_id)
+            if _eligible(mem, allowed_types):
+                shortlist.append(mem)
+            if len(shortlist) >= cfg.rerank_candidates:
+                break
+        # Run the model outside the serialized write transaction. Similarity by
+        # itself can reward generic topic mentions that do not answer the query.
+        checked = {}
+        if shortlist:
+            reranked = cross_encoder_rerank(query, [m.content for m in shortlist], config.cross_encoder_model)
+            for index, score in reranked:
+                if 0 <= index < len(shortlist) and math.isfinite(score) and score >= cfg.min_rerank_score:
+                    mem = shortlist[index]
+                    checked[mem.id] = (float(score), hashlib.sha256(mem.content.encode()).digest())
         now = time.time()
         with _transaction(config) as db:
             _prune(db, now)
             choices = []
             for memory_id, relevance in candidates[:cfg.candidate_limit]:
+                if memory_id not in checked:
+                    continue
                 if memory_id in ordinary_ids or not math.isfinite(relevance) or not cfg.min_relevance <= relevance <= 1.00001:
                     continue
                 relevance = min(1.0, relevance)  # allow floating-point cosine roundoff
                 mem = db.get_memory(memory_id)
                 if not _eligible(mem, allowed_types):
                     continue
+                if hashlib.sha256(mem.content.encode()).digest() != checked[memory_id][1]:
+                    continue  # edited during reranking; don't use a stale score
                 state = db.conn.execute("SELECT * FROM dormant_recall_state WHERE memory_id = ?",
                                         (memory_id,)).fetchone()
                 if state and state["cooldown_until"] > now:
@@ -170,11 +249,11 @@ def evaluate_shadow(query: str, store: Store, config: Config, ordinary_ids: set[
                 relevance = bonus = memory_id = days = overlap_count = None
             db.conn.execute("""INSERT INTO dormant_recall_events
                 (id, sequence, created_at, memory_id, outcome, candidate_count, relevance, bonus,
-                 dormant_days, overlap_count, query_term_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 dormant_days, overlap_count, query_term_count, rerank_score, algorithm)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (event_id, sequence, now, memory_id, "candidate" if chosen else "none",
                  min(len(candidates), cfg.candidate_limit), relevance, bonus, days,
-                 overlap_count, len(terms)))
+                 overlap_count, len(terms), checked[memory_id][0] if memory_id else None, ALGORITHM))
             _prune(db, now)
         return event_id
     except Exception as exc:
@@ -213,6 +292,8 @@ def inspect_event(config: Config, event_id: str) -> dict:
             connection += f"The query also shared {row['overlap_count']} distinct non-stopword terms with this memory."
         else:
             connection += "No literal term overlap; this is an embedding-only connection requiring review against the original task."
+        if row["rerank_score"] is not None:
+            connection += f" Separate query/content relevance check: {row['rerank_score']:.3f} (model score, not truth confidence)."
         return {"event_id": event_id, "memory_id": mem.id, "content": mem.content,
                 "status": mem.status, "source_type": mem.source_type,
                 "source_trust": mem.metadata.get("source_trust"),

@@ -9,7 +9,7 @@ memory for work that continues after the conversation ends.
 i built engram to keep the things an agent should be able to return to: decisions,
 errors, project context, procedures, and the connections between them. it stores
 memories in sqlite or postgres, searches them through several retrieval signals,
-and exposes the same store through a CLI, an MCP server, and a web dashboard.
+and exposes the same store through a CLI, an MCP server, and a web workspace.
 
 it also has a lifecycle. memories can be edited, challenged, superseded, promoted,
 or forgotten. retrieving something is not proof that it is still true. keeping
@@ -134,6 +134,46 @@ interface; [mcp_server.py](engram/mcp_server.py) defines it.
 ordinary search records returned results as accesses. that is a retrieval signal,
 not explicit evidence that someone used the result.
 
+## native application integration
+
+`engram --config /absolute/config.yaml api` runs a persistent local JSONL
+process. it exposes project context, semantic search, session checkpoints and
+structured evidence through a supported service boundary. a harness can launch
+Engram in its own Python environment without importing the store or speaking MCP.
+
+Kiln's native experience and Mythic's check/planning lifecycle belong to those
+projects. Engram supplies reusable memory and evidence APIs. evidence records
+carry caller provenance, timestamps, expiry and source references; they are not
+independently verified merely because they were stored. referenced forgotten or
+inactive memories cannot remain eligible supporting evidence. no observation
+can instruct Engram to execute a command or fetch a URL.
+
+[the native API contract](docs/native-api.md) distinguishes nonreinforcing scoped
+context from ordinary semantic search, which records accesses. it also describes
+immutable evidence, explicit unknown/stale states and supported operations.
+
+## optional Codex compatibility
+
+the optional separate adapter exposes `codex_context`, `codex_checkpoint`,
+`codex_diagnostics`, and a scoped `codex_evidence` reader. it reads explicitly scoped active
+memories, saves a deliberate task handoff, and reports its own process and
+persisted index coverage. it doesn't alter core retrieval, collect transcripts,
+install hooks, or reinforce memories when context is read.
+
+```sh
+engram --config /absolute/engram/config.yaml codex setup --project /absolute/project
+```
+
+that prints a supported `codex mcp add` command for review; it does not register
+anything automatically. each adapter process is bound to one canonical project
+directory. unscoped legacy notes and sibling projects stay outside its context.
+checkpoints are separate from memory records and can be replaced or cleared.
+the full Engram MCP server can remain connected alongside it for broader recall.
+
+[adapter setup, task-start/resume workflow and limits](docs/codex-adapter.md)
+includes tested registration syntax and explains what diagnostics can establish.
+a fresh adapter's PID does not prove another running client has reloaded code.
+
 ## how retrieval works
 
 ```text
@@ -175,14 +215,18 @@ dormant_recall:
   dormancy_days: 30
   min_relevance: 0.75
   max_bonus: 0.05
+  rerank_candidates: 12
+  min_rerank_score: 0.6
   cooldown_days: 7
   feedback_cooldown_days: 30
   log_max_events: 1000
   log_retention_days: 30
 ```
 
-the candidate search is independent of ordinary top-k results and their recency
-or frequency boosts. candidates must already pass a relevance floor. a bounded
+the candidate search reads current active, dormant embeddings directly from the
+database, independently of ordinary results and the ANN cache. a stale index
+cannot hide a newer memory from this path. candidates must pass the cosine floor
+and a separate query/content relevance check. a bounded
 bonus from dormancy and existing importance can reorder close relevant matches;
 age cannot bring an irrelevant item through the gate. literal word overlap is
 supporting evidence, not a requirement, so differently worded connections can
@@ -225,10 +269,21 @@ concurrency, failure isolation, and absence of reinforcement. a separate CLI/MCP
 smoke test uses synthetic memories and the cached local embedding model.
 
 **what remains unproven:** usefulness in real work and threshold calibration.
-in the synthetic model check, a related memory with no literal query overlap
-scored about 0.734. the conservative 0.75 default abstained; a 0.70 threshold in
-the isolated pilot admitted it. that is a concrete tradeoff to review, not a
-reason to claim the experiment improves recall quality.
+in the initial cosine-only probe, a sentence with no literal query overlap scored
+about 0.734. the 0.75 default abstained; a lower diagnostic threshold admitted it.
+the added relevance check now rejects that thin sentence. the current interface
+smoke test uses a more informative prototype note, which still falls below 0.75
+and is admitted only in its separately labelled 0.70 isolated pilot. that is a
+concrete precision/recall tradeoff, not evidence of broad usefulness.
+
+the repair also recovered a real Junkstep release note with one previous access
+and about 37 days of dormancy. it was missing from the old ANN index but ranked
+first against current database vectors at 0.817. in an isolated snapshot it added
+installer-packaging and release-verification context missing from ordinary
+results, passed the relevance check, and remained unreinforced. this is a targeted
+evaluator assessment; no positive user feedback was fabricated. exact scanning
+trades additional database work for current coverage, so larger stores need
+measurement before treating this as a scaling solution.
 
 ## keep the store understandable
 
@@ -260,8 +315,14 @@ not yet transfer dormant telemetry or its cooldown state.
 engram --config config.yaml serve --web
 ```
 
-the dashboard binds to `127.0.0.1:8420` by default. it includes memory and entity
-views, graph visualization, search, and maintenance controls. `web.auth_token`
+the workspace binds to `127.0.0.1:8420` by default. its redesigned memory list,
+navigation and inspector share a restrained archive layout. all eighteen original
+views remain available, alongside dormant review. mobile Menu and Activity
+drawers retain navigation and inspection; `/` focuses search, and view URLs can
+be bookmarked. memory editing loads the full record rather than the list excerpt.
+
+[web workspace controls](docs/guides/web-workspace.md) cover search, hints,
+filters, continuity, graph and maintenance workflows. `web.auth_token`
 configures bearer authentication. keep the database and config private, and
 check authentication and network exposure before making the service reachable
 outside the local machine. `serve --mcp-sse` is also available for HTTP MCP use.
@@ -291,8 +352,12 @@ production config or restart an existing service.
 [config](engram/config.py), [store](engram/store.py),
 [retrieval](engram/retrieval.py), [dormant recall](engram/dormant.py),
 [lifecycle](engram/lifecycle.py), and [the MCP server](engram/mcp_server.py) are the
-main entry points. further guides and reference material live in [docs](docs/).
+main entry points; the [native service](engram/service.py) is the application
+boundary and [the optional Codex adapter](engram/adapters/codex.py) is a separate
+integration layer. further guides and reference material live in [docs](docs/).
 
 ## license
 
 [MIT](LICENSE).
+
+![the memory workspace, using fictional verification data](docs/assets/workspace-library.png)

@@ -72,6 +72,8 @@ dormant_recall:
   dormancy_days: 30
   min_relevance: 0.75
   max_bonus: 0.05
+  rerank_candidates: 12
+  min_rerank_score: 0.6
   cooldown_days: 7
   feedback_cooldown_days: 30
   log_max_events: 1000

@@ -1,5 +1,5 @@
 site_name: engram
-site_description: Cognitive memory system with hybrid retrieval. 98.1% R@5 on LongMemEval.
+site_description: Memory, retrieval and project continuity for work that spans conversations.
 site_url: https://engram-memory.dev
 repo_url: https://github.com/raya-ac/engram
 repo_name: raya-ac/engram
@@ -61,6 +61,10 @@ nav:
     - Embedding Backends: guides/embedding-backends.md
     - Retrieval Pipeline: guides/retrieval-pipeline.md
     - Dormant Recall: dormant-recall.md
+    - Native API: native-api.md
+    - Check Evidence: evidence.md
+    - Codex Adapter: codex-adapter.md
+    - Web Workspace: guides/web-workspace.md
     - Memory Lifecycle: guides/memory-lifecycle.md
     - Entity Graph: guides/entity-graph.md
     - Drift Detection: guides/drift-detection.md
@@ -68,9 +72,9 @@ nav:
     - Multi-Agent: guides/multi-agent.md
     - Docker: guides/docker.md
   - Reference:
-    - MCP Tools (63): reference/mcp-tools.md
-    - REST API (57): reference/rest-api.md
-    - CLI Commands (16): reference/cli.md
+    - MCP Tools: reference/mcp-tools.md
+    - REST API: reference/rest-api.md
+    - CLI Commands: reference/cli.md
     - Configuration: reference/config.md
   - Architecture:
     - Overview: architecture/overview.md

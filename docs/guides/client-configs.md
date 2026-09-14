@@ -26,12 +26,19 @@ Good first tools to teach the agent:
 
 ## Codex
 
+For explicit project-bound context/checkpoints and redacted connection/index
+diagnostics, use the separate [Codex adapter](../codex-adapter.md). It exposes a
+small deliberate task-start/resume surface without changing core retrieval or
+installing host hooks. Its setup command prints a reviewable registration command.
+
+The following configuration connects the full, broader Engram MCP server:
+
 Add Engram as an MCP server in your Codex config:
 
 ```toml
 [mcp_servers.engram]
 command = "/absolute/path/to/engram/.venv/bin/python"
-args = ["-m", "engram", "serve", "--mcp"]
+args = ["-m", "engram", "--config", "/absolute/path/to/engram/config.yaml", "serve", "--mcp"]
 ```
 
 For continuity-focused work, pair it with:

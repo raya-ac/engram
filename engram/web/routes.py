@@ -8,8 +8,10 @@ import json
 import sqlite3
 import time
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Request, Query
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -56,6 +58,38 @@ def _fresh_store(request: Request) -> Store:
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return request.app.state.templates.TemplateResponse(request, "index.html")
+
+
+# --- Dormant review ---
+
+class DormantFeedbackBody(BaseModel):
+    category: Literal["useful", "irrelevant", "dismissed"]
+
+
+@router.get("/api/dormant")
+def dormant_evaluations(request: Request, limit: int = Query(20, ge=1, le=100)):
+    """Metadata-only review; never implicitly expose a candidate's content."""
+    from engram.dormant import review
+    config = _config(request)
+    return {"mode": config.dormant_recall.mode, "events": review(config, limit)}
+
+
+@router.post("/api/dormant/{event_id}/inspect")
+def inspect_dormant_evaluation(request: Request, event_id: str):
+    from engram.dormant import inspect_event
+    try:
+        return inspect_event(_config(request), event_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+
+@router.post("/api/dormant/{event_id}/feedback")
+def dormant_evaluation_feedback(request: Request, event_id: str, body: DormantFeedbackBody):
+    from engram.dormant import feedback
+    try:
+        return feedback(_config(request), event_id, body.category)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
 
 
 # --- SSE ---

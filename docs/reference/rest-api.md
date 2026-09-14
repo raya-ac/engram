@@ -1,4 +1,4 @@
-# REST API (60 endpoints)
+# REST API
 
 the web dashboard (`engram serve --web`) exposes a full JSON API at `http://127.0.0.1:8420`.
 

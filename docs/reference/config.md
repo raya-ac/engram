@@ -128,3 +128,28 @@ pip install 'engram-memory-system[api]'         # all backends
 1. environment variables (highest)
 2. config file (first found from: `--config` path, `./config.yaml`, project root, `~/.config/engram/config.yaml`)
 3. defaults (lowest)
+
+## dormant recall
+
+```yaml
+dormant_recall:
+  mode: "off"                 # opt into shadow; no automatic visible mode
+  candidate_limit: 50
+  dormancy_days: 30
+  min_relevance: 0.75
+  max_bonus: 0.05
+  rerank_candidates: 12
+  min_rerank_score: 0.6
+  cooldown_days: 7
+  feedback_cooldown_days: 30
+  log_max_events: 1000
+  log_retention_days: 30
+```
+
+`ENGRAM_DORMANT_RECALL_MODE` overrides mode at process start. Current eligible
+vectors are searched independently of ordinary ANN/cache state, and the bounded
+query/content relevance check precedes selection. Configuration and code do not
+hot-reload into an existing Python process. Full behavior and bounds are in
+[the dormant guide](../dormant-recall.md). The separate Codex adapter binds its
+project through `codex serve --project`; it uses the same explicit Engram config
+without changing host configuration automatically.

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "engram-memory-system"
 version = "0.5.2"
-description = "Cognitive memory system with hybrid retrieval, entity graphs, and memory lifecycle. 98.1% R@5 on LongMemEval."
+description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
 license = "MIT"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -47,7 +47,7 @@ Issues = "https://github.com/raya-ac/engram/issues"
 engram = "engram.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "httpx>=0.27"]
 voyage = ["voyageai>=0.3.0"]
 openai = ["openai>=1.30.0"]
 anthropic = ["anthropic>=0.40.0"]

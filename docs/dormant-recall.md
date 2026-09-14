@@ -17,6 +17,8 @@ dormant_recall:
   dormancy_days: 30
   min_relevance: 0.75          # raw embedding cosine, not truth/confidence
   max_bonus: 0.05              # maximum allowed setting: 0.1
+  rerank_candidates: 12        # separate query/content relevance checks
+  min_rerank_score: 0.6        # model score, not truth confidence
   cooldown_days: 7
   feedback_cooldown_days: 30
   log_max_events: 1000         # maximum allowed setting: 10000
@@ -54,13 +56,28 @@ blind relevance audits; do not infer usefulness from the metadata alone.
 
 ## selection and reinforcement boundaries
 
-The separate dense search uses the original query and its own candidate limit.
-It does not reuse the ordinary final list, RRF cutoff, query expansion, recency
-boost, frequency boost, deep reranker or result cache. It uses the configured
-embedding backend and existing ANN index (or brute-force fallback). It can
-therefore find candidates missing from ordinary recall even on a cache hit.
-This adds a dense search/embedding call and latency; an API embedding backend
-has its usual cost. The embedding backend is not changed by this feature.
+The separate dense search uses the original query and streams current eligible
+database embeddings into a bounded heap. Active status, memory type and the
+dormancy threshold are checked before the candidate limit. Vectors are normalized
+for exact cosine comparison. It does not reuse ordinary ANN contents, embedding
+caches, the final list, RRF cutoff, query expansion, recency/frequency boosts or
+the deep reranker. This matters when a persisted ANN index misses newer records:
+an old index must not silently make those memories unreachable to this experiment.
+
+Up to 12 cosine-qualified memories receive a separate query/content check using
+the configured cross-encoder. The default minimum score is 0.6, on that model's
+own scale. A broad topic match that cannot address the query is rejected. Scores
+are never described as probabilities or evidence that a historical claim remains
+true. The memory content is checked again before recording, so an edit during
+reranking cannot inherit a stale score. If the relevance check fails, the shadow
+evaluation fails open without changing ordinary recall.
+
+Exact scanning costs O(N × embedding dimension) over eligible records, with a
+bounded candidate heap rather than a full matrix. This is suitable for the
+current small store; it is not a million-record performance claim. It adds an
+embedding call and a bounded rerank batch; configured API backends have their
+usual cost. No index is rebuilt, saved or repaired by dormant evaluation. Ordinary
+retrieval can still have a stale index and needs separate maintenance.
 
 Candidates must pass the raw relevance floor before any dormancy bonus. They
 must be non-forgotten with active status (legacy NULL matches ordinary recall)
@@ -78,7 +95,8 @@ relevance + max_bonus * clamp(importance, 0, 1)
                       * min(1, dormant_days / (4 * dormancy_days))
 ```
 
-Raw relevance is stored separately and is never increased. With the defaults,
+Raw cosine and the separate relevance-check score are stored separately and never
+increased. With the defaults,
 age/importance can change selection only within a 0.05 cosine gap among already
 relevant candidates. Low similarity can never be rescued by age. Exact ties
 use raw relevance then memory ID for deterministic selection. Literal overlap
@@ -105,7 +123,9 @@ negative feedback is not global suppression or a new forgetting operation.
 
 Two additive tables, `dormant_recall_events` and `dormant_recall_state`, are created
 lazily on first evaluation/review. This does not run legacy memory backfills or
-rewrite the memories table. The SQL works on SQLite and PostgreSQL. A separate
+rewrite the memories table. The second version adds nullable `rerank_score` and an
+`algorithm` label without rewriting old events, which retain `ann-cosine-v1`.
+The SQL works on SQLite and PostgreSQL. A separate
 connection/transaction prevents a failed shadow write from poisoning ordinary
 recall. Concurrent evaluators serialize the selection/cooldown decision. Short
 database lock waits fail open; failures report only an exception type, not query,
@@ -147,6 +167,17 @@ python tests/dormant_smoke.py --work-dir /path/to/new/disposable/directory
 
 This starts fresh processes, compares ordinary result IDs with shadow off/on,
 exercises review/inspect/feedback, and checks persisted access fields and cooldown.
-Its semantic-only fixture scores about 0.734 with BGE small: the 0.75 default
-abstains; an explicit 0.70 threshold only in the isolated pilot admits it. The
-report records this limitation instead of treating an abstention as useful recall.
+Its prototype-note fixture scores about 0.736 with BGE small: the 0.75 default
+abstains; an explicit 0.70 threshold only in the isolated pilot admits it after
+the separate relevance check. The report records this limitation instead of
+treating an abstention as useful recall. The earlier sparse semantic-only fixture
+is rejected by the added relevance check; pure cosine proximity was insufficient.
+
+The real-memory target-first check used a Junkstep installer/backend-release note
+with one prior access, about 37 days of dormancy, active status and `forgotten=0`.
+The old live ANN path omitted it; exact current-store cosine ranked it first at
+0.817. The repaired algorithm selected it in an isolated snapshot at the unchanged
+0.75 floor, its relevance-check score was 3.84, and its access/importance fields
+stayed unchanged. It added installer packaging and release-verification details
+missing from ordinary results. This is an evaluator judgment about historical
+technical context, not user-submitted `useful` feedback or a live release audit.
