@@ -23,6 +23,39 @@ class RetrievalConfig:
 
 
 @dataclass
+class DormantRecallConfig:
+    # Opt in explicitly. Version one never injects suggestions into recall.
+    mode: str = "off"  # off | shadow
+    candidate_limit: int = 50
+    dormancy_days: float = 30.0
+    min_relevance: float = 0.75  # raw cosine, not truth/confidence
+    max_bonus: float = 0.05
+    cooldown_days: float = 7.0
+    feedback_cooldown_days: float = 30.0
+    log_max_events: int = 1000
+    log_retention_days: float = 30.0
+
+    def validate(self):
+        import math
+
+        if self.mode not in {"off", "shadow"}:
+            raise ValueError("dormant_recall.mode must be off or shadow")
+        bounds = {
+            "candidate_limit": (1, 200), "dormancy_days": (1, 3650),
+            "min_relevance": (0.5, 1), "max_bonus": (0, 0.1),
+            "cooldown_days": (1, 365), "feedback_cooldown_days": (1, 365),
+            "log_max_events": (1, 10000), "log_retention_days": (1, 365),
+        }
+        for name, (low, high) in bounds.items():
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+                raise ValueError(f"dormant_recall.{name} must be between {low} and {high}")
+        for name in ("candidate_limit", "log_max_events"):
+            if not isinstance(getattr(self, name), int):
+                raise ValueError(f"dormant_recall.{name} must be an integer")
+
+
+@dataclass
 class LifecycleConfig:
     forgetting_half_life_days: int = 30
     archive_after_days: int = 90
@@ -76,6 +109,7 @@ class Config:
     embedding_backend: str = "auto"  # auto | mlx | sentence_transformers | voyage | openai | gemini
     embedding_dim: int = 384
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    dormant_recall: DormantRecallConfig = field(default_factory=DormantRecallConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     web: WebConfig = field(default_factory=WebConfig)
@@ -119,6 +153,13 @@ class Config:
             for k, v in raw["retrieval"].items():
                 if hasattr(cfg.retrieval, k):
                     setattr(cfg.retrieval, k, v)
+        if "dormant_recall" in raw:
+            for k, v in raw["dormant_recall"].items():
+                if hasattr(cfg.dormant_recall, k) and k != "validate":
+                    setattr(cfg.dormant_recall, k, v)
+        if os.environ.get("ENGRAM_DORMANT_RECALL_MODE"):
+            cfg.dormant_recall.mode = os.environ["ENGRAM_DORMANT_RECALL_MODE"]
+        cfg.dormant_recall.validate()
         if "lifecycle" in raw:
             for k, v in raw["lifecycle"].items():
                 if hasattr(cfg.lifecycle, k):

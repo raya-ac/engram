@@ -34,6 +34,16 @@ def main():
     p_search.add_argument("--rerank", action="store_true", help="Enable cross-encoder reranking (slower, better)")
     p_search.add_argument("--json", action="store_true", dest="json_output")
 
+    p_dormant = sub.add_parser("dormant", help="Review dormant recall shadow evaluations")
+    dormant_sub = p_dormant.add_subparsers(dest="action", required=True)
+    p_dormant_review = dormant_sub.add_parser("review", help="List metadata only")
+    p_dormant_review.add_argument("--limit", type=int, default=20)
+    p_dormant_inspect = dormant_sub.add_parser("inspect", help="Show an eligible candidate without reinforcing it")
+    p_dormant_inspect.add_argument("event_id")
+    p_dormant_feedback = dormant_sub.add_parser("feedback", help="Record explicit feedback; useful means actually used")
+    p_dormant_feedback.add_argument("event_id")
+    p_dormant_feedback.add_argument("category", choices=["useful", "irrelevant", "dismissed"])
+
     # remember
     p_remember = sub.add_parser("remember", help="Store a memory directly")
     p_remember.add_argument("content", nargs="+")
@@ -125,6 +135,15 @@ def main():
         cmd_ingest(args, config)
     elif args.command == "search":
         cmd_search(args, config)
+    elif args.command == "dormant":
+        from engram.dormant import review, inspect_event, feedback
+        if args.action == "review":
+            result = review(config, args.limit)
+        elif args.action == "inspect":
+            result = inspect_event(config, args.event_id)
+        else:
+            result = feedback(config, args.event_id, args.category)
+        print(json.dumps(result, indent=2))
     elif args.command == "remember":
         cmd_remember(args, config)
     elif args.command == "entity":

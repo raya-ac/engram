@@ -62,3 +62,17 @@ ann:
   ef_search: 100               # query-time search depth
   max_elements: 500000         # pre-allocated capacity
   index_path: ~/.local/share/engram/hnsw.index
+
+# Optional experiment. Normal recall output and reinforcement stay unchanged.
+# Enable with mode: shadow; disable with ENGRAM_DORMANT_RECALL_MODE=off.
+# See docs/dormant-recall.md for review and feedback commands.
+dormant_recall:
+  mode: "off"
+  candidate_limit: 50
+  dormancy_days: 30
+  min_relevance: 0.75
+  max_bonus: 0.05
+  cooldown_days: 7
+  feedback_cooldown_days: 30
+  log_max_events: 1000
+  log_retention_days: 30

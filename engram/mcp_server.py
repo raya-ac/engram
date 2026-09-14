@@ -29,6 +29,9 @@ from engram.evolution import (enrich_memory, evolve_neighbors, check_confirmatio
 from engram.intelligence import build_query_brief, compare_queries, activity_hotspots
 
 TOOLS = [
+    {"name": "dormant_review", "description": "Explicitly review metadata-only dormant shadow evaluations; never inject into ordinary recall", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
+    {"name": "dormant_inspect", "description": "Explicitly inspect one dormant shadow candidate without reinforcing it; rechecks active/non-forgotten eligibility", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}}, "required": ["event_id"]}},
+    {"name": "dormant_feedback", "description": "Record explicit feedback for an inspected dormant candidate. Useful means actually used; silence is never usefulness. Does not change memory importance or access fields.", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}, "category": {"type": "string", "enum": ["useful", "irrelevant", "dismissed"]}}, "required": ["event_id", "category"]}},
     # Read tools
     {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder). Use mode to filter by memory type: facts_only (structured knowledge), facts_plus_rules (+ procedures), full_context (everything).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context", "description": "Retrieval profile — facts_only for statuses/states, facts_plus_rules for methodology, full_context for exhaustive recall"}}, "required": ["query"]}},
     {"name": "recall_explain", "description": "Search memories and include retrieval intent, expansions, cache status, candidate counts, and score breakdowns for debugging retrieval quality.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context"}}, "required": ["query"]}},
@@ -193,6 +196,9 @@ class MCPServer:
 
     def _call_tool(self, name: str, args: dict) -> Any:
         handlers = {
+            "dormant_review": self._dormant_review,
+            "dormant_inspect": self._dormant_inspect,
+            "dormant_feedback": self._dormant_feedback,
             "recall": self._recall,
             "recall_explain": self._recall_explain,
             "recall_entity": self._recall_entity,
@@ -273,6 +279,18 @@ class MCPServer:
         return handler(args)
 
     # --- Read tools ---
+
+    def _dormant_review(self, args: dict):
+        from engram.dormant import review
+        return review(self.config, args.get("limit", 20))
+
+    def _dormant_inspect(self, args: dict):
+        from engram.dormant import inspect_event
+        return inspect_event(self.config, args["event_id"])
+
+    def _dormant_feedback(self, args: dict):
+        from engram.dormant import feedback
+        return feedback(self.config, args["event_id"], args["category"])
 
     def _recall(self, args: dict):
         self._sweep_working()

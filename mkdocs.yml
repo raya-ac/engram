@@ -60,6 +60,7 @@ nav:
     - Postgres Migration: guides/postgres-migration.md
     - Embedding Backends: guides/embedding-backends.md
     - Retrieval Pipeline: guides/retrieval-pipeline.md
+    - Dormant Recall: dormant-recall.md
     - Memory Lifecycle: guides/memory-lifecycle.md
     - Entity Graph: guides/entity-graph.md
     - Drift Detection: guides/drift-detection.md

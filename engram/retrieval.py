@@ -247,6 +247,10 @@ def search(
     if results:
         store.record_search([r.memory.id for r in results], query)
 
+    if config.dormant_recall.mode == "shadow":
+        from engram.dormant import evaluate_shadow
+        evaluate_shadow(query, store, config, {r.memory.id for r in results}, allowed_types)
+
     latency = (time.time() - t0) * 1000
     if debug:
         dbg = RetrievalDebug(
