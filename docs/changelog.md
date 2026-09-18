@@ -3,21 +3,27 @@
 ## 0.6.0 (September 18, 2026)
 
 ### new features
-- **neural graph & connections overhaul** — complete overhaul of the web dashboard's Connections workspace into an interactive neural map:
-  - 2D camera with cursor-centered zoom, smooth drag-panning, and reset controls
-  - dual layout modes: concentric layer rings (Working → Semantic → Episodic → Procedural) and force-directed cluster physics
-  - constellation mode: click-to-spotlight 1-hop/2-hop subgraphs with camera targeting
+- **dormant recall in shadow mode** — tracks queries with low confidence or empty retrieval results in an associative shadow buffer; when new memories are ingested or consolidated, the system automatically checks for newly satisfied associations and reactivates dormant queries (`engram dormant` CLI, config controls, and background evaluation)
+- **native memory service layer** — introduced `EngramService` (`engram/service.py`), providing a high-level programmatic interface that unifies memory CRUD, evidence tracking, project context assembly, and hybrid retrieval
+- **evidence graph & provenance tracking** — added first-class evidence extraction and verification (`engram/evidence.py`) to trace ground-truth source references, causal antecedents, and factual reliability
+- **project context provider** — added session-aware context distillation (`engram/project_context.py`) for assembling working memory state, open decisions, and active task parameters for coding agents
+- **codex adapter** — added native adapter (`engram/adapters/codex.py`) bridging Codex tool calls, memory handoffs, and skill execution directly into Engram
+- **neural graph & connections overhaul** — complete overhaul of the web dashboard's Connections workspace into an interactive neural exploration canvas:
+  - 2D camera with cursor-anchored zoom (0.25x–4.0x), smooth click-drag panning, and reset controls
+  - dual layout modes: concentric layer rings (Working → Semantic → Episodic → Procedural) with glowing orbits and force-directed spring cluster physics
+  - constellation mode: click-to-spotlight 1-hop and 2-hop subgraphs with camera targeting and unrelated node dimming
   - in-graph inspector drawer showing direct entity connections with jump links, linked memory excerpts, and inline type/alias management
   - live entity search with auto-suggest dropdown and keyboard navigation (`/`, `Esc`, `Enter`)
-  - real-time synaptic pulse cascades with shockwave bursts and edge particle flow (`⚡ pulse`, `F` hotkey)
+  - real-time synaptic pulse cascades with shockwave bursts and edge particle flows (`⚡ pulse` button, `F` hotkey, and live access log polling)
   - dual sizing metric combining memory mention volume and relationship degree
-- **zigcho-infra design language** — full UI reskin of the dashboard to the refined slate-black palette (`#09090a` base, `#111113` surface, `#292427` borders, `#ed83b6` pink, `#8fd4b1` mint, `#7bbcff` blue)
+- **zigcho-infra design language** — full UI reskin of the dashboard to the refined slate-black palette (`#09090a` base, `#111113` surface, `#292427` borders, `#ed83b6` signature pink, `#8fd4b1` mint, `#7bbcff` blue)
 - **unbounded exports** — `/api/export` now supports exporting all memories without forced pagination caps
 
 ### fixes
 - **cross-database SQL compatibility** — replaced postgres-specific cast syntax with standard `CAST(e.aliases AS TEXT)` in entity search so MCP entity discovery runs safely across SQLite and Postgres
 - **defensive consolidation** — access log and event pruning now defensively handles differing driver rowcount behaviors across database backends
 - **web script parsing** — eliminated duplicate state declaration in the web dashboard preventing browser reference errors
+- **standard package metadata** — pinned build-system hatchling to ensure strict compliance with packaging metadata standards across build environments
 
 ## 0.5.2 (April 24, 2026)
 
