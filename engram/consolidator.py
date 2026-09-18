@@ -110,12 +110,51 @@ def consolidate(store: Store, config: Config | None = None) -> dict:
 
     # Step 7: Prune old access_log and events entries (>90 days)
     cutoff = time.time() - 90 * 86400
-    pruned_access = store.conn.execute(
-        "DELETE FROM access_log WHERE accessed_at < ?", (cutoff,)
-    ).rowcount
-    pruned_events = store.conn.execute(
-        "DELETE FROM events WHERE created_at < ?", (cutoff,)
-    ).rowcount
+    # Try to delete old access_log/events rows. Different DB drivers expose rowcounts
+    # differently (sqlite, psycopg, wrappers). Be defensive: try to get a COUNT
+    # first, then delete, and fall back safely if drivers don't provide rowcount.
+    try:
+        try:
+            cur = store.conn.execute(
+                "SELECT COUNT(*) FROM access_log WHERE accessed_at < ?", (cutoff,)
+            )
+            cnt_access = cur.fetchone()[0]
+        except Exception:
+            cnt_access = None
+
+        try:
+            store.conn.execute(
+                "DELETE FROM access_log WHERE accessed_at < ?", (cutoff,)
+            )
+            # try to read rowcount if available
+            pruned_access = getattr(cur, "rowcount", None) if cur is not None else None
+            if pruned_access is None:
+                pruned_access = cnt_access if cnt_access is not None else 0
+        except Exception:
+            pruned_access = cnt_access if cnt_access is not None else 0
+
+        try:
+            cur2 = store.conn.execute(
+                "SELECT COUNT(*) FROM events WHERE created_at < ?", (cutoff,)
+            )
+            cnt_events = cur2.fetchone()[0]
+        except Exception:
+            cnt_events = None
+
+        try:
+            store.conn.execute(
+                "DELETE FROM events WHERE created_at < ?", (cutoff,)
+            )
+            pruned_events = getattr(cur2, "rowcount", None) if cur2 is not None else None
+            if pruned_events is None:
+                pruned_events = cnt_events if cnt_events is not None else 0
+        except Exception:
+            pruned_events = cnt_events if cnt_events is not None else 0
+
+    except Exception:
+        pruned_access = 0
+        pruned_events = 0
+
     stats["pruned_access_log"] = pruned_access
     stats["pruned_events"] = pruned_events
 

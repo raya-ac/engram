@@ -271,41 +271,68 @@ async def entity_graph(request: Request, entity_id: str):
         return JSONResponse({"error": "not found"}, status_code=404)
     rels = store.get_entity_relationships(entity_id)
     related = store.get_related_entities(entity_id, max_hops=2)
+    mems = store.get_entity_memories(entity_id, limit=8)
     nodes = [{"id": entity.id, "name": entity.canonical_name, "type": entity.entity_type, "depth": 0}]
     for r in related:
         nodes.append({"id": r["eid"], "name": r["canonical_name"], "type": r["entity_type"], "depth": r["depth"]})
-    return {"nodes": nodes, "edges": [dict(r) for r in rels]}
+    memories_data = [
+        {
+            "id": m.id,
+            "content": m.content,
+            "layer": m.layer,
+            "importance": round(m.importance, 2),
+            "created_at": m.created_at,
+        }
+        for m in mems
+    ]
+    return {
+        "entity": {
+            "id": entity.id,
+            "name": entity.canonical_name,
+            "type": entity.entity_type,
+            "aliases": entity.aliases,
+            "memory_count": len(mems),
+        },
+        "nodes": nodes,
+        "edges": [dict(r) for r in rels],
+        "memories": memories_data,
+    }
 
 
 @router.get("/api/neural")
-async def neural_graph(request: Request, limit: int = 80):
+async def neural_graph(request: Request, limit: int = 120, search: str | None = None):
     """Full entity-relationship graph for neural visualization."""
     store = _fresh_store(request)
     try:
         # get top entities by memory count
-        # layer priority: semantic > procedural > episodic > working
+        # layer priority: working > semantic > procedural > episodic
         # assign entity to its highest-priority layer
-        rows = store.conn.execute(
-            """SELECT e.id, e.canonical_name, e.entity_type,
+        query_sql = """SELECT e.id, e.canonical_name, e.entity_type,
                       COUNT(em.memory_id) as mem_count,
                       MAX(m.last_accessed) as last_active,
                       CASE
                         WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
+                                    WHERE em2.entity_id=e.id AND m2.layer='working' AND m2.forgotten=0) THEN 'working'
+                        WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
                                     WHERE em2.entity_id=e.id AND m2.layer='semantic' AND m2.forgotten=0) THEN 'semantic'
                         WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
                                     WHERE em2.entity_id=e.id AND m2.layer='procedural' AND m2.forgotten=0) THEN 'procedural'
-                        WHEN EXISTS(SELECT 1 FROM entity_mentions em2 JOIN memories m2 ON m2.id=em2.memory_id
-                                    WHERE em2.entity_id=e.id AND m2.layer='working' AND m2.forgotten=0) THEN 'working'
                         ELSE 'episodic'
                       END as dominant_layer
                FROM entities e
                JOIN entity_mentions em ON em.entity_id = e.id
                JOIN memories m ON m.id = em.memory_id AND m.forgotten = 0
+        """
+        params = []
+        if search:
+            query_sql += " WHERE e.canonical_name LIKE ? "
+            params.append(f"%{search}%")
+        query_sql += """
                GROUP BY e.id
                ORDER BY mem_count DESC
-               LIMIT ?""",
-            (limit,),
-        ).fetchall()
+               LIMIT ?"""
+        params.append(min(limit, 300))
+        rows = store.conn.execute(query_sql, params).fetchall()
 
         nodes = []
         node_ids = set()
@@ -337,6 +364,13 @@ async def neural_graph(request: Request, limit: int = 80):
             ).fetchall()
             for r in rels:
                 edges.append(dict(r))
+
+        degree_counter = collections.Counter()
+        for ed in edges:
+            degree_counter[ed["source_entity_id"]] += 1
+            degree_counter[ed["target_entity_id"]] += 1
+        for n in nodes:
+            n["degree"] = degree_counter[n["id"]]
 
         cutoff = time.time() - 300
         read_rows = store.conn.execute(
@@ -1298,7 +1332,7 @@ async def bulk_action(request: Request):
 
 @router.get("/api/export")
 async def export_memories(request: Request, format: str = "json",
-                          layer: str | None = None, limit: int = 200):
+                          layer: str | None = None, limit: int | None = None):
     store = _store(request)
     if layer:
         mems = store.get_memories_by_layer(layer, limit=limit)

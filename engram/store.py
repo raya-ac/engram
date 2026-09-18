@@ -635,10 +635,16 @@ class Store:
         self.conn.commit()
 
     def get_memories_by_layer(self, layer: str, limit: int = 100) -> list[Memory]:
-        rows = self.conn.execute(
-            "SELECT * FROM memories WHERE layer = ? AND forgotten = 0 ORDER BY importance DESC LIMIT ?",
-            (layer, limit),
-        ).fetchall()
+        if limit and limit > 0:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE layer = ? AND forgotten = 0 ORDER BY importance DESC LIMIT ?",
+                (layer, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE layer = ? AND forgotten = 0 ORDER BY importance DESC",
+                (layer,),
+            ).fetchall()
         return [self._row_to_memory(r) for r in rows]
 
     def get_memories_by_date_range(self, start: str, end: str | None = None, limit: int = 50) -> list[Memory]:
@@ -655,10 +661,15 @@ class Store:
         return [self._row_to_memory(r) for r in rows]
 
     def get_recent_memories(self, limit: int = 20) -> list[Memory]:
-        rows = self.conn.execute(
-            "SELECT * FROM memories WHERE forgotten = 0 ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if limit and limit > 0:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE forgotten = 0 ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE forgotten = 0 ORDER BY created_at DESC"
+            ).fetchall()
         return [self._row_to_memory(r) for r in rows]
 
     def count_memories(self) -> dict[str, int]:

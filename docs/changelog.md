@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 (September 18, 2026)
+
+### new features
+- **neural graph & connections overhaul** — complete overhaul of the web dashboard's Connections workspace into an interactive neural map:
+  - 2D camera with cursor-centered zoom, smooth drag-panning, and reset controls
+  - dual layout modes: concentric layer rings (Working → Semantic → Episodic → Procedural) and force-directed cluster physics
+  - constellation mode: click-to-spotlight 1-hop/2-hop subgraphs with camera targeting
+  - in-graph inspector drawer showing direct entity connections with jump links, linked memory excerpts, and inline type/alias management
+  - live entity search with auto-suggest dropdown and keyboard navigation (`/`, `Esc`, `Enter`)
+  - real-time synaptic pulse cascades with shockwave bursts and edge particle flow (`⚡ pulse`, `F` hotkey)
+  - dual sizing metric combining memory mention volume and relationship degree
+- **zigcho-infra design language** — full UI reskin of the dashboard to the refined slate-black palette (`#09090a` base, `#111113` surface, `#292427` borders, `#ed83b6` pink, `#8fd4b1` mint, `#7bbcff` blue)
+- **unbounded exports** — `/api/export` now supports exporting all memories without forced pagination caps
+
+### fixes
+- **cross-database SQL compatibility** — replaced postgres-specific cast syntax with standard `CAST(e.aliases AS TEXT)` in entity search so MCP entity discovery runs safely across SQLite and Postgres
+- **defensive consolidation** — access log and event pruning now defensively handles differing driver rowcount behaviors across database backends
+- **web script parsing** — eliminated duplicate state declaration in the web dashboard preventing browser reference errors
+
 ## 0.5.2 (April 24, 2026)
 
 ### new features

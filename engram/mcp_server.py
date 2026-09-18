@@ -179,7 +179,7 @@ class MCPServer:
             return self._response(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "engram", "version": "0.5.2"},
+                "serverInfo": {"name": "engram", "version": "0.6.0"},
             })
         elif method == "tools/list":
             return self._response(req_id, {"tools": TOOLS})
@@ -914,7 +914,7 @@ class MCPServer:
                FROM entities e
                LEFT JOIN entity_mentions em ON em.entity_id = e.id
                WHERE LOWER(e.canonical_name) LIKE ?
-                  OR LOWER(e.aliases) LIKE ?
+                   OR LOWER(CAST(e.aliases AS TEXT)) LIKE ?
                GROUP BY e.id
                ORDER BY mem_count DESC
                LIMIT ?""",
@@ -1710,7 +1710,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.5.2")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.6.0")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

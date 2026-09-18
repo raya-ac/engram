@@ -6,24 +6,32 @@
 <title>Memories · engram</title>
 <style>
 :root {
-  --bg:#f6f5ef;
-  --bg2:#eeeee6;
-  --bg3:#e2e4d9;
-  --glass:#f6f5ef;
-  --glass2:#e8eadf;
-  --border:#d8dbd0;
-  --border-glow:#7e9870;
-  --text:#262e28;
-  --text2:#626b5e;
-  --accent:#486746;
-  --accent2:#486746;
-  --green:#486746;
-  --yellow:#956728;
-  --red:#b04738;
-  --cyan:#496e68;
-  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --shadow-lg:none;
+  --bg: #09090a;
+  --surface: #111113;
+  --bg2: var(--surface);
+  --bg3: #18181c;
+  --glass: color-mix(in srgb, var(--bg) 92%, transparent);
+  --glass2: color-mix(in srgb, var(--surface) 96%, transparent);
+  --line: #292427;
+  --border: var(--line);
+  --border-glow: rgba(237, 131, 182, 0.25);
+  --text: #ece8e6;
+  --muted: #928b89;
+  --text2: var(--muted);
+  --pink: #ed83b6;
+  --pink-soft: #4a2939;
+  --good: #8fd4b1;
+  --bad: #f07d87;
+  --bad-soft: #3b1d23;
+  --accent: var(--pink);
+  --accent2: #f4a5cc;
+  --green: var(--good);
+  --yellow: #f5c06d;
+  --red: var(--bad);
+  --cyan: #7bbcff;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: ui-sans-serif, system-ui, sans-serif;
+  --shadow-lg: 0 18px 50px #000c;
 }
 * {
   box-sizing:border-box;
@@ -33,11 +41,15 @@
 body {
   background:var(--bg);
   color:var(--text);
-  font:14px/1.5 var(--sans);
+  font:14px/1.5 var(--mono);
 }
 a {
-  color:var(--accent);
+  color:inherit;
   text-decoration:none;
+  transition:color .15s ease;
+}
+a:hover {
+  color:var(--pink);
 }
 button,input,textarea,select {
   font:inherit;
@@ -47,50 +59,62 @@ button,a,input,textarea,select {
 }
 button {
   cursor:pointer;
-  background:var(--accent);
-  color:white;
-  border:1px solid transparent;
-  border-radius:5px;
-  padding:9px 15px;
-  transition:background .16s,transform .16s;
+  background:var(--pink);
+  color:#180d13;
+  font-weight:700;
+  border:0;
+  border-radius:2px;
+  padding:8px 14px;
+  transition:opacity .15s ease,transform .15s ease;
 }
 button:hover {
-  background:#344e33;
+  opacity:0.9;
 }
 button:active {
   transform:translateY(1px);
 }
 button.secondary,.card-actions button {
   background:transparent;
-  border:1px solid var(--border);
-  color:var(--text);
+  border:1px solid var(--line);
+  color:var(--muted);
+  font-weight:400;
+  border-radius:2px;
+  transition:color .15s ease,border-color .15s ease,background .15s ease;
 }
 button.secondary:hover,.card-actions button:hover {
-  background:var(--bg3);
+  color:var(--text);
+  border-color:var(--pink-soft);
+  background:var(--surface);
 }
 input,textarea,select {
-  background:#fffefa;
+  background:var(--surface);
   color:var(--text);
-  border:1px solid var(--border);
-  padding:9px 11px;
-  border-radius:5px;
+  border:1px solid var(--line);
+  padding:8px 11px;
+  border-radius:2px;
+  outline:0;
+  font-family:var(--mono);
+  font-size:13px;
   min-width:0;
   max-width:100%;
 }
+input:focus,textarea:focus,select:focus {
+  border-color:var(--pink);
+}
 input[type=checkbox],input[type=range] {
-  accent-color:var(--accent);
+  accent-color:var(--pink);
 }
 textarea {
   resize:vertical;
 }
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible {
-  outline:2px solid var(--accent);
-  outline-offset:3px;
+  outline:1px solid var(--pink);
+  outline-offset:2px;
 }
 .layout {
   display:grid;
   grid-template-columns:214px minmax(0,1fr) 300px;
-  grid-template-rows:78px minmax(0,1fr);
+  grid-template-rows:72px minmax(0,1fr);
   height:calc(100dvh - 34px);
 }
 .header {
@@ -99,9 +123,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   align-items:center;
   justify-content:space-between;
   gap:16px;
-  padding:0 27px;
-  background:var(--bg);
-  border-bottom:1px solid var(--border);
+  padding:0 24px;
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
 }
 .brand-stack {
   display:flex;
@@ -113,34 +139,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   flex-direction:column;
 }
 .header h1 {
-  font-size:28px;
-  font-weight:600;
-  letter-spacing:-1.5px;
-  line-height:1.1;
+  font:650 20px/1 var(--sans);
+  letter-spacing:-0.04em;
+  color:var(--text);
 }
 .brand-kicker {
   font:10px var(--mono);
-  letter-spacing:1.6px;
+  letter-spacing:.14em;
   text-transform:uppercase;
-  color:var(--text2);
+  color:var(--pink);
 }
 .brand-mark {
-  width:29px;
-  height:34px;
-  border:2px solid var(--accent);
-  border-radius:50% 50% 42% 42%;
+  width:24px;
+  height:24px;
+  border:1px solid var(--pink);
+  border-radius:4px;
   position:relative;
-  transform:rotate(-16deg);
+  background:var(--surface);
 }
-.brand-mark:before,.brand-mark:after {
+.brand-mark:before {
   content:'';
   position:absolute;
-  inset:5px;
-  border:1px solid var(--accent);
-  border-radius:50%;
+  inset:4px;
+  border-radius:2px;
+  background:var(--pink);
 }
 .brand-mark:after {
-  inset:10px 5px;
+  display:none;
 }
 .header-actions {
   display:flex;
@@ -149,60 +174,61 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .stats {
   font:11px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
 }
 .header-chip {
-  color:var(--text2);
+  color:var(--muted);
   font:11px var(--mono);
 }
 .sidebar {
-  background:var(--bg2);
-  border-right:1px solid var(--border);
-  padding:24px 14px;
+  background:var(--bg);
+  border-right:1px solid var(--line);
+  padding:20px 12px;
   overflow-y:auto;
 }
 .sidebar-meta {
-  padding:0 12px;
-  margin-bottom:22px;
+  padding:0 10px;
+  margin-bottom:20px;
 }
 .sidebar-meta p {
-  color:var(--text2);
-  font-size:12px;
+  color:var(--muted);
+  font-size:11px;
 }
 .sidebar .section {
   margin-bottom:24px;
 }
 .section-title {
   font:10px var(--mono);
-  letter-spacing:1.3px;
+  letter-spacing:.14em;
   text-transform:uppercase;
-  color:var(--text2);
-  margin-bottom:13px;
+  color:var(--muted);
+  margin-bottom:12px;
 }
 .sidebar .section-title {
-  padding-left:12px;
+  padding-left:10px;
 }
 .nav-item {
   display:block;
-  padding:8px 12px;
-  margin:2px 0;
-  border-radius:4px;
-  color:var(--text2);
-  font-size:13px;
-  transition:background .16s,color .16s;
+  padding:8px 10px;
+  margin:1px 0;
+  border-radius:2px;
+  color:var(--muted);
+  font-size:11px;
+  transition:color .15s ease,background .15s ease;
 }
 .nav-item:hover {
-  background:var(--bg3);
+  background:var(--surface);
   color:var(--text);
 }
 .nav-item.active {
-  background:#dce5d1;
-  color:#2f492c;
-  font-weight:600;
+  background:var(--surface);
+  color:var(--text);
+  font-weight:500;
+  border-left:2px solid var(--pink);
+  padding-left:10px;
 }
 .nav-item.active:after {
-  content:'·';
-  float:right;
+  content:'';
 }
 .main {
   overflow:auto;
@@ -215,45 +241,44 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   align-items:flex-start;
   justify-content:space-between;
   gap:16px;
-  margin-bottom:30px;
-  border-bottom:1px solid var(--border);
-  padding-bottom:23px;
+  margin-bottom:28px;
+  border-bottom:1px solid var(--line);
+  padding-bottom:20px;
 }
 .workspace-heading > button {
   white-space: nowrap;
 }
 .workspace-heading h2 {
-  font-size:34px;
-  letter-spacing:-1.2px;
-  font-weight:500;
-  line-height:1.2;
+  font:600 24px/1.15 var(--sans);
+  letter-spacing:-0.035em;
+  margin:0;
 }
 .workspace-heading p {
-  color:var(--text2);
+  color:var(--muted);
   font-size:13px;
   margin-top:8px;
-  max-width:55ch;
+  max-width:60ch;
 }
 .workspace-heading .eyebrow {
   font:10px var(--mono);
-  letter-spacing:1.4px;
+  letter-spacing:.14em;
   text-transform:uppercase;
   display:block;
-  color:var(--accent);
-  margin-bottom:13px;
+  color:var(--pink);
+  margin-bottom:8px;
 }
 .panel {
-  background:var(--bg2);
-  border-left:1px solid var(--border);
-  padding:25px 20px;
+  background:var(--bg);
+  border-left:1px solid var(--line);
+  padding:20px 16px;
   overflow-y:auto;
   min-width:0;
 }
 .panel .section {
-  margin-bottom:28px;
+  margin-bottom:24px;
 }
 .panel p {
-  color:var(--text2);
+  color:var(--muted);
 }
 .inspector-shell {
   font-size:12px;
@@ -298,38 +323,45 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .shell-card,.context-layer,.cog-status-card,.debug-panel {
   background:transparent;
   border:0;
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid var(--line);
   border-radius:0;
   box-shadow:none;
-  padding:18px 0;
+  padding:16px 0;
 }
 .memory-card {
-  border-bottom:1px solid var(--border);
-  padding:20px 0;
+  border-bottom:1px solid var(--line);
+  padding:16px 0;
   margin:0;
   position:relative;
+  transition:background .15s ease,padding .15s ease;
+}
+.memory-card:hover {
+  background:var(--surface);
+  padding-left:10px;
+  padding-right:10px;
 }
 .memory-card .content {
-  font-size:14px;
-  line-height:1.7;
-  margin-bottom:12px;
+  font-size:13px;
+  line-height:1.6;
+  margin-bottom:8px;
   cursor:pointer;
   max-width:85ch;
   overflow-wrap:anywhere;
+  color:var(--text);
 }
 .memory-card .content:hover {
-  color:var(--accent);
+  color:var(--pink);
 }
 .memory-card.pinned {
-  border-left:2px solid var(--accent);
-  padding-left:15px;
+  border-left:2px solid var(--pink);
+  padding-left:12px;
 }
 .memory-card .meta {
   display:flex;
   gap:10px;
   flex-wrap:wrap;
   font:10px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
 }
 .memory-card .tag {
   background:transparent;
@@ -359,10 +391,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   display:inline-block;
 }
 .pin-indicator {
-  color:var(--accent);
+  color:var(--pink);
 }
 .hint-card {
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid var(--line);
   padding:16px 0;
   font-size:13px;
 }
@@ -373,22 +405,23 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .entity-node,.entity-pill,.token,.followup-chip {
   display:inline-block;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:4px;
-  padding:5px 9px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:2px;
+  padding:4px 8px;
   margin:3px;
   font-size:11px;
   cursor:pointer;
-  color:var(--accent);
+  color:var(--pink);
+  transition:border-color .15s ease;
 }
 .entity-node:hover {
-  background:var(--bg3);
+  border-color:var(--pink);
 }
 .empty {
   padding:40px 20px;
   text-align:left;
-  color:var(--text2);
+  color:var(--muted);
 }
 .search-shell {
   padding:0 0 21px;
@@ -402,8 +435,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .search-box input {
   flex:1;
-  font-size:15px;
-  padding:13px;
+  font-size:14px;
+  padding:11px 14px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:2px;
+  color:var(--text);
+}
+.search-box input:focus {
+  border-color:var(--pink);
 }
 .search-toolbar,.filter-bar {
   display:flex;
@@ -420,18 +460,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   align-items:center;
   gap:7px;
   font-size:12px;
-  color:var(--text2);
+  color:var(--muted);
 }
 .chip {
   padding:5px 9px;
-  border:1px solid var(--border);
-  border-radius:4px;
+  background:transparent;
+  border:1px solid var(--line);
+  border-radius:2px;
   font-size:11px;
   cursor:pointer;
+  color:var(--muted);
+  transition:border-color .15s ease,background .15s ease,color .15s ease;
 }
-.chip.active {
-  background:#dce5d1;
-  border-color:#78956c;
+.chip:hover,.chip.active {
+  border-color:var(--pink-soft);
+  background:var(--pink-soft);
+  color:var(--text);
 }
 .search-history {
   display:none;
@@ -439,10 +483,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   top:100%;
   left:0;
   right:0;
-  background:var(--bg);
-  border:1px solid var(--border);
+  background:var(--surface);
+  border:1px solid var(--line);
   z-index:5;
-  box-shadow:0 8px 20px #26302815;
+  box-shadow:0 8px 24px #0009;
   max-height:200px;
   overflow:auto;
 }
@@ -452,25 +496,32 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .search-history-item {
   padding:9px 12px;
   cursor:pointer;
+  color:var(--text);
 }
 .search-history-item:hover {
-  background:var(--bg2);
+  background:var(--bg);
+  color:var(--pink);
 }
 .tabs {
   display:flex;
   overflow:auto;
-  border-bottom:1px solid var(--border);
-  margin-bottom:22px;
+  border-bottom:1px solid var(--line);
+  margin-bottom:20px;
 }
 .tab {
   padding:10px 16px;
-  color:var(--text2);
+  color:var(--muted);
   white-space:nowrap;
   cursor:pointer;
+  font-size:11px;
+  transition:color .15s ease;
+}
+.tab:hover {
+  color:var(--text);
 }
 .tab.active {
-  color:var(--accent);
-  border-bottom:2px solid var(--accent);
+  color:var(--text);
+  border-bottom:2px solid var(--pink);
 }
 .stat-grid {
   display:grid;
@@ -483,31 +534,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   text-align:left;
 }
 .stat-box .value {
-  font:22px var(--sans);
+  font:500 20px/1.2 var(--sans);
   color:var(--text);
+  letter-spacing:-0.03em;
 }
 .stat-box .label {
-  font:9px var(--mono);
-  color:var(--text2);
+  font:10px var(--mono);
+  color:var(--muted);
   text-transform:uppercase;
+  letter-spacing:.1em;
 }
 .event-item,.diary-entry,.annotation-item {
   font-size:11px;
-  border-bottom:1px solid var(--border);
-  padding:7px 0;
+  border-bottom:1px solid var(--line);
+  padding:8px 0;
   overflow-wrap:anywhere;
 }
 .event-item .time,.diary-time,.ann-time {
-  color:var(--text2);
-  font:9px var(--mono);
+  color:var(--muted);
+  font:10px var(--mono);
 }
 .events-empty {
-  color:var(--text2);
+  color:var(--muted);
   font-size:12px;
   line-height:1.6;
 }
 .event-item .type {
-  color:var(--accent);
+  color:var(--pink);
 }
 .intel-grid,.compare-columns,.continuity-grid {
   display:grid;
@@ -515,18 +568,18 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   gap:24px;
 }
 .intel-card h3,.continuity-card h3 {
-  font-size:17px;
-  font-weight:500;
+  font:600 17px/1.2 var(--sans);
+  letter-spacing:-0.035em;
   margin-bottom:9px;
 }
 .intel-card p {
   font-size:12px;
-  color:var(--text2);
+  color:var(--muted);
   margin-bottom:14px;
   line-height:1.6;
 }
 .intel-row,.brief-memory,.continuity-block {
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid var(--line);
   padding:12px 0;
 }
 .intel-row {
@@ -536,7 +589,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   font-size:12px;
 }
 .intel-row span {
-  color:var(--text2);
+  color:var(--muted);
 }
 .brief-summary,.continuity-summary {
   line-height:1.7;
@@ -551,14 +604,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   display:flex;
   gap:10px;
   flex-wrap:wrap;
-  color:var(--text2);
+  color:var(--muted);
   font:10px var(--mono);
   margin:9px 0;
 }
 .continuity-block h4 {
   font:10px var(--mono);
   text-transform:uppercase;
-  color:var(--text2);
+  letter-spacing:.1em;
+  color:var(--pink);
   margin-bottom:10px;
 }
 .continuity-block ul {
@@ -574,7 +628,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   margin-bottom:12px;
 }
 .cl-name {
-  font-weight:600;
+  font:600 13px var(--sans);
 }
 .cl-text {
   font-size:12px;
@@ -584,7 +638,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .cl-tokens {
   font:10px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
 }
 .debug-grid {
   display:grid;
@@ -597,8 +651,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .debug-pill b {
   display:block;
-  color:var(--text2);
+  color:var(--muted);
   font:10px var(--mono);
+  text-transform:uppercase;
+  letter-spacing:.08em;
 }
 .token-row,.followups {
   display:flex;
@@ -614,23 +670,26 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .health-card {
   padding:12px 0;
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid var(--line);
 }
 .hc-value {
-  font-size:28px;
+  font:600 28px/1 var(--sans);
+  letter-spacing:-0.04em;
 }
 .hc-label {
   font:10px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.1em;
 }
 .health-card.ok .hc-value {
-  color:var(--green);
+  color:var(--good);
 }
 .health-card.warn .hc-value {
   color:var(--yellow);
 }
 .health-card.bad .hc-value {
-  color:var(--red);
+  color:var(--bad);
 }
 .bar-row,.imp-bar {
   display:flex;
@@ -641,26 +700,29 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .bar-label {
   width:110px;
-  color:var(--text2);
+  color:var(--muted);
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
 }
 .bar-fill {
-  height:12px;
+  height:10px;
   border-radius:2px;
 }
 .bar-value,.imp-val {
   font:10px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
 }
 .imp-label {
   width:75px;
 }
 .imp-fill-bg {
   flex:1;
-  height:14px;
-  background:var(--bg2);
+  height:12px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:2px;
+  overflow:hidden;
 }
 .imp-fill {
   height:100%;
@@ -739,24 +801,25 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   font:10px var(--mono);
   width:32px;
   flex-shrink:0;
-  color:var(--text2);
+  color:var(--muted);
 }
 .heatmap-legend {
   display:flex;
   gap:5px;
   font-size:10px;
-  color:var(--text2);
+  color:var(--muted);
   margin-top:12px;
 }
 .heatmap-legend .cell {
   width:12px;
   height:12px;
+  border-radius:2px;
 }
 .heatmap-hours {
   display:flex;
   gap:3px;
   font:9px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
   padding-left:35px;
 }
 .heatmap-hours span {
@@ -784,15 +847,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   bottom:46px;
   left:50%;
   transform:translateX(-50%);
-  background:var(--bg);
-  border:1px solid var(--accent);
-  border-radius:6px;
-  padding:12px;
-  gap:8px;
+  background:var(--surface);
+  border:1px solid var(--pink);
+  border-radius:2px;
+  padding:12px 16px;
+  gap:10px;
   align-items:center;
   z-index:40;
   max-width:95vw;
-  box-shadow:0 10px 30px #26302820;
+  box-shadow:0 18px 50px #000c;
 }
 .bulk-bar.visible {
   display:flex;
@@ -803,25 +866,26 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   bottom:0;
   left:0;
   right:0;
-  background:var(--bg2);
-  border-top:1px solid var(--border);
+  background:var(--surface);
+  border-top:1px solid var(--line);
   display:flex;
   align-items:center;
   padding:0 24px;
   gap:20px;
   font:10px var(--mono);
-  color:var(--text2);
+  color:var(--muted);
   z-index:20;
 }
 .pulse-stat {
   display:flex;
-  gap:5px;
+  gap:6px;
   align-items:center;
 }
 .pulse-dot {
-  width:5px;
-  height:5px;
+  width:6px;
+  height:6px;
   border-radius:50%;
+  background:var(--good);
 }
 .pulse-sparkline {
   display:flex;
@@ -832,7 +896,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 .spark-bar {
   width:3px;
-  background:var(--accent);
+  background:var(--pink);
 }
 #toast-container {
   position:fixed;
@@ -844,50 +908,358 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   gap:8px;
 }
 .toast {
-  background:var(--text);
-  color:var(--bg);
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--line);
   padding:12px 18px;
-  border-radius:5px;
+  border-radius:2px;
   max-width:340px;
   animation:reveal .2s;
+  box-shadow:0 18px 50px #000c;
 }
 .toast.error {
-  background:#8a392f;
+  background:var(--bad-soft);
+  border-color:var(--bad);
+  color:#fca5a5;
 }
 .toast.success {
-  background:var(--accent);
+  background:#15271d;
+  border-color:var(--good);
+  color:#86efac;
+}
+/* Connections / Neural Canvas View */
+.connections-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+  padding-bottom:14px;
+  border-bottom:1px solid var(--line);
+}
+.conn-search-wrap {
+  position:relative;
+  min-width:200px;
+  flex:1;
+  max-width:280px;
+}
+.conn-search-wrap input {
+  width:100%;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--text);
+  padding:7px 11px;
+  font-size:12px;
+  border-radius:2px;
+  outline:0;
+  font-family:var(--mono);
+}
+.conn-search-wrap input:focus {
+  border-color:var(--pink);
+}
+.conn-dropdown {
+  display:none;
+  position:absolute;
+  top:calc(100% + 4px);
+  left:0;
+  right:0;
+  background:var(--surface);
+  border:1px solid var(--line);
+  box-shadow:0 18px 50px #000c;
+  z-index:60;
+  max-height:220px;
+  overflow-y:auto;
+  border-radius:2px;
+}
+.conn-dropdown.open {
+  display:block;
+}
+.conn-dropdown-item {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:7px 11px;
+  cursor:pointer;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 40%,transparent);
+  font-size:11px;
+  transition:background .12s ease,color .12s ease;
+}
+.conn-dropdown-item:hover {
+  background:var(--bg3);
+  color:var(--pink);
+}
+.conn-dropdown-item small {
+  color:var(--muted);
+  font:9px var(--mono);
+}
+.conn-filter-group {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.conn-filter-label {
+  font:10px var(--mono);
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+}
+.conn-chips {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  flex-wrap:wrap;
+}
+.conn-chip {
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--muted);
+  padding:5px 9px;
+  cursor:pointer;
+  font:10px var(--mono);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  border-radius:2px;
+  transition:border-color .15s ease,background .15s ease,color .15s ease;
+}
+.conn-chip:hover,.conn-chip.active {
+  border-color:var(--pink-soft);
+  background:var(--pink-soft);
+  color:var(--text);
+}
+.conn-chip.active {
+  border-color:var(--pink);
+}
+.conn-actions {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.conn-btn {
+  padding:5px 9px;
+  font:11px var(--mono);
+  border-radius:2px;
+  cursor:pointer;
+}
+.conn-btn-primary {
+  border:0;
+  background:var(--pink);
+  color:#180d13;
+  font-weight:700;
+  padding:7px 13px;
+  border-radius:2px;
+  font-size:11px;
+  font-family:var(--mono);
+  cursor:pointer;
+  transition:opacity .15s ease;
+}
+.conn-btn-primary:hover {
+  opacity:0.9;
+}
+.conn-meta-stat {
+  font:10px var(--mono);
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  white-space:nowrap;
 }
 #neural-container {
   position:relative;
-  background:#222c27;
-  border-radius:5px;
+  background:#070709;
+  border:1px solid var(--line);
+  border-radius:2px;
   overflow:hidden;
   margin-bottom:20px;
+  height:calc(100vh - 215px);
+  min-height:560px;
 }
 #neural-canvas {
   display:block;
   width:100%;
+  height:100%;
+  touch-action:none;
 }
 #neural-tooltip {
   display:none;
   position:absolute;
   pointer-events:none;
-  z-index:5;
-  background:#f6f5ef;
-  border:1px solid var(--border);
-  padding:12px;
+  z-index:15;
+  background:var(--surface);
+  border:1px solid var(--line);
+  color:var(--text);
+  padding:10px 12px;
   max-width:240px;
-  border-radius:4px;
+  border-radius:2px;
   font-size:12px;
+  box-shadow:0 18px 50px #000c;
 }
 .tt-name {
-  font-weight:600;
+  font:600 13px var(--sans);
+  color:var(--text);
+  letter-spacing:-0.03em;
 }
 .tt-type,.tt-count {
-  color:var(--text2);
+  color:var(--muted);
+  font:10px var(--mono);
+  margin-top:2px;
+}
+.neural-hud-controls {
+  position:absolute;
+  left:16px;
+  bottom:16px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  z-index:10;
+}
+.hud-btn {
+  width:28px;
+  height:28px;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--muted);
+  border-radius:2px;
+  cursor:pointer;
+  font:13px var(--mono);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:border-color .15s ease,color .15s ease,background .15s ease;
+}
+.hud-btn:hover {
+  border-color:var(--pink);
+  color:var(--text);
+  background:var(--bg3);
+}
+.neural-hint-overlay {
+  position:absolute;
+  right:16px;
+  bottom:12px;
+  font:9px var(--mono);
+  color:var(--muted);
+  pointer-events:none;
+  opacity:0.65;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.neural-drawer {
+  position:absolute;
+  top:0;
+  right:0;
+  bottom:0;
+  width:340px;
+  max-width:92%;
+  background:color-mix(in srgb,var(--surface) 96%,transparent);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+  border-left:1px solid var(--line);
+  z-index:25;
+  display:flex;
+  flex-direction:column;
+  overflow-y:auto;
+  box-shadow:-14px 0 40px #000b;
+  padding:18px;
+  gap:16px;
+  animation:reveal .2s ease both;
+}
+.nd-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+}
+.nd-title-group {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.nd-eyebrow {
+  font:9px var(--mono);
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--pink);
+}
+#nd-title {
+  font:620 19px/1.15 var(--sans);
+  letter-spacing:-0.04em;
+  margin:2px 0 6px;
+  color:var(--text);
+  overflow-wrap:anywhere;
+}
+.nd-tags {
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+}
+.nd-close {
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  font-size:14px;
+  cursor:pointer;
+  padding:3px 6px;
+  border-radius:2px;
+  transition:color .12s ease;
+}
+.nd-close:hover {
+  color:var(--text);
+}
+.nd-actions {
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.nd-section {
+  border-top:1px solid var(--line);
+  padding-top:12px;
+}
+.nd-section-title {
+  font:10px var(--mono);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--muted);
+  margin-bottom:8px;
+}
+.nd-list {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  max-height:180px;
+  overflow-y:auto;
+}
+.nd-item {
+  padding:8px 10px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:2px;
+  font-size:11px;
+  cursor:pointer;
+  transition:border-color .15s ease,padding-left .15s ease;
+}
+.nd-item:hover {
+  border-color:var(--pink);
+  padding-left:12px;
+}
+.nd-item-rel {
+  color:var(--pink);
+  font:9px var(--mono);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:2px;
+}
+.nd-item-text {
+  color:var(--text);
+  font-size:11px;
+  line-height:1.4;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
 }
 .graph-note {
-  color:var(--text2);
+  color:var(--muted);
   font-size:12px;
   margin-bottom:18px;
 }
@@ -895,26 +1267,32 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   display:grid;
   grid-template-columns:1fr auto;
   gap:14px;
-  padding:20px 0;
-  border-bottom:1px solid var(--border);
+  padding:16px 0;
+  border-bottom:1px solid var(--line);
+  transition:padding .15s ease, background .15s ease;
+}
+.dormant-row:hover {
+  padding-left:10px;
+  padding-right:10px;
+  background:var(--surface);
 }
 .dormant-row > button { align-self: center; }
 .dormant-row time {
-  font:11px var(--mono);
-  color:var(--text2);
+  font:10px var(--mono);
+  color:var(--muted);
 }
 .dormant-row h3 {
-  font-size:15px;
-  font-weight:500;
+  font:600 15px/1.2 var(--sans);
+  letter-spacing:-0.035em;
   margin:5px 0;
 }
 .dormant-row p {
   font-size:12px;
-  color:var(--text2);
+  color:var(--muted);
 }
 .review-note {
-  background:var(--bg2);
-  border-left:2px solid var(--accent);
+  background:var(--surface);
+  border-left:2px solid var(--pink);
   padding:15px 18px;
   font-size:12px;
   line-height:1.7;
@@ -934,9 +1312,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   top:-70px;
   left:15px;
   z-index:200;
-  background:var(--text);
-  color:white;
-  padding:12px;
+  background:var(--surface);
+  color:var(--pink);
+  border:1px solid var(--pink);
+  padding:10px 14px;
+  font-weight:700;
+  border-radius:2px;
 }
 .skip-link:focus {
   top:10px;
@@ -945,9 +1326,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   width:6px;
   height:6px;
 }
+::-webkit-scrollbar-track {
+  background:transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background:#c7cdbf;
-  border-radius:5px;
+  background:var(--line);
+  border-radius:3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background:var(--pink-soft);
 }
 @media(min-width:1450px) {
   .main {
@@ -969,7 +1356,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
     bottom:34px;
     width:330px;
     z-index:35;
-    box-shadow:-20px 0 50px #26302820;
+    box-shadow:-20px 0 50px rgba(0,0,0,0.6);
   }
   .panel.drawer-open {
     display:flex;
@@ -1012,18 +1399,25 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .menu-toggle {
     display:block;
     background:transparent;
-    border:1px solid var(--border);
-    color:var(--text);
+    border:1px solid var(--line);
+    color:var(--muted);
     padding:7px 10px;
+    border-radius:2px;
+  }
+  .menu-toggle:hover {
+    color:var(--text);
+    border-color:var(--pink-soft);
   }
   .sidebar {
     display:none;
     position:fixed;
-    top:70px;
+    top:72px;
     bottom:34px;
     left:0;
     width:260px;
     z-index:35;
+    background:var(--bg);
+    border-right:1px solid var(--line);
   }
   .sidebar.drawer-open {
     display:block;
@@ -1031,13 +1425,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .drawer-backdrop.open {
     display:block;
     position:fixed;
-    inset:70px 0 34px;
-    background:#1e29264d;
+    inset:72px 0 34px;
+    background:#000b;
+    backdrop-filter:blur(5px);
+    -webkit-backdrop-filter:blur(5px);
     z-index:30;
   }
   .panel {
-    top:70px;
+    top:72px;
     width:min(360px,100vw);
+    background:var(--bg);
+    border-left:1px solid var(--line);
   }
   .main {
     padding:26px 20px;
@@ -1218,13 +1616,97 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
     <header class="workspace-heading"><div><span class="eyebrow">Archive / workspace</span><h2 id="workspace-title">Memories</h2><p id="workspace-description">Browse what you’ve saved. Open a memory to see its context.</p></div><button onclick="showView('remember')">+ Remember</button></header>
     <!-- Connections view -->
     <div id="view-neural" class="view-panel" style="display:none">
-      <p class="graph-note">Select an entity to inspect its connections. Drag to explore the graph.</p>
+      <div class="connections-toolbar">
+        <div class="conn-search-wrap">
+          <input type="text" id="neural-search-input" placeholder="Find entity in graph... (press /)" oninput="filterNeuralSearch(this.value)" onkeydown="handleNeuralSearchKey(event)" onfocus="if(this.value)filterNeuralSearch(this.value)">
+          <div id="neural-search-dropdown" class="conn-dropdown"></div>
+        </div>
+        <div class="conn-filter-group">
+          <span class="conn-filter-label">layer</span>
+          <div class="conn-chips">
+            <button class="conn-chip active" id="chip-layer-all" onclick="setNeuralLayerFilter('all')">all</button>
+            <button class="conn-chip" id="chip-layer-working" onclick="setNeuralLayerFilter('working')">working</button>
+            <button class="conn-chip" id="chip-layer-semantic" onclick="setNeuralLayerFilter('semantic')">semantic</button>
+            <button class="conn-chip" id="chip-layer-episodic" onclick="setNeuralLayerFilter('episodic')">episodic</button>
+            <button class="conn-chip" id="chip-layer-procedural" onclick="setNeuralLayerFilter('procedural')">procedural</button>
+          </div>
+        </div>
+        <div class="conn-filter-group">
+          <span class="conn-filter-label">layout</span>
+          <div class="conn-chips">
+            <button class="conn-chip active" id="btn-mode-rings" onclick="setNeuralLayoutMode('rings')">rings</button>
+            <button class="conn-chip" id="btn-mode-cluster" onclick="setNeuralLayoutMode('cluster')">clusters</button>
+          </div>
+        </div>
+        <div class="conn-actions">
+          <button class="secondary conn-btn" onclick="fireRandomPulse()" title="Fire random synaptic pulse">⚡ pulse</button>
+          <button class="secondary conn-btn" id="btn-physics-toggle" onclick="togglePhysics()" title="Pause/resume physics simulation">⏸ pause</button>
+          <button class="secondary conn-btn" onclick="resetNeuralCamera()" title="Reset zoom and pan">⌂ reset</button>
+        </div>
+        <div class="conn-meta-stat" id="neural-summary-stat">loading graph...</div>
+      </div>
+
       <div id="neural-container">
         <canvas id="neural-canvas" width="900" height="560"></canvas>
         <div id="neural-tooltip">
           <div class="tt-name"></div>
           <div class="tt-type"></div>
           <div class="tt-count"></div>
+        </div>
+
+        <!-- In-canvas zoom controls HUD -->
+        <div class="neural-hud-controls">
+          <button class="hud-btn" onclick="zoomNeural(1.25)" title="Zoom in">+</button>
+          <button class="hud-btn" onclick="zoomNeural(0.8)" title="Zoom out">−</button>
+          <button class="hud-btn" onclick="resetNeuralCamera()" title="Reset view">⌂</button>
+        </div>
+
+        <!-- In-canvas Entity Constellation & Details Drawer -->
+        <div id="neural-drawer" class="neural-drawer" style="display:none">
+          <div class="nd-header">
+            <div class="nd-title-group">
+              <span class="nd-eyebrow" id="nd-layer-badge">SEMANTIC</span>
+              <h3 id="nd-title">Entity Name</h3>
+              <div class="nd-tags">
+                <span class="score-chip" id="nd-type-badge">concept</span>
+                <span class="score-chip" id="nd-mem-count">0 memories</span>
+                <span class="score-chip" id="nd-conn-count">0 connections</span>
+              </div>
+            </div>
+            <button class="nd-close" onclick="exitConstellation()" title="Close (Esc)">✕</button>
+          </div>
+          <div class="nd-actions">
+            <button class="conn-btn-primary" onclick="fireSelectedNode()">⚡ Fire Synapse</button>
+            <button class="secondary conn-btn" onclick="centerOnSelectedNode()">Target</button>
+          </div>
+          <div class="nd-section">
+            <div class="nd-section-title">Direct Connections</div>
+            <div id="nd-connections-list" class="nd-list"></div>
+          </div>
+          <div class="nd-section">
+            <div class="nd-section-title">Associated Memories</div>
+            <div id="nd-memories-list" class="nd-list"></div>
+          </div>
+          <div class="nd-section">
+            <div class="nd-section-title">Manage</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+              <input type="text" id="nd-alias-input" placeholder="Add alias..." style="flex:1;font-size:11px">
+              <button class="secondary" style="font-size:10px;padding:4px 8px" onclick="addAliasFromDrawer()">+</button>
+            </div>
+            <select id="nd-type-select" style="font-size:11px;width:100%" onchange="changeTypeFromDrawer(this.value)">
+              <option value="">Change entity type...</option>
+              <option value="person">person</option>
+              <option value="tool">tool</option>
+              <option value="concept">concept</option>
+              <option value="project">project</option>
+              <option value="path">path</option>
+              <option value="email">email</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="neural-hint-overlay">
+          <span>Scroll to zoom · Drag background to pan · Click node to focus · Esc to reset</span>
         </div>
       </div>
     </div>
@@ -1548,7 +2030,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
         <button onclick="loadDrift()">Run Drift Check</button>
         <button id="drift-preview-btn" type="button" class="secondary" onclick="return previewDriftFix()">Preview Fix</button>
-        <button id="drift-fix-btn" type="button" class="secondary" onclick="return applyDriftFix()" style="background:var(--red);color:#fff">Fix Now</button>
+        <button id="drift-fix-btn" type="button" class="secondary" onclick="return applyDriftFix()" style="border-color:var(--bad);color:var(--bad)">Fix Now</button>
       </div>
       <div id="drift-score" style="margin-bottom:16px"></div>
       <div id="drift-stats" class="health-grid" style="margin-bottom:16px"></div>
@@ -1634,83 +2116,174 @@ async function postJSON(url, body) { const r = await fetch(API + url, {method:'P
 // ============================================================
 // NEURAL VISUALIZATION — layered brain with firing impulses
 // ============================================================
+// ============================================================
+// CONNECTIONS / NEURAL VISUALIZATION — Interactive Layered Graph
+// ============================================================
 const neuralCanvas = document.getElementById('neural-canvas');
 const nCtx = neuralCanvas.getContext('2d');
 const tooltip = document.getElementById('neural-tooltip');
+const neuralDrawer = document.getElementById('neural-drawer');
+
 let neuralNodes = [];
 let neuralEdges = [];
 let hoveredNode = null;
+let hoveredEdge = null;
 let dragNode = null;
+let isPanning = false;
+let panStartX = 0, panStartY = 0;
 let mouseX = 0, mouseY = 0;
-let animFrame;
+let animFrame = null;
 let nodeById = {};
-// constellation mode — focused subgraph view
-let constellationNode = null;  // the focused entity
-let constellationSet = null;   // Set of node ids in the subgraph
-let constellationEdges = null; // edges in the subgraph
+let neuralLoaded = false;
 
-// layer config — concentric rings
+// Layout and filters
+let neuralLayoutMode = 'rings'; // 'rings' | 'cluster'
+let neuralLayerFilter = 'all';  // 'all' | 'working' | 'semantic' | 'episodic' | 'procedural'
+let neuralPhysicsRunning = true;
+
+// Constellation mode — focused subgraph view
+let constellationNode = null;
+let constellationSet = null;
+let constellationEdges = null;
+
+// Camera model (world coordinates are centered around 0,0)
+const camera = {
+  x: 0,
+  y: 0,
+  zoom: 1.0,
+  targetX: 0,
+  targetY: 0,
+  targetZoom: 1.0,
+};
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - camera.x) / camera.zoom,
+    y: (sy - camera.y) / camera.zoom,
+  };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: wx * camera.zoom + camera.x,
+    y: wy * camera.zoom + camera.y,
+  };
+}
+
+function resetNeuralCamera() {
+  const W = neuralCanvas.clientWidth || 900;
+  const H = neuralCanvas.clientHeight || 560;
+  camera.targetX = W / 2;
+  camera.targetY = H / 2;
+  camera.targetZoom = 1.0;
+}
+
+function zoomNeural(factor) {
+  const W = neuralCanvas.clientWidth || 900;
+  const H = neuralCanvas.clientHeight || 560;
+  const cx = W / 2, cy = H / 2;
+  const newZoom = Math.max(0.25, Math.min(4.0, camera.targetZoom * factor));
+  const wx = (cx - camera.targetX) / camera.targetZoom;
+  const wy = (cy - camera.targetY) / camera.targetZoom;
+  camera.targetZoom = newZoom;
+  camera.targetX = cx - wx * newZoom;
+  camera.targetY = cy - wy * newZoom;
+}
+
+function setNeuralLayoutMode(mode) {
+  neuralLayoutMode = mode;
+  const ringsBtn = document.getElementById('btn-mode-rings');
+  const clusterBtn = document.getElementById('btn-mode-cluster');
+  if (ringsBtn) ringsBtn.classList.toggle('active', mode === 'rings');
+  if (clusterBtn) clusterBtn.classList.toggle('active', mode === 'cluster');
+  // awaken physics simulation
+  for (const n of neuralNodes) {
+    n.vx += (Math.random() - 0.5) * 2;
+    n.vy += (Math.random() - 0.5) * 2;
+  }
+}
+
+function setNeuralLayerFilter(layer) {
+  neuralLayerFilter = layer;
+  ['all', 'working', 'semantic', 'episodic', 'procedural'].forEach(l => {
+    const el = document.getElementById('chip-layer-' + l);
+    if (el) el.classList.toggle('active', l === layer);
+  });
+}
+
+function togglePhysics() {
+  neuralPhysicsRunning = !neuralPhysicsRunning;
+  const btn = document.getElementById('btn-physics-toggle');
+  if (btn) {
+    btn.textContent = neuralPhysicsRunning ? '⏸ pause' : '▶ resume';
+  }
+}
+
+// layer config — concentric rings around world (0, 0)
 const LAYER_CONFIG = {
-  semantic:   { ring: 0.15, color: {r:161,g:190,b:139},  label: 'SEMANTIC' },   // inner core — emerald
-  procedural: { ring: 0.35, color: {r:191,g:203,b:181}, label: 'PROCEDURAL' }, // mid ring — violet
-  episodic:   { ring: 0.60, color: {r:123,g:162,b:146},  label: 'EPISODIC' },   // outer ring — cyan
-  working:    { ring: 0.80, color: {r:198,g:183,b:132},   label: 'WORKING' },    // outermost — amber
+  working:    { ring: 0.18, color: {r:237,g:131,b:182}, label: 'WORKING' },
+  semantic:   { ring: 0.38, color: {r:143,g:212,b:177}, label: 'SEMANTIC' },
+  episodic:   { ring: 0.62, color: {r:123,g:188,b:255}, label: 'EPISODIC' },
+  procedural: { ring: 0.84, color: {r:171,g:148,b:255}, label: 'PROCEDURAL' },
 };
 
 const TYPE_COLORS = {
-  person:  {r:123,g:162,b:146}, tool:{r:161,g:190,b:139}, concept:{r:198,g:183,b:132},
-  email:{r:191,g:203,b:181}, url:{r:191,g:203,b:181}, path:{r:143,g:162,b:131},
-  date:{r:194,g:145,b:126}, default:{r:191,g:203,b:181},
-};
-const FIRE_COLORS = {
-  read:  {r:123,g:162,b:146},    // cyan — cool recall
-  write: {r:198,g:183,b:132},    // amber/gold — warm creation
+  person:  {r:123,g:188,b:255}, tool:{r:143,g:212,b:177}, concept:{r:237,g:131,b:182},
+  project: {r:245,g:192,b:109}, email:{r:171,g:148,b:255}, url:{r:123,g:188,b:255},
+  path:    {r:143,g:212,b:177}, date:{r:245,g:192,b:109}, default:{r:171,g:148,b:255},
 };
 
-// ambient floating particles for atmosphere
+const FIRE_COLORS = {
+  read:  {r:123,g:188,b:255},
+  write: {r:237,g:131,b:182},
+};
+
+// ambient floating particles
 let ambientParticles = [];
 function initAmbient(W, H) {
   ambientParticles = [];
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 48; i++) {
     ambientParticles.push({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.15, vy: (Math.random() - 0.5) * 0.15,
-      r: 0.5 + Math.random() * 1.5,
-      alpha: 0.05 + Math.random() * 0.1,
-      color: [LAYER_CONFIG.semantic, LAYER_CONFIG.procedural, LAYER_CONFIG.episodic][Math.floor(Math.random() * 3)].color,
+      x: (Math.random() - 0.5) * 1200,
+      y: (Math.random() - 0.5) * 1200,
+      vx: (Math.random() - 0.5) * 0.2,
+      vy: (Math.random() - 0.5) * 0.2,
+      r: 0.8 + Math.random() * 1.5,
+      alpha: 0.08 + Math.random() * 0.14,
+      color: [LAYER_CONFIG.semantic, LAYER_CONFIG.procedural, LAYER_CONFIG.episodic, LAYER_CONFIG.working][Math.floor(Math.random() * 4)].color,
     });
   }
 }
 
-// traveling impulse particles
 let impulses = [];
-// radial burst effects (for writes)
 let bursts = [];
-// diffusion particles (memory birth — travels from center to layer ring)
 let diffusions = [];
-// migration animations (promotion — node slides between rings)
 let migrations = [];
 
 function resizeCanvas() {
   const container = document.getElementById('neural-container');
+  if (!container) return;
   const dpr = window.devicePixelRatio || 1;
   const w = container.clientWidth;
-  const h = Math.max(500, window.innerHeight - 120);
+  const h = Math.max(520, window.innerHeight - 220);
   neuralCanvas.width = w * dpr;
   neuralCanvas.height = h * dpr;
   neuralCanvas.style.width = w + 'px';
   neuralCanvas.style.height = h + 'px';
   nCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (camera.x === 0 && camera.y === 0) {
+    resetNeuralCamera();
+    camera.x = camera.targetX;
+    camera.y = camera.targetY;
+  }
 }
 
 async function loadNeuralData() {
-  const data = await fetchJSON('/api/neural?limit=100');
-  const W = neuralCanvas.clientWidth;
-  const H = neuralCanvas.clientHeight;
-  const cx = W / 2, cy = H / 2;
-  const maxR = Math.min(W, H) * 0.45;
+  const data = await fetchJSON('/api/neural?limit=150');
+  const W = neuralCanvas.clientWidth || 900;
+  const H = neuralCanvas.clientHeight || 560;
+  const maxR = Math.min(W, H) * 0.44;
 
-  // position nodes by layer ring
   const layerGroups = {};
   for (const n of (data.nodes || [])) {
     const layer = n.layer || 'episodic';
@@ -1722,16 +2295,18 @@ async function loadNeuralData() {
   for (const [layer, nodes] of Object.entries(layerGroups)) {
     const cfg = LAYER_CONFIG[layer] || LAYER_CONFIG.episodic;
     const ringR = cfg.ring * maxR;
-    const jitter = maxR * 0.12;
+    const jitter = maxR * 0.08;
     nodes.forEach((n, i) => {
-      const angle = (i / nodes.length) * Math.PI * 2 + Math.random() * 0.3;
+      const angle = (i / nodes.length) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
       const r = ringR + (Math.random() - 0.5) * jitter * 2;
       neuralNodes.push({
-        ...n, layer,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: 0, vy: 0,
-        r: Math.max(3, Math.min(16, 2.5 + Math.sqrt(n.size) * 1.8)),
+        ...n,
+        layer,
+        x: Math.cos(angle) * r,
+        y: Math.sin(angle) * r,
+        vx: 0,
+        vy: 0,
+        r: Math.max(4, Math.min(22, 3.5 + Math.sqrt(n.size) * 1.5 + Math.sqrt(n.degree || 0) * 1.2)),
         glow: 0,
         pulsePhase: Math.random() * Math.PI * 2,
       });
@@ -1751,7 +2326,12 @@ async function loadNeuralData() {
       relation_type: e.relation_type || '',
     }));
 
-  // fire initial (with read/write differentiation)
+  const statEl = document.getElementById('neural-summary-stat');
+  if (statEl) {
+    statEl.textContent = `${neuralNodes.length} entities · ${neuralEdges.length} connections`;
+  }
+
+  // initial fires
   for (const f of (data.fires || [])) {
     const ft = f.fire_type || 'read';
     for (const id of (f.entity_ids || '').split(',')) {
@@ -1760,14 +2340,18 @@ async function loadNeuralData() {
     }
   }
 
+  if (camera.x === 0 && camera.y === 0) {
+    resetNeuralCamera();
+  }
+
   if (!animFrame) animate();
 }
 
 function fireNode(node, fireType = 'read') {
-  node.glow = 1.0;
+  if (!node) return;
+  node.glow = 1.6;
   const isWrite = fireType === 'write';
   const color = isWrite ? FIRE_COLORS.write : FIRE_COLORS.read;
-  // send impulse along each connected edge
   neuralEdges.forEach(e => {
     if (e.source === node || e.target === node) {
       const from = e.source === node ? e.source : e.target;
@@ -1775,458 +2359,48 @@ function fireNode(node, fireType = 'read') {
       impulses.push({
         from, to,
         progress: 0,
-        speed: isWrite ? 0.012 + Math.random() * 0.008 : 0.008 + Math.random() * 0.006,
+        speed: isWrite ? 0.015 + Math.random() * 0.008 : 0.010 + Math.random() * 0.006,
         color,
-        size: isWrite ? 4 : 3,
+        size: isWrite ? 4.5 : 3.2,
         cascaded: false,
         fireType,
       });
     }
   });
-  // writes get a radial burst effect + diffusion particle from center
-  if (isWrite) {
-    node.glow = 1.5;
-    bursts.push({ x: node.x, y: node.y, radius: node.r, maxRadius: node.r * 12, progress: 0, color });
-    // spawn diffusion particle from center to this node
-    const W = neuralCanvas.clientWidth, H = neuralCanvas.clientHeight;
-    diffusions.push({
-      sx: W / 2, sy: H / 2,  // start at center
-      tx: node.x, ty: node.y, // target node position
-      progress: 0,
-      speed: 0.015 + Math.random() * 0.005,
-      color,
-      size: 5,
-      targetNode: node,
-    });
+  bursts.push({ x: node.x, y: node.y, radius: node.r, maxRadius: node.r * (isWrite ? 14 : 8), progress: 0, color });
+}
+
+function fireRandomPulse() {
+  if (!neuralNodes.length) return;
+  const candidates = neuralNodes.filter(n => (n.degree || 0) > 0);
+  const node = (candidates.length ? candidates : neuralNodes)[Math.floor(Math.random() * (candidates.length || neuralNodes.length))];
+  const type = Math.random() > 0.4 ? 'read' : 'write';
+  fireNode(node, type);
+  toast(`Synaptic pulse triggered on ${node.name}`, 'info');
+}
+
+function fireSelectedNode() {
+  if (constellationNode) {
+    fireNode(constellationNode, 'write');
   }
 }
 
-// animate a node migrating between rings (promotion/demotion)
-function migrateNode(node, fromLayer, toLayer) {
-  const W = neuralCanvas.clientWidth, H = neuralCanvas.clientHeight;
-  const cx = W / 2, cy = H / 2;
-  const maxR = Math.min(W, H) * 0.45;
-  const fromCfg = LAYER_CONFIG[fromLayer] || LAYER_CONFIG.episodic;
-  const toCfg = LAYER_CONFIG[toLayer] || LAYER_CONFIG.episodic;
-  const fromR = fromCfg.ring * maxR;
-  const toR = toCfg.ring * maxR;
-  // compute current angle of node relative to center
-  const angle = Math.atan2(node.y - cy, node.x - cx);
-  const targetX = cx + Math.cos(angle) * toR;
-  const targetY = cy + Math.sin(angle) * toR;
-  migrations.push({
-    node,
-    sx: node.x, sy: node.y,
-    tx: targetX, ty: targetY,
-    progress: 0,
-    speed: 0.008,
-    fromColor: fromCfg.color,
-    toColor: toCfg.color,
-  });
-  node.layer = toLayer;
+function centerOnSelectedNode() {
+  if (!constellationNode) return;
+  zoomToNode(constellationNode);
 }
 
-function animate() {
-  const W = neuralCanvas.clientWidth;
-  const H = neuralCanvas.clientHeight;
-  const cx = W / 2, cy = H / 2;
-  const maxR = Math.min(W, H) * 0.45;
-  nCtx.clearRect(0, 0, W, H);
-
-  // ambient particles
-  if (!ambientParticles.length) initAmbient(W, H);
-  for (const p of ambientParticles) {
-    p.x += p.vx; p.y += p.vy;
-    if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-    if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-    nCtx.beginPath();
-    nCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-    nCtx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${p.alpha})`;
-    nCtx.fill();
-  }
-
-  // draw layer rings — glowing gradient rings
-  for (const [layer, cfg] of Object.entries(LAYER_CONFIG)) {
-    const r = cfg.ring * maxR;
-    const c = cfg.color;
-    // outer glow ring
-    nCtx.beginPath();
-    nCtx.arc(cx, cy, r, 0, Math.PI * 2);
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b}, 0.06)`;
-    nCtx.lineWidth = 6;
-    nCtx.stroke();
-    // crisp inner ring
-    nCtx.beginPath();
-    nCtx.arc(cx, cy, r, 0, Math.PI * 2);
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b}, 0.15)`;
-    nCtx.lineWidth = 0.5;
-    nCtx.stroke();
-    // layer label at top with glow
-    nCtx.font = '600 9px Inter, sans-serif';
-    nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b}, 0.35)`;
-    nCtx.textAlign = 'center';
-    nCtx.fillText(cfg.label, cx, cy - r - 8);
-    // subtle label glow
-    nCtx.shadowColor = `rgba(${c.r},${c.g},${c.b}, 0.3)`;
-    nCtx.shadowBlur = 6;
-    nCtx.fillText(cfg.label, cx, cy - r - 8);
-    nCtx.shadowBlur = 0;
-  }
-
-  // center glow — core indicator
-  const coreGrad = nCtx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.08);
-  coreGrad.addColorStop(0, 'rgba(124,58,237,0.12)');
-  coreGrad.addColorStop(1, 'rgba(124,58,237,0)');
-  nCtx.beginPath();
-  nCtx.arc(cx, cy, maxR * 0.08, 0, Math.PI * 2);
-  nCtx.fillStyle = coreGrad;
-  nCtx.fill();
-
-  // physics — mild force-directed within layers
-  const repulsion = 400;
-  const attraction = 0.002;
-  const damping = 0.9;
-  const dt = 0.016;
-
-  for (let i = 0; i < neuralNodes.length; i++) {
-    const a = neuralNodes[i];
-    for (let j = i + 1; j < neuralNodes.length; j++) {
-      const b = neuralNodes[j];
-      let dx = a.x - b.x, dy = a.y - b.y;
-      let dist = Math.sqrt(dx*dx + dy*dy) || 1;
-      let force = repulsion / (dist * dist);
-      a.vx += (dx/dist)*force*dt; a.vy += (dy/dist)*force*dt;
-      b.vx -= (dx/dist)*force*dt; b.vy -= (dy/dist)*force*dt;
-    }
-  }
-  for (const e of neuralEdges) {
-    let dx = e.target.x - e.source.x, dy = e.target.y - e.source.y;
-    let dist = Math.sqrt(dx*dx + dy*dy) || 1;
-    let force = attraction * dist;
-    e.source.vx += (dx/dist)*force*dt; e.source.vy += (dy/dist)*force*dt;
-    e.target.vx -= (dx/dist)*force*dt; e.target.vy -= (dy/dist)*force*dt;
-  }
-
-  for (const n of neuralNodes) {
-    if (n === dragNode) continue;
-    // pull toward own layer ring
-    const cfg = LAYER_CONFIG[n.layer] || LAYER_CONFIG.episodic;
-    const targetR = cfg.ring * maxR;
-    const dx = n.x - cx, dy = n.y - cy;
-    const currentR = Math.sqrt(dx*dx + dy*dy) || 1;
-    const pullStrength = 0.001;
-    const rDiff = targetR - currentR;
-    n.vx += (dx/currentR) * rDiff * pullStrength;
-    n.vy += (dy/currentR) * rDiff * pullStrength;
-
-    n.vx *= damping; n.vy *= damping;
-    n.x += n.vx; n.y += n.vy;
-    n.x = Math.max(n.r+2, Math.min(W-n.r-2, n.x));
-    n.y = Math.max(n.r+2, Math.min(H-n.r-2, n.y));
-    n.glow *= 0.993;
-    n.pulsePhase += 0.015;
-  }
-
-  // draw edges
-  const inConstellation = constellationSet !== null;
-  for (const e of neuralEdges) {
-    const edgeInSubgraph = inConstellation && constellationSet.has(e.source.id) && constellationSet.has(e.target.id);
-    const basealpha = 0.04 + e.strength * 0.02;
-    const alpha = inConstellation ? (edgeInSubgraph ? Math.max(0.18, basealpha * 4) : basealpha * 0.1) : basealpha;
-
-    if (edgeInSubgraph) {
-      // gradient edge for constellation
-      const cn = constellationNode;
-      const other = e.source === cn ? e.target : e.target === cn ? e.source : null;
-      const c = other ? (TYPE_COLORS[other.type] || TYPE_COLORS.default) : {r:120,g:120,b:160};
-      const grad = nCtx.createLinearGradient(e.source.x, e.source.y, e.target.x, e.target.y);
-      const sc = TYPE_COLORS[e.source.type] || TYPE_COLORS.default;
-      const tc = TYPE_COLORS[e.target.type] || TYPE_COLORS.default;
-      grad.addColorStop(0, `rgba(${sc.r},${sc.g},${sc.b},${alpha})`);
-      grad.addColorStop(1, `rgba(${tc.r},${tc.g},${tc.b},${alpha})`);
-      nCtx.beginPath();
-      nCtx.moveTo(e.source.x, e.source.y);
-      nCtx.lineTo(e.target.x, e.target.y);
-      nCtx.strokeStyle = grad;
-      nCtx.lineWidth = 1.5;
-    } else {
-      nCtx.beginPath();
-      nCtx.moveTo(e.source.x, e.source.y);
-      nCtx.lineTo(e.target.x, e.target.y);
-      nCtx.strokeStyle = `rgba(120,120,160,${alpha})`;
-      nCtx.lineWidth = 0.4;
-    }
-    nCtx.stroke();
-    // relationship label on constellation edges
-    if (edgeInSubgraph && e.relation_type) {
-      const mx = (e.source.x + e.target.x) / 2;
-      const my = (e.source.y + e.target.y) / 2;
-      nCtx.font = '500 8px Inter, sans-serif';
-      nCtx.fillStyle = 'rgba(224,224,236,0.45)';
-      nCtx.textAlign = 'center';
-      nCtx.fillText(e.relation_type, mx, my - 3);
-    }
-  }
-
-  // draw + update impulses (traveling fire particles)
-  const aliveImpulses = [];
-  for (const imp of impulses) {
-    imp.progress += imp.speed;
-    if (imp.progress >= 1) {
-      // arrived — cascade to target
-      if (!imp.cascaded) {
-        imp.to.glow = Math.max(imp.to.glow, 0.7);
-        imp.cascaded = true;
-      }
-      continue; // remove
-    }
-    aliveImpulses.push(imp);
-
-    const px = imp.from.x + (imp.to.x - imp.from.x) * imp.progress;
-    const py = imp.from.y + (imp.to.y - imp.from.y) * imp.progress;
-    const c = imp.color;
-
-    // impulse trail
-    const trailLen = 5;
-    for (let t = 0; t < trailLen; t++) {
-      const tp = imp.progress - t * imp.speed * 2;
-      if (tp < 0) break;
-      const tx = imp.from.x + (imp.to.x - imp.from.x) * tp;
-      const ty = imp.from.y + (imp.to.y - imp.from.y) * tp;
-      const ta = (1 - t/trailLen) * 0.4;
-      nCtx.beginPath();
-      nCtx.arc(tx, ty, imp.size * (1 - t/trailLen*0.5), 0, Math.PI*2);
-      nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${ta})`;
-      nCtx.fill();
-    }
-
-    // bright head
-    nCtx.beginPath();
-    nCtx.arc(px, py, imp.size, 0, Math.PI*2);
-    nCtx.fillStyle = `rgba(${Math.min(255,c.r+60)},${Math.min(255,c.g+60)},${Math.min(255,c.b+60)},0.9)`;
-    nCtx.fill();
-
-    // edge glow under impulse
-    const edgeDx = imp.to.x - imp.from.x, edgeDy = imp.to.y - imp.from.y;
-    nCtx.beginPath();
-    nCtx.moveTo(imp.from.x, imp.from.y);
-    nCtx.lineTo(imp.to.x, imp.to.y);
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${0.2 * (1-imp.progress)})`;
-    nCtx.lineWidth = 1.5;
-    nCtx.stroke();
-  }
-  impulses = aliveImpulses;
-
-  // draw radial bursts (write birth effect)
-  const aliveBursts = [];
-  for (const b of bursts) {
-    b.progress += 0.02;
-    if (b.progress >= 1) continue;
-    aliveBursts.push(b);
-    const r = b.radius + (b.maxRadius - b.radius) * b.progress;
-    const alpha = (1 - b.progress) * 0.5;
-    nCtx.beginPath();
-    nCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
-    nCtx.strokeStyle = `rgba(${b.color.r},${b.color.g},${b.color.b},${alpha})`;
-    nCtx.lineWidth = 2 * (1 - b.progress);
-    nCtx.stroke();
-    // inner ring
-    const r2 = b.radius + (b.maxRadius - b.radius) * b.progress * 0.6;
-    nCtx.beginPath();
-    nCtx.arc(b.x, b.y, r2, 0, Math.PI * 2);
-    nCtx.strokeStyle = `rgba(${b.color.r},${b.color.g},${b.color.b},${alpha * 0.5})`;
-    nCtx.lineWidth = 1;
-    nCtx.stroke();
-  }
-  bursts = aliveBursts;
-
-  // draw diffusion particles (memory birth — center to ring)
-  const aliveDiffusions = [];
-  for (const d of diffusions) {
-    d.progress += d.speed;
-    if (d.progress >= 1) {
-      // arrived — trigger glow on target
-      if (d.targetNode) d.targetNode.glow = Math.max(d.targetNode.glow, 1.2);
-      continue;
-    }
-    aliveDiffusions.push(d);
-    const t = d.progress;
-    // ease-out cubic
-    const et = 1 - Math.pow(1 - t, 3);
-    const px = d.sx + (d.tx - d.sx) * et;
-    const py = d.sy + (d.ty - d.sy) * et;
-    const c = d.color;
-    // comet trail
-    for (let i = 0; i < 6; i++) {
-      const tp = t - i * d.speed * 2.5;
-      if (tp < 0) break;
-      const tet = 1 - Math.pow(1 - tp, 3);
-      const tx = d.sx + (d.tx - d.sx) * tet;
-      const ty = d.sy + (d.ty - d.sy) * tet;
-      const a = (1 - i / 6) * 0.4;
-      nCtx.beginPath();
-      nCtx.arc(tx, ty, d.size * (1 - i / 6 * 0.6), 0, Math.PI * 2);
-      nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${a})`;
-      nCtx.fill();
-    }
-    // bright head with glow
-    const headGlow = nCtx.createRadialGradient(px, py, 0, px, py, d.size * 3);
-    headGlow.addColorStop(0, `rgba(${Math.min(255,c.r+80)},${Math.min(255,c.g+80)},${Math.min(255,c.b+80)},0.9)`);
-    headGlow.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},0.3)`);
-    headGlow.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
-    nCtx.beginPath();
-    nCtx.arc(px, py, d.size * 3, 0, Math.PI * 2);
-    nCtx.fillStyle = headGlow;
-    nCtx.fill();
-    nCtx.beginPath();
-    nCtx.arc(px, py, d.size * 0.8, 0, Math.PI * 2);
-    nCtx.fillStyle = `rgba(255,255,255,0.9)`;
-    nCtx.fill();
-  }
-  diffusions = aliveDiffusions;
-
-  // draw migration animations (promotion — node slides between rings)
-  const aliveMigrations = [];
-  for (const m of migrations) {
-    m.progress += m.speed;
-    if (m.progress >= 1) {
-      m.node.x = m.tx;
-      m.node.y = m.ty;
-      m.node.glow = 1.0;
-      continue;
-    }
-    aliveMigrations.push(m);
-    const et = 1 - Math.pow(1 - m.progress, 2); // ease-out quad
-    m.node.x = m.sx + (m.tx - m.sx) * et;
-    m.node.y = m.sy + (m.ty - m.sy) * et;
-    m.node.glow = 0.8;
-    // trail between old and new position
-    const fc = m.fromColor, tc = m.toColor;
-    const blend = m.progress;
-    const cr = fc.r + (tc.r - fc.r) * blend;
-    const cg = fc.g + (tc.g - fc.g) * blend;
-    const cb = fc.b + (tc.b - fc.b) * blend;
-    nCtx.beginPath();
-    nCtx.moveTo(m.sx, m.sy);
-    nCtx.lineTo(m.node.x, m.node.y);
-    nCtx.strokeStyle = `rgba(${cr},${cg},${cb},${0.4 * (1 - m.progress)})`;
-    nCtx.lineWidth = 2;
-    nCtx.stroke();
-  }
-  migrations = aliveMigrations;
-
-  // draw nodes (dim non-constellation nodes)
-  for (const n of neuralNodes) {
-    const c = TYPE_COLORS[n.type] || TYPE_COLORS.default;
-    const isHovered = n === hoveredNode;
-    const breathe = Math.sin(n.pulsePhase) * 0.1 + 0.9;
-    const nodeInSubgraph = !inConstellation || constellationSet.has(n.id);
-    const isFocusNode = inConstellation && n === constellationNode;
-    const dimFactor = nodeInSubgraph ? 1 : 0.12;
-
-    // outer glow halo — always present for subgraph nodes, stronger when fired
-    if (nodeInSubgraph) {
-      const baseGlow = isFocusNode ? 0.35 : isHovered ? 0.2 : 0.04 + breathe * 0.02;
-      const glowR = n.r * (3 + n.glow * 10 + (isFocusNode ? 5 : 0));
-      const ga = Math.min(0.8, baseGlow + n.glow * 0.6);
-      const grad = nCtx.createRadialGradient(n.x, n.y, n.r * 0.2, n.x, n.y, glowR);
-      grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${ga * dimFactor})`);
-      grad.addColorStop(0.4, `rgba(${c.r},${c.g},${c.b},${ga * 0.2 * dimFactor})`);
-      grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
-      nCtx.beginPath();
-      nCtx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
-      nCtx.fillStyle = grad;
-      nCtx.fill();
-    }
-
-    // neuron body — glass orb effect
-    const bodyAlpha = (isHovered ? 1 : (0.5 + n.glow * 0.5)) * dimFactor;
-    const bodyR = n.r * breathe;
-    // filled body with gradient
-    const bodyGrad = nCtx.createRadialGradient(n.x - bodyR * 0.3, n.y - bodyR * 0.3, 0, n.x, n.y, bodyR);
-    bodyGrad.addColorStop(0, `rgba(${Math.min(255,c.r+60)},${Math.min(255,c.g+60)},${Math.min(255,c.b+60)},${bodyAlpha * 0.4})`);
-    bodyGrad.addColorStop(0.6, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.2})`);
-    bodyGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.05})`);
-    nCtx.beginPath();
-    nCtx.arc(n.x, n.y, bodyR, 0, Math.PI * 2);
-    nCtx.fillStyle = bodyGrad;
-    nCtx.fill();
-    // crisp edge
-    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.7})`;
-    nCtx.lineWidth = isFocusNode ? 2 : isHovered ? 1.5 : 0.8;
-    nCtx.stroke();
-
-    // nucleus — bright core dot
-    const nucR = n.r * (isFocusNode ? 0.35 : 0.3);
-    const nucAlpha = (0.7 + n.glow * 0.3) * dimFactor;
-    nCtx.beginPath();
-    nCtx.arc(n.x, n.y, nucR, 0, Math.PI * 2);
-    nCtx.fillStyle = `rgba(${Math.min(255,c.r+120)},${Math.min(255,c.g+120)},${Math.min(255,c.b+120)},${nucAlpha})`;
-    nCtx.fill();
-
-    // label
-    const showLabel = (inConstellation && nodeInSubgraph) || isHovered || n.r > 7;
-    if (showLabel) {
-      const labelAlpha = nodeInSubgraph ? (isHovered || isFocusNode ? 0.95 : 0.65) : 0.12;
-      nCtx.font = `${isHovered || isFocusNode ? '600 11' : '500 9'}px Inter, sans-serif`;
-      nCtx.fillStyle = `rgba(224,224,236,${labelAlpha})`;
-      nCtx.textAlign = 'center';
-      // text shadow for readability
-      if (labelAlpha > 0.5) {
-        nCtx.shadowColor = `rgba(0,0,0,0.6)`;
-        nCtx.shadowBlur = 4;
-      }
-      nCtx.fillText(n.name, n.x, n.y + n.r + 14);
-      nCtx.shadowBlur = 0;
-    }
-  }
-
-  animFrame = requestAnimationFrame(animate);
+function zoomToNode(node) {
+  const W = neuralCanvas.clientWidth || 900;
+  const H = neuralCanvas.clientHeight || 560;
+  const targetZoom = Math.max(1.4, camera.zoom);
+  camera.targetZoom = targetZoom;
+  camera.targetX = (W * 0.42) - node.x * targetZoom;
+  camera.targetY = (H * 0.5) - node.y * targetZoom;
 }
 
-// mouse
-neuralCanvas.addEventListener('mousemove', (e) => {
-  const rect = neuralCanvas.getBoundingClientRect();
-  mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top;
-  if (dragNode) { dragNode.x = mouseX; dragNode.y = mouseY; dragNode.vx = 0; dragNode.vy = 0; return; }
-  hoveredNode = null;
-  for (const n of neuralNodes) {
-    const dx = mouseX-n.x, dy = mouseY-n.y;
-    if (dx*dx+dy*dy < (n.r+6)*(n.r+6)) { hoveredNode = n; break; }
-  }
-  if (hoveredNode) {
-    neuralCanvas.style.cursor = 'pointer';
-    tooltip.style.display = 'block';
-    tooltip.style.left = (mouseX+15)+'px'; tooltip.style.top = (mouseY-10)+'px';
-    tooltip.querySelector('.tt-name').textContent = hoveredNode.name;
-    tooltip.querySelector('.tt-type').textContent = `${hoveredNode.type} · ${hoveredNode.layer}`;
-    tooltip.querySelector('.tt-count').textContent = hoveredNode.size + ' memories';
-  } else {
-    neuralCanvas.style.cursor = 'default';
-    tooltip.style.display = 'none';
-  }
-});
-neuralCanvas.addEventListener('mousedown', () => { if (hoveredNode) { dragNode = hoveredNode; neuralCanvas.style.cursor = 'grabbing'; } });
-neuralCanvas.addEventListener('mouseup', () => { dragNode = null; });
-neuralCanvas.addEventListener('click', () => {
-  if (hoveredNode && !dragNode) {
-    if (constellationNode === hoveredNode) {
-      // clicking same node exits constellation mode
-      exitConstellation();
-    } else {
-      enterConstellation(hoveredNode);
-    }
-    fireNode(hoveredNode);
-    inspectEntity(hoveredNode.id);
-  } else if (!hoveredNode) {
-    // clicking empty space exits constellation
-    exitConstellation();
-  }
-});
-
-function enterConstellation(node) {
+async function enterConstellation(node) {
   constellationNode = node;
-  // collect all directly connected nodes
   constellationSet = new Set([node.id]);
   constellationEdges = [];
   neuralEdges.forEach(e => {
@@ -2236,12 +2410,582 @@ function enterConstellation(node) {
       constellationEdges.push(e);
     }
   });
+
+  zoomToNode(node);
+
+  const drawer = document.getElementById('neural-drawer');
+  if (drawer) {
+    drawer.style.display = 'flex';
+    document.getElementById('nd-layer-badge').textContent = (node.layer || 'episodic').toUpperCase();
+    document.getElementById('nd-title').textContent = node.name;
+    document.getElementById('nd-type-badge').textContent = node.type || 'concept';
+    document.getElementById('nd-mem-count').textContent = `${node.size} memories`;
+    document.getElementById('nd-conn-count').textContent = `${node.degree || constellationEdges.length} connections`;
+    
+    // Direct connections list
+    const connList = document.getElementById('nd-connections-list');
+    if (constellationEdges.length === 0) {
+      connList.innerHTML = '<div style="color:var(--muted);font-size:11px">No direct connections recorded yet.</div>';
+    } else {
+      connList.innerHTML = constellationEdges.map(e => {
+        const other = e.source === node ? e.target : e.source;
+        const rel = e.relation_type || 'relates to';
+        return `<div class="nd-item" onclick="jumpToEntity('${other.id}')">
+          <div class="nd-item-rel">→ ${escapeHtml(rel)}</div>
+          <div style="font-weight:600;color:var(--text)">${escapeHtml(other.name)} <span style="font-size:9px;color:var(--muted)">(${other.type})</span></div>
+        </div>`;
+      }).join('');
+    }
+
+    // Associated memories list
+    const memList = document.getElementById('nd-memories-list');
+    memList.innerHTML = '<div style="color:var(--muted);font-size:11px">Loading associated memories...</div>';
+    try {
+      const res = await fetchJSON(`/api/entities/${node.id}/graph`);
+      let memories = (res && res.memories) || [];
+      if (!memories.length && node.name) {
+        try {
+          const searchData = await fetchJSON(`/api/search?q=${encodeURIComponent(node.name)}&limit=6`);
+          if (searchData && Array.isArray(searchData.results)) {
+            memories = searchData.results;
+          }
+        } catch (_) {}
+      }
+      if (memories && memories.length) {
+        memList.innerHTML = memories.map(m => `
+          <div class="nd-item" onclick="inspectMemory('${m.id}')" title="Inspect memory">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+              <span class="tag ${m.layer || 'episodic'}">${m.layer || 'episodic'}</span>
+              <span style="font:9px var(--mono);color:var(--muted)">${m.created_at ? new Date(m.created_at * 1000).toLocaleDateString() : ''}</span>
+            </div>
+            <div class="nd-item-text">${escapeHtml(m.content || '')}</div>
+          </div>
+        `).join('');
+      } else {
+        memList.innerHTML = '<div style="color:var(--muted);font-size:11px">No memories directly mentioning this entity.</div>';
+      }
+    } catch(e) {
+      memList.innerHTML = '<div style="color:var(--muted);font-size:11px">Could not load memories.</div>';
+    }
+  }
 }
 
 function exitConstellation() {
   constellationNode = null;
   constellationSet = null;
   constellationEdges = null;
+  const drawer = document.getElementById('neural-drawer');
+  if (drawer) drawer.style.display = 'none';
+  resetNeuralCamera();
+}
+
+function jumpToEntity(id) {
+  const node = nodeById[id];
+  if (!node) return;
+  enterConstellation(node);
+  fireNode(node, 'read');
+  const dd = document.getElementById('neural-search-dropdown');
+  if (dd) dd.classList.remove('open');
+  const input = document.getElementById('neural-search-input');
+  if (input) input.value = node.name;
+}
+
+async function addAliasFromDrawer() {
+  if (!constellationNode) return;
+  const input = document.getElementById('nd-alias-input');
+  const alias = input.value.trim();
+  if (!alias) return;
+  await postJSON(`/api/entities/${constellationNode.id}/alias`, {alias});
+  input.value = '';
+  toast(`Added alias "${alias}" to ${constellationNode.name}`, 'success');
+}
+
+async function changeTypeFromDrawer(newType) {
+  if (!constellationNode || !newType) return;
+  await postJSON(`/api/entities/${constellationNode.id}/type`, {type: newType});
+  constellationNode.type = newType;
+  document.getElementById('nd-type-badge').textContent = newType;
+  toast(`Updated ${constellationNode.name} type to ${newType}`, 'success');
+}
+
+function filterNeuralSearch(val) {
+  const q = val.trim().toLowerCase();
+  const dd = document.getElementById('neural-search-dropdown');
+  if (!q || !neuralNodes.length) {
+    if (dd) dd.classList.remove('open');
+    return;
+  }
+  const matches = neuralNodes.filter(n => n.name.toLowerCase().includes(q)).slice(0, 8);
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:11px">No entities matching “' + escapeHtml(q) + '”</div>';
+    dd.classList.add('open');
+    return;
+  }
+  dd.innerHTML = matches.map(m => `
+    <div class="conn-dropdown-item" onclick="jumpToEntity('${m.id}')">
+      <div>
+        <strong>${escapeHtml(m.name)}</strong>
+        <span style="font-size:9px;color:var(--muted);margin-left:6px">${m.type}</span>
+      </div>
+      <small>${m.size} mems · ${m.layer}</small>
+    </div>
+  `).join('');
+  dd.classList.add('open');
+}
+
+function handleNeuralSearchKey(e) {
+  if (e.key === 'Escape') {
+    const dd = document.getElementById('neural-search-dropdown');
+    if (dd) dd.classList.remove('open');
+    e.target.blur();
+  } else if (e.key === 'Enter') {
+    const dd = document.getElementById('neural-search-dropdown');
+    const firstItem = dd ? dd.querySelector('.conn-dropdown-item') : null;
+    if (firstItem) {
+      firstItem.click();
+    }
+  }
+}
+
+// Mouse and wheel controls on canvas
+neuralCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = neuralCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const zoomFactor = e.deltaY < 0 ? 1.14 : 0.88;
+  const newZoom = Math.max(0.25, Math.min(4.0, camera.targetZoom * zoomFactor));
+  const wx = (mx - camera.targetX) / camera.targetZoom;
+  const wy = (my - camera.targetY) / camera.targetZoom;
+  camera.targetZoom = newZoom;
+  camera.targetX = mx - wx * newZoom;
+  camera.targetY = my - wy * newZoom;
+}, { passive: false });
+
+neuralCanvas.addEventListener('mousemove', (e) => {
+  const rect = neuralCanvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+
+  if (isPanning) {
+    camera.targetX += (mouseX - panStartX);
+    camera.targetY += (mouseY - panStartY);
+    panStartX = mouseX;
+    panStartY = mouseY;
+    neuralCanvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  const worldPos = screenToWorld(mouseX, mouseY);
+
+  if (dragNode) {
+    dragNode.x = worldPos.x;
+    dragNode.y = worldPos.y;
+    dragNode.vx = 0;
+    dragNode.vy = 0;
+    neuralCanvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  hoveredNode = null;
+  for (let i = neuralNodes.length - 1; i >= 0; i--) {
+    const n = neuralNodes[i];
+    const dx = worldPos.x - n.x, dy = worldPos.y - n.y;
+    const hitRadius = (n.r + 6);
+    if (dx*dx + dy*dy < hitRadius * hitRadius) {
+      hoveredNode = n;
+      break;
+    }
+  }
+
+  if (hoveredNode) {
+    neuralCanvas.style.cursor = 'pointer';
+    tooltip.style.display = 'block';
+    tooltip.style.left = Math.min(window.innerWidth - 260, mouseX + 16) + 'px';
+    tooltip.style.top = Math.max(10, mouseY - 14) + 'px';
+    tooltip.querySelector('.tt-name').textContent = hoveredNode.name;
+    tooltip.querySelector('.tt-type').textContent = `${hoveredNode.type} · ${hoveredNode.layer}`;
+    tooltip.querySelector('.tt-count').textContent = `${hoveredNode.size} memories · ${hoveredNode.degree || 0} connections`;
+  } else {
+    neuralCanvas.style.cursor = 'grab';
+    tooltip.style.display = 'none';
+  }
+});
+
+neuralCanvas.addEventListener('mousedown', (e) => {
+  const rect = neuralCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  if (hoveredNode) {
+    dragNode = hoveredNode;
+    neuralCanvas.style.cursor = 'grabbing';
+  } else {
+    isPanning = true;
+    panStartX = mx;
+    panStartY = my;
+    neuralCanvas.style.cursor = 'grabbing';
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  dragNode = null;
+  isPanning = false;
+  if (neuralCanvas) neuralCanvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+});
+
+neuralCanvas.addEventListener('click', () => {
+  if (hoveredNode) {
+    if (constellationNode === hoveredNode) {
+      exitConstellation();
+    } else {
+      enterConstellation(hoveredNode);
+    }
+    fireNode(hoveredNode);
+  } else if (!isPanning) {
+    exitConstellation();
+  }
+});
+
+neuralCanvas.addEventListener('dblclick', () => {
+  if (hoveredNode) {
+    zoomToNode(hoveredNode);
+  } else {
+    resetNeuralCamera();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (activeView !== 'neural') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+    if (e.key === 'Escape') e.target.blur();
+    return;
+  }
+  if (e.key === 'Escape') {
+    exitConstellation();
+  } else if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    togglePhysics();
+  } else if (e.key === '+' || e.key === '=') {
+    zoomNeural(1.25);
+  } else if (e.key === '-' || e.key === '_') {
+    zoomNeural(0.8);
+  } else if (e.key === '0') {
+    resetNeuralCamera();
+  } else if (e.key === 'f' || e.key === 'F') {
+    fireRandomPulse();
+  } else if (e.key === '/') {
+    e.preventDefault();
+    const input = document.getElementById('neural-search-input');
+    if (input) { input.focus(); input.select(); }
+  }
+});
+
+function animate() {
+  const W = neuralCanvas.clientWidth || 900;
+  const H = neuralCanvas.clientHeight || 560;
+  const maxR = Math.min(W, H) * 0.44;
+
+  camera.x += (camera.targetX - camera.x) * 0.14;
+  camera.y += (camera.targetY - camera.y) * 0.14;
+  camera.zoom += (camera.targetZoom - camera.zoom) * 0.14;
+
+  nCtx.clearRect(0, 0, W, H);
+
+  // ambient floating particles
+  if (!ambientParticles.length) initAmbient(W, H);
+  for (const p of ambientParticles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < -W) p.x = W; if (p.x > W) p.x = -W;
+    if (p.y < -H) p.y = H; if (p.y > H) p.y = -H;
+    const sx = W / 2 + p.x;
+    const sy = H / 2 + p.y;
+    if (sx >= 0 && sx <= W && sy >= 0 && sy <= H) {
+      nCtx.beginPath();
+      nCtx.arc(sx, sy, p.r, 0, Math.PI * 2);
+      nCtx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${p.alpha})`;
+      nCtx.fill();
+    }
+  }
+
+  // physics update
+  if (neuralPhysicsRunning && neuralNodes.length) {
+    const dt = 0.016;
+    const repulsion = neuralLayoutMode === 'cluster' ? 550 : 350;
+    const attraction = neuralLayoutMode === 'cluster' ? 0.0035 : 0.0015;
+    const damping = 0.88;
+
+    for (let i = 0; i < neuralNodes.length; i++) {
+      const a = neuralNodes[i];
+      for (let j = i + 1; j < neuralNodes.length; j++) {
+        const b = neuralNodes[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const distSq = dx * dx + dy * dy || 1;
+        if (distSq < 250000) {
+          const dist = Math.sqrt(distSq);
+          const force = repulsion / (distSq + 200);
+          const fx = (dx / dist) * force * dt;
+          const fy = (dy / dist) * force * dt;
+          a.vx += fx; a.vy += fy;
+          b.vx -= fx; b.vy -= fy;
+        }
+      }
+    }
+
+    for (const e of neuralEdges) {
+      const dx = e.target.x - e.source.x, dy = e.target.y - e.source.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const targetDist = neuralLayoutMode === 'cluster' ? 60 : 100;
+      const force = (dist - targetDist) * attraction * (e.strength || 1);
+      const fx = (dx / dist) * force * dt;
+      const fy = (dy / dist) * force * dt;
+      e.source.vx += fx; e.source.vy += fy;
+      e.target.vx -= fx; e.target.vy -= fy;
+    }
+
+    for (const n of neuralNodes) {
+      if (n === dragNode) continue;
+      if (neuralLayoutMode === 'rings') {
+        const cfg = LAYER_CONFIG[n.layer] || LAYER_CONFIG.episodic;
+        const targetR = cfg.ring * maxR;
+        const currentR = Math.sqrt(n.x * n.x + n.y * n.y) || 1;
+        const rDiff = targetR - currentR;
+        n.vx += (n.x / currentR) * rDiff * 0.002;
+        n.vy += (n.y / currentR) * rDiff * 0.002;
+      } else {
+        n.vx -= n.x * 0.0007;
+        n.vy -= n.y * 0.0007;
+      }
+
+      n.vx *= damping;
+      n.vy *= damping;
+      n.x += n.vx;
+      n.y += n.vy;
+      n.glow *= 0.992;
+      n.pulsePhase += 0.016;
+    }
+  }
+
+  // Camera world transform
+  nCtx.save();
+  nCtx.translate(camera.x, camera.y);
+  nCtx.scale(camera.zoom, camera.zoom);
+
+  // Background coordinate matrix
+  const gridRange = maxR * 1.5;
+  nCtx.fillStyle = 'rgba(255,255,255,0.04)';
+  for (let gx = -gridRange; gx <= gridRange; gx += 60) {
+    for (let gy = -gridRange; gy <= gridRange; gy += 60) {
+      nCtx.fillRect(gx, gy, 1.2, 1.2);
+    }
+  }
+
+  // Layer rings (in rings mode)
+  if (neuralLayoutMode === 'rings') {
+    for (const [layer, cfg] of Object.entries(LAYER_CONFIG)) {
+      const r = cfg.ring * maxR;
+      const c = cfg.color;
+      const isFiltered = neuralLayerFilter !== 'all' && neuralLayerFilter !== layer;
+      const ringAlpha = isFiltered ? 0.03 : 0.16;
+
+      nCtx.beginPath();
+      nCtx.arc(0, 0, r, 0, Math.PI * 2);
+      nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${ringAlpha * 0.4})`;
+      nCtx.lineWidth = 5;
+      nCtx.stroke();
+
+      nCtx.beginPath();
+      nCtx.arc(0, 0, r, 0, Math.PI * 2);
+      nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${ringAlpha})`;
+      nCtx.lineWidth = 0.75;
+      nCtx.stroke();
+
+      nCtx.font = '600 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+      nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${isFiltered ? 0.2 : 0.55})`;
+      nCtx.textAlign = 'center';
+      nCtx.fillText(cfg.label, 0, -r - 8);
+    }
+  }
+
+  // Center core glow
+  const coreGrad = nCtx.createRadialGradient(0, 0, 0, 0, 0, maxR * 0.12);
+  coreGrad.addColorStop(0, 'rgba(237,131,182,0.16)');
+  coreGrad.addColorStop(1, 'rgba(237,131,182,0)');
+  nCtx.beginPath();
+  nCtx.arc(0, 0, maxR * 0.12, 0, Math.PI * 2);
+  nCtx.fillStyle = coreGrad;
+  nCtx.fill();
+
+  // Edges
+  const inConstellation = constellationSet !== null;
+  for (const e of neuralEdges) {
+    const edgeInSubgraph = inConstellation && constellationSet.has(e.source.id) && constellationSet.has(e.target.id);
+    const layerMatch = neuralLayerFilter === 'all' || e.source.layer === neuralLayerFilter || e.target.layer === neuralLayerFilter;
+    
+    let alpha = 0.06 + e.strength * 0.03;
+    if (inConstellation) {
+      alpha = edgeInSubgraph ? 0.55 : 0.02;
+    } else if (!layerMatch) {
+      alpha = 0.02;
+    }
+
+    const sc = TYPE_COLORS[e.source.type] || TYPE_COLORS.default;
+    const tc = TYPE_COLORS[e.target.type] || TYPE_COLORS.default;
+
+    nCtx.beginPath();
+    nCtx.moveTo(e.source.x, e.source.y);
+    nCtx.lineTo(e.target.x, e.target.y);
+
+    if (edgeInSubgraph) {
+      const grad = nCtx.createLinearGradient(e.source.x, e.source.y, e.target.x, e.target.y);
+      grad.addColorStop(0, `rgba(${sc.r},${sc.g},${sc.b},${alpha})`);
+      grad.addColorStop(1, `rgba(${tc.r},${tc.g},${tc.b},${alpha})`);
+      nCtx.strokeStyle = grad;
+      nCtx.lineWidth = 1.8;
+    } else {
+      nCtx.strokeStyle = `rgba(130,130,165,${alpha})`;
+      nCtx.lineWidth = Math.min(2, 0.4 + e.strength * 0.3);
+    }
+    nCtx.stroke();
+
+    if (edgeInSubgraph && e.relation_type) {
+      const mx = (e.source.x + e.target.x) / 2;
+      const my = (e.source.y + e.target.y) / 2;
+      nCtx.save();
+      nCtx.font = '500 8px ui-monospace, SFMono-Regular, Menlo, monospace';
+      const labelText = e.relation_type.toUpperCase();
+      const textW = nCtx.measureText(labelText).width;
+      nCtx.fillStyle = '#111113';
+      nCtx.strokeStyle = '#292427';
+      nCtx.lineWidth = 1;
+      nCtx.fillRect(mx - textW/2 - 4, my - 6, textW + 8, 12);
+      nCtx.strokeRect(mx - textW/2 - 4, my - 6, textW + 8, 12);
+      nCtx.fillStyle = '#ed83b6';
+      nCtx.textAlign = 'center';
+      nCtx.textBaseline = 'middle';
+      nCtx.fillText(labelText, mx, my);
+      nCtx.restore();
+    }
+  }
+
+  // Impulses
+  const aliveImpulses = [];
+  for (const imp of impulses) {
+    imp.progress += imp.speed;
+    if (imp.progress >= 1) {
+      if (!imp.cascaded) {
+        imp.to.glow = Math.max(imp.to.glow, 0.9);
+        imp.cascaded = true;
+      }
+      continue;
+    }
+    aliveImpulses.push(imp);
+
+    const px = imp.from.x + (imp.to.x - imp.from.x) * imp.progress;
+    const py = imp.from.y + (imp.to.y - imp.from.y) * imp.progress;
+    const c = imp.color;
+
+    const trailLen = 5;
+    for (let t = 0; t < trailLen; t++) {
+      const tp = imp.progress - t * imp.speed * 2;
+      if (tp < 0) break;
+      const tx = imp.from.x + (imp.to.x - imp.from.x) * tp;
+      const ty = imp.from.y + (imp.to.y - imp.from.y) * tp;
+      const ta = (1 - t / trailLen) * 0.45;
+      nCtx.beginPath();
+      nCtx.arc(tx, ty, imp.size * (1 - t / trailLen * 0.4), 0, Math.PI * 2);
+      nCtx.fillStyle = `rgba(${c.r},${c.g},${c.b},${ta})`;
+      nCtx.fill();
+    }
+
+    nCtx.beginPath();
+    nCtx.arc(px, py, imp.size, 0, Math.PI * 2);
+    nCtx.fillStyle = `rgba(${Math.min(255, c.r + 70)},${Math.min(255, c.g + 70)},${Math.min(255, c.b + 70)},0.95)`;
+    nCtx.fill();
+  }
+  impulses = aliveImpulses;
+
+  // Bursts
+  const aliveBursts = [];
+  for (const b of bursts) {
+    b.progress += 0.025;
+    if (b.progress >= 1) continue;
+    aliveBursts.push(b);
+    const r = b.radius + (b.maxRadius - b.radius) * b.progress;
+    const alpha = (1 - b.progress) * 0.55;
+    nCtx.beginPath();
+    nCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    nCtx.strokeStyle = `rgba(${b.color.r},${b.color.g},${b.color.b},${alpha})`;
+    nCtx.lineWidth = 2 * (1 - b.progress);
+    nCtx.stroke();
+  }
+  bursts = aliveBursts;
+
+  // Nodes
+  for (const n of neuralNodes) {
+    const c = TYPE_COLORS[n.type] || TYPE_COLORS.default;
+    const isHovered = n === hoveredNode;
+    const isFocusNode = inConstellation && n === constellationNode;
+    const nodeInSubgraph = !inConstellation || constellationSet.has(n.id);
+    const layerMatch = neuralLayerFilter === 'all' || n.layer === neuralLayerFilter;
+    const breathe = Math.sin(n.pulsePhase) * 0.1 + 0.92;
+
+    const dimFactor = (nodeInSubgraph && layerMatch) ? 1.0 : 0.07;
+
+    if (nodeInSubgraph && layerMatch) {
+      const baseGlow = isFocusNode ? 0.45 : isHovered ? 0.3 : 0.05 + breathe * 0.03;
+      const glowR = n.r * (3.0 + n.glow * 10 + (isFocusNode ? 6 : 0));
+      const ga = Math.min(0.85, baseGlow + n.glow * 0.6);
+      const grad = nCtx.createRadialGradient(n.x, n.y, n.r * 0.2, n.x, n.y, glowR);
+      grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${ga})`);
+      grad.addColorStop(0.4, `rgba(${c.r},${c.g},${c.b},${ga * 0.25})`);
+      grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+      nCtx.beginPath();
+      nCtx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+      nCtx.fillStyle = grad;
+      nCtx.fill();
+    }
+
+    const bodyAlpha = (isHovered ? 1 : (0.55 + n.glow * 0.45)) * dimFactor;
+    const bodyR = n.r * breathe;
+    const bodyGrad = nCtx.createRadialGradient(n.x - bodyR * 0.3, n.y - bodyR * 0.3, 0, n.x, n.y, bodyR);
+    bodyGrad.addColorStop(0, `rgba(${Math.min(255, c.r + 60)},${Math.min(255, c.g + 60)},${Math.min(255, c.b + 60)},${bodyAlpha * 0.5})`);
+    bodyGrad.addColorStop(0.6, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.25})`);
+    bodyGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${bodyAlpha * 0.08})`);
+
+    nCtx.beginPath();
+    nCtx.arc(n.x, n.y, bodyR, 0, Math.PI * 2);
+    nCtx.fillStyle = bodyGrad;
+    nCtx.fill();
+
+    nCtx.strokeStyle = `rgba(${c.r},${c.g},${c.b},${bodyAlpha * (isFocusNode ? 1 : 0.7)})`;
+    nCtx.lineWidth = isFocusNode ? 2.2 : isHovered ? 1.8 : 0.9;
+    nCtx.stroke();
+
+    const nucR = n.r * (isFocusNode ? 0.38 : 0.3);
+    const nucAlpha = (0.75 + n.glow * 0.25) * dimFactor;
+    nCtx.beginPath();
+    nCtx.arc(n.x, n.y, nucR, 0, Math.PI * 2);
+    nCtx.fillStyle = `rgba(${Math.min(255, c.r + 120)},${Math.min(255, c.g + 120)},${Math.min(255, c.b + 120)},${nucAlpha})`;
+    nCtx.fill();
+
+    const showLabel = (inConstellation && nodeInSubgraph) || isHovered || isFocusNode || n.r > 10 || camera.zoom > 1.3;
+    if (showLabel && layerMatch) {
+      const labelAlpha = nodeInSubgraph ? (isHovered || isFocusNode ? 0.98 : 0.72) : 0.12;
+      nCtx.font = `${isHovered || isFocusNode ? '600 11' : '500 9'}px ui-sans-serif, system-ui, sans-serif`;
+      nCtx.textAlign = 'center';
+      nCtx.fillStyle = `rgba(236,232,230,${labelAlpha})`;
+      if (labelAlpha > 0.5) {
+        nCtx.shadowColor = '#000c';
+        nCtx.shadowBlur = 4;
+      }
+      nCtx.fillText(n.name, n.x, n.y + n.r + 13);
+      nCtx.shadowBlur = 0;
+    }
+  }
+
+  nCtx.restore();
+
+  animFrame = requestAnimationFrame(animate);
 }
 
 function fireNeuronByName(name, fireType = 'read') {
@@ -2261,18 +3005,9 @@ async function pollFires() {
     if (data.timestamp) lastFireTimestamp = data.timestamp - 1;
     for (const f of (data.fires || [])) {
       const ft = f.fire_type || 'read';
-      // detect promotions from detail string
-      const detail = f.query_text || '';
-      const promoMatch = detail.match(/promoted.*?→\s*(\w+)/i) || detail.match(/layer=(\w+)/);
       for (const id of (f.entity_ids || '').split(',')) {
         const node = nodeById[id.trim()];
         if (!node) continue;
-        if (ft === 'write' && promoMatch) {
-          const toLayer = promoMatch[1];
-          if (toLayer && toLayer !== node.layer) {
-            migrateNode(node, node.layer, toLayer);
-          }
-        }
         fireNode(node, ft);
       }
     }
@@ -2416,7 +3151,6 @@ function memoryCard(m) {
 function escapeHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 let activeView = 'memories';
-let neuralLoaded = false;
 let initialBootComplete = false;
 
 function getVisibleViewName() {
@@ -2879,7 +3613,7 @@ function hintCard(h) {
   return `<div class="hint-card" id="hint-${id}">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <span class="tag ${layer}">${layer}</span>
-      <button style="font-size:10px;padding:2px 8px;background:var(--accent);color:white;border:none;border-radius:3px" onclick="revealHint('${id}')">Reveal</button>
+      <button style="font-size:10px;padding:3px 8px;background:var(--pink);color:#180d13;font-weight:700;border:none;border-radius:2px" onclick="revealHint('${id}')">Reveal</button>
     </div>
     <div style="font-size:11px;color:var(--text);line-height:1.4">${escapeHtml(snippet)}</div>
     ${entities.length ? '<div class="hint-entities">' + entities.map(e => `<span class="entity-pill">${escapeHtml(e)}</span>`).join('') + '</div>' : ''}
@@ -2973,7 +3707,7 @@ async function loadAnalytics() {
   const canvas = document.getElementById('donut-canvas');
   const ctx = canvas.getContext('2d');
   const layers = data.layer_distribution || [];
-  const colors = {working:'#eab308',episodic:'#06b6d4',semantic:'#22c55e',procedural:'#818cf8'};
+  const colors = {working:'#ed83b6',episodic:'#7bbcff',semantic:'#8fd4b1',procedural:'#ab94ff'};
   const total = layers.reduce((s,l) => s + l.cnt, 0) || 1;
   let angle = -Math.PI/2;
   ctx.clearRect(0,0,120,120);
@@ -2981,14 +3715,14 @@ async function loadAnalytics() {
     const slice = (l.cnt/total) * Math.PI * 2;
     ctx.beginPath(); ctx.moveTo(60,60);
     ctx.arc(60,60,55,angle,angle+slice);
-    ctx.fillStyle = colors[l.layer] || '#818cf8';
+    ctx.fillStyle = colors[l.layer] || '#ab94ff';
     ctx.fill(); angle += slice;
   }
   ctx.beginPath(); ctx.arc(60,60,30,0,Math.PI*2);
-  ctx.fillStyle = '#0a0a0f'; ctx.fill();
+  ctx.fillStyle = '#09090a'; ctx.fill();
   // legend
   document.getElementById('donut-legend').innerHTML = layers.map(l =>
-    `<div><span class="dot" style="background:${colors[l.layer]||'#818cf8'}"></span>${l.layer}: ${l.cnt} (${(l.cnt/total*100).toFixed(0)}%)</div>`
+    `<div><span class="dot" style="background:${colors[l.layer]||'#ab94ff'}"></span>${l.layer}: ${l.cnt} (${(l.cnt/total*100).toFixed(0)}%)</div>`
   ).join('');
 
   // top accessed
@@ -3346,13 +4080,13 @@ async function loadDuplicates() {
   const el = document.getElementById('dedup-results');
   if (!data.length) { el.innerHTML = '<div class="empty">No duplicates found at this threshold</div>'; return; }
   el.innerHTML = `<div style="margin-bottom:8px;font-size:11px;color:var(--text2)">${data.length} duplicate pairs found</div>` +
-    data.map(d => `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px">
+    data.map(d => `<div style="background:var(--surface);border:1px solid var(--line);border-radius:2px;padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
         <span style="color:var(--cyan);font-size:11px">${(d.similarity*100).toFixed(1)}% similar</span>
         <span class="tag ${d.memory_1.layer}">${d.memory_1.layer}</span>
       </div>
-      <div style="font-size:11px;margin-bottom:6px;padding:6px;background:var(--bg);border-radius:4px">${escapeHtml((d.memory_1.content||'').slice(0,120))}</div>
-      <div style="font-size:11px;padding:6px;background:var(--bg);border-radius:4px">${escapeHtml((d.memory_2.content||'').slice(0,120))}</div>
+      <div style="font-size:11px;margin-bottom:6px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:2px">${escapeHtml((d.memory_1.content||'').slice(0,120))}</div>
+      <div style="font-size:11px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:2px">${escapeHtml((d.memory_2.content||'').slice(0,120))}</div>
     </div>`).join('');
 }
 async function runDedup() {
@@ -3404,13 +4138,13 @@ function drawSurpriseGauge(value) {
   // background arc
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(42,42,58,0.5)';
+  ctx.strokeStyle = '#292427';
   ctx.lineWidth = 12;
   ctx.stroke();
 
   if (value === null) {
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#667061';
+    ctx.fillStyle = '#928b89';
     ctx.font = '28px ' + getComputedStyle(document.body).fontFamily;
     ctx.fillText('—', cx, cy);
     ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
@@ -3418,11 +4152,11 @@ function drawSurpriseGauge(value) {
     return;
   }
 
-  // value arc (green=novel, red=duplicate)
+  // value arc (mint=novel, red=duplicate)
   const endAngle = -Math.PI / 2 + value * Math.PI * 2;
-  const r = Math.round(239 * (1 - value));
-  const g = Math.round(197 * value);
-  const b = Math.round(68 * (1 - value));
+  const r = Math.round(240 * (1 - value) + 143 * value);
+  const g = Math.round(125 * (1 - value) + 212 * value);
+  const b = Math.round(135 * (1 - value) + 177 * value);
   ctx.beginPath();
   ctx.arc(cx, cy, radius, -Math.PI / 2, endAngle);
   ctx.strokeStyle = `rgb(${r},${g},${b})`;
@@ -3438,7 +4172,7 @@ function drawSurpriseGauge(value) {
   ctx.fillText(value.toFixed(2), cx, cy - 6);
 
   ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
-  ctx.fillStyle = '#8888a0';
+  ctx.fillStyle = '#928b89';
   ctx.fillText(value > 0.7 ? 'NOVEL' : value > 0.3 ? 'MODERATE' : 'DUPLICATE', cx, cy + 18);
 }
 
@@ -3459,13 +4193,13 @@ function drawRetentionCurves() {
   ctx.clearRect(0, 0, w, h);
 
   // grid
-  ctx.strokeStyle = 'rgba(42,42,58,0.5)';
-  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = '#292427';
+  ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (plotH / 4) * i;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
     ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
-    ctx.fillStyle = '#8888a0';
+    ctx.fillStyle = '#928b89';
     ctx.textAlign = 'right';
     ctx.fillText((1 - i * 0.25).toFixed(2), pad.left - 6, y + 3);
   }
@@ -3520,13 +4254,13 @@ function drawRetentionCurves() {
     return l1Ratio * l1Val + (1 - l1Ratio) * l2Val;
   };
 
-  drawCurve(l2Fn, '#06b6d4', 'L2');
-  drawCurve(huberFn, '#eab308', 'Huber');
-  drawCurve(elasticFn, '#22c55e', 'Elastic');
+  drawCurve(l2Fn, '#7bbcff', 'L2');
+  drawCurve(huberFn, '#ed83b6', 'Huber');
+  drawCurve(elasticFn, '#8fd4b1', 'Elastic');
 
   // axis labels
   ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
-  ctx.fillStyle = '#8888a0';
+  ctx.fillStyle = '#928b89';
   ctx.textAlign = 'center';
   ctx.fillText('Days', pad.left + plotW / 2, h - 5);
   ctx.save();
@@ -3688,7 +4422,7 @@ async function loadDrift() {
   document.getElementById('drift-issues').innerHTML =
     `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">${issues.length} issues across ${Object.keys(grouped).length} memories</div>` +
     Object.entries(grouped).map(([mid, g]) =>
-      `<div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${issueColors[g.severity]};border-radius:6px;padding:10px;margin-bottom:8px">
+      `<div style="background:var(--surface);border:1px solid var(--line);border-left:2px solid ${issueColors[g.severity]};border-radius:2px;padding:12px;margin-bottom:8px">
         <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${escapeHtml(g.preview.slice(0,120))}...</div>
         ${g.issues.map(i => `<div style="font-size:11px;margin-top:4px">
           <span style="color:${issueColors[i.severity]};font-weight:600">${i.severity.toUpperCase()}</span>
@@ -3776,7 +4510,7 @@ async function loadPatterns() {
     patterns.map(p => {
       const color = catColors[p.category] || 'var(--text2)';
       const noveltyColor = p.novelty >= 0.5 ? 'var(--green)' : p.novelty >= 0.25 ? 'var(--yellow)' : 'var(--red)';
-      return `<div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${color};border-radius:6px;padding:10px;margin-bottom:8px">
+      return `<div style="background:var(--surface);border:1px solid var(--line);border-left:2px solid ${color};border-radius:2px;padding:12px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
           <span style="font-size:12px;font-weight:600">${escapeHtml(p.title.slice(0,80))}</span>
           <span class="tag" style="color:${color}">${p.category}</span>

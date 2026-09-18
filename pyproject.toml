@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling<=1.26.3"]
 build-backend = "hatchling.build"
 
 [project]
 name = "engram-memory-system"
-version = "0.5.2"
+version = "0.6.0"
 description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
 license = "MIT"
 requires-python = ">=3.11"
