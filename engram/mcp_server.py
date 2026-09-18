@@ -179,7 +179,7 @@ class MCPServer:
             return self._response(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "engram", "version": "0.6.0"},
+                "serverInfo": {"name": "engram", "version": "0.6.1"},
             })
         elif method == "tools/list":
             return self._response(req_id, {"tools": TOOLS})
@@ -1710,7 +1710,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.6.0")
+    app = FastAPI(title="Engram MCP (SSE)", version="0.6.1")
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

@@ -27,20 +27,18 @@ from engram.ann_index import ANNIndex
 # ── BM25 ─────────────────────────────────────────────────────────
 
 def _simple_bm25(query: str, corpus: list[dict], top_k: int = 50) -> list[tuple[str, float]]:
-    query_tokens = query.lower().split()
+    query_tokens = re.findall(r"\w+", query.lower())
     if not query_tokens:
         return []
 
     N = len(corpus)
-    avgdl = sum(len(doc["text"].split()) for doc in corpus) / max(N, 1)
+    doc_tokens = [Counter(re.findall(r"\w+", doc["text"].lower())) for doc in corpus]
+    avgdl = sum(sum(m.values()) for m in doc_tokens) / max(N, 1)
     k1, b = 1.5, 0.75
 
     df = Counter()
-    doc_tokens = []
-    for doc in corpus:
-        tokens = doc["text"].lower().split()
-        doc_tokens.append(Counter(tokens))
-        for t in set(tokens):
+    for m in doc_tokens:
+        for t in m:
             df[t] += 1
 
     scores = []
@@ -144,7 +142,7 @@ def engram_retrieve(query: str, entry: dict, config: Config,
     # cross-encoder rerank
     if use_rerank and ranked:
         from engram.embeddings import cross_encoder_rerank
-        rerank_ids = [did for did, _ in ranked[:20]]
+        rerank_ids = [did for did, _ in ranked[:35]]
         id_to_user = {doc["id"]: doc["text"] for doc in user_corpus}
         id_to_asst = {doc["id"]: doc["text"] for doc in asst_corpus}
         rerank_texts = [(id_to_user.get(did, "") + " " + id_to_asst.get(did, "")).strip()
@@ -202,7 +200,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="Path to longmemeval JSON")
     parser.add_argument("--limit", type=int, default=0)
-    parser.add_argument("--rerank", action="store_true", help="Cross-encoder rerank top-20")
+    parser.add_argument("--rerank", action="store_true", help="Cross-encoder rerank top-35")
     parser.add_argument("--output", help="Output JSONL path")
     args = parser.parse_args()
 

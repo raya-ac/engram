@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 (September 18, 2026)
+
+### fixes
+- **rerank candidate window expansion** — widened the cross-encoder candidate pool from 20 to 35 in benchmark retrieval, allowing cross-encoders to recover deep semantic hits that lexical BM25 ranks outside the preliminary top 20
+- **regex BM25 tokenization** — updated BM25 tokenization to use word-level regex matching (`re.findall(r"\w+", ...)`), preventing punctuation-attached tokens (e.g., `"guitar?"`, `"reunion?"`) from failing exact keyword matches
+
 ## 0.6.0 (September 18, 2026)
 
 ### new features
