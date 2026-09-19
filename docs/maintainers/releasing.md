@@ -7,6 +7,8 @@ Use this checklist when cutting a new release.
 1. update the package version in:
    - `pyproject.toml`
    - `engram/__init__.py`
+   - `engram/web/app.py`
+   - `engram/mcp_server.py`
 2. add a changelog entry in:
    - `docs/changelog.md`
 3. update any stale tool counts, feature references, or screenshots if needed
@@ -17,10 +19,10 @@ Use this checklist when cutting a new release.
 
 ## Publish
 
-1. commit the release prep
+1. commit the release prep in plain, lowercase copy (no conventional commit sludge)
 2. push `main`
 3. create a GitHub release with the matching tag, for example:
-   - `v0.5.1`
+   - `v0.6.2`
 
 Engram publishes to PyPI on `release.published`, not on normal pushes.
 

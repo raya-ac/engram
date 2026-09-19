@@ -21,6 +21,9 @@ embedding_model: BAAI/bge-small-en-v1.5
 # voyage: rerank-2.5, rerank-2.5-lite
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
 
+# optional Hugging Face token for downloads / rate limits
+hf_token: ""
+
 # auto | mlx | sentence_transformers | voyage | openai | gemini
 embedding_backend: auto
 
@@ -104,6 +107,7 @@ export ANTHROPIC_API_KEY=your-key   # for llm.backend: anthropic
 export OPENAI_API_KEY=your-key      # for llm.backend: openai (or embedding)
 export VOYAGE_API_KEY=your-key      # for embedding backend
 export GEMINI_API_KEY=your-key      # for embedding backend
+export HF_TOKEN=your-token          # or ENGRAM_HF_TOKEN for Hugging Face downloads
 ```
 
 ### LLM backends

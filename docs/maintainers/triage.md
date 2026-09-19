@@ -26,13 +26,9 @@ Check:
 - does it fit Engram’s scope?
 - is there a smaller first version worth accepting?
 
-## Security or conduct concerns
+## Security concerns
 
-Do not handle these in public issues.
-
-Redirect to:
-
-- `contact@engram-memory.dev`
+Do not handle security vulnerabilities in public issues. Report them directly to raya privately.
 
 ## Good maintainer habits
 

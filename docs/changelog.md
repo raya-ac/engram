@@ -2,17 +2,14 @@
 
 ## 0.6.2 (September 19, 2026)
 
-### new features
-- **hugging face token configuration** — added first-class `hf_token` configuration in `Config` (`config.yaml`, `config.example.yaml`, `ENGRAM_HF_TOKEN`, `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`); auto-exports credentials to the runtime environment for authenticated model downloads and rate-limit mitigation
-
-### fixes
-- **temporal window resolution & post-rerank boost** — implemented relative time expression parsing (`"last Saturday"`, `"N days/weeks ago"`, `"yesterday"`) resolving against reference dates; re-applies temporal proximity boost post-cross-encoder reranking to ensure temporally constrained queries retain their ranking advantages
+- add `hf_token` config and env fallback so model downloads authenticate without manual huggingface-cli logins
+- resolve relative dates ("last Saturday", "N days ago") and keep the temporal boost after cross-encoder reranking
+- switch license to Engram Public Use License 1.0
 
 ## 0.6.1 (September 18, 2026)
 
-### fixes
-- **rerank candidate window expansion** — widened the cross-encoder candidate pool from 20 to 35 in benchmark retrieval, allowing cross-encoders to recover deep semantic hits that lexical BM25 ranks outside the preliminary top 20
-- **regex BM25 tokenization** — updated BM25 tokenization to use word-level regex matching (`re.findall(r"\w+", ...)`), preventing punctuation-attached tokens (e.g., `"guitar?"`, `"reunion?"`) from failing exact keyword matches
+- widen cross-encoder candidate pool from 20 to 35 so deep semantic hits don't get buried by lexical BM25
+- use regex tokenization in BM25 so trailing punctuation doesn't kill keyword matches
 
 ## 0.6.0 (September 18, 2026)
 
