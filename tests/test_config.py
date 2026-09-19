@@ -107,3 +107,34 @@ class TestEnvOverride:
         finally:
             del os.environ["ENGRAM_STORAGE_BACKEND"]
             del os.environ["ENGRAM_POSTGRES_DSN"]
+
+
+class TestHfToken:
+    def test_default_hf_token_empty(self):
+        cfg = Config()
+        assert cfg.hf_token == ""
+
+    def test_hf_token_from_yaml(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump({"hf_token": "hf_test_token_123"}, f)
+            f.flush()
+            # Clean env to test purely yaml
+            old = os.environ.pop("HF_TOKEN", None)
+            try:
+                cfg = Config.load(f.name)
+                assert cfg.hf_token == "hf_test_token_123"
+                assert os.environ.get("HF_TOKEN") == "hf_test_token_123"
+            finally:
+                if old:
+                    os.environ["HF_TOKEN"] = old
+                else:
+                    os.environ.pop("HF_TOKEN", None)
+                os.unlink(f.name)
+
+    def test_hf_token_from_env(self):
+        os.environ["ENGRAM_HF_TOKEN"] = "hf_env_token_456"
+        try:
+            cfg = Config.load()
+            assert cfg.hf_token == "hf_env_token_456"
+        finally:
+            del os.environ["ENGRAM_HF_TOKEN"]

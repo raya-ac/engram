@@ -111,6 +111,7 @@ class Config:
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     embedding_backend: str = "auto"  # auto | mlx | sentence_transformers | voyage | openai | gemini
     embedding_dim: int = 384
+    hf_token: str = ""
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     dormant_recall: DormantRecallConfig = field(default_factory=DormantRecallConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
@@ -145,12 +146,18 @@ class Config:
                 break
 
         cfg = cls()
-        for k in ("storage_backend", "db_path", "postgres_dsn", "embedding_model", "cross_encoder_model", "embedding_backend", "embedding_dim"):
+        for k in ("storage_backend", "db_path", "postgres_dsn", "embedding_model", "cross_encoder_model", "embedding_backend", "embedding_dim", "hf_token"):
             env = os.environ.get(f"ENGRAM_{k.upper()}")
+            if k == "hf_token" and not env:
+                env = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
             if env:
                 setattr(cfg, k, type(getattr(cfg, k))(env))
             elif k in raw:
                 setattr(cfg, k, raw[k])
+
+        if cfg.hf_token:
+            os.environ.setdefault("HF_TOKEN", cfg.hf_token)
+            os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", cfg.hf_token)
 
         if "retrieval" in raw:
             for k, v in raw["retrieval"].items():

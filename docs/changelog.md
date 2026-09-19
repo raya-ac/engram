@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2 (September 19, 2026)
+
+### new features
+- **hugging face token configuration** — added first-class `hf_token` configuration in `Config` (`config.yaml`, `config.example.yaml`, `ENGRAM_HF_TOKEN`, `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`); auto-exports credentials to the runtime environment for authenticated model downloads and rate-limit mitigation
+
+### fixes
+- **temporal window resolution & post-rerank boost** — implemented relative time expression parsing (`"last Saturday"`, `"N days/weeks ago"`, `"yesterday"`) resolving against reference dates; re-applies temporal proximity boost post-cross-encoder reranking to ensure temporally constrained queries retain their ranking advantages
+
 ## 0.6.1 (September 18, 2026)
 
 ### fixes

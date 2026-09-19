@@ -1,3 +1,2 @@
-"""Engram: Cognitive memory system with hybrid retrieval."""
-
-__version__ = "0.6.1"
+"""Engram: AI agent memory system with hybrid search, associative retrieval, and sleep consolidation."""
+__version__ = "0.6.2"

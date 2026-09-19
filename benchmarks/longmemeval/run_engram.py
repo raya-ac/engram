@@ -63,24 +63,132 @@ def _simple_bm25(query: str, corpus: list[dict], top_k: int = 50) -> list[tuple[
 
 _DATE_RE = re.compile(r"(\d{4})/(\d{2})/(\d{2})")
 
-def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str):
-    m = _DATE_RE.match(question_date)
+_WORD_TO_NUM = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12,
+}
+
+_DAY_NAMES = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+_RELATIVE_PATTERNS = [
+    # "N days ago" / "ten days ago"
+    (re.compile(r"(\d+)\s+days?\s+ago", re.I), "days"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago", re.I), "days_word"),
+    # "N weeks ago" / "four weeks ago"
+    (re.compile(r"(\d+)\s+weeks?\s+ago", re.I), "weeks"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\s+ago", re.I), "weeks_word"),
+    # "a week ago"
+    (re.compile(r"\ba\s+week\s+ago\b", re.I), "a_week"),
+    # "N months ago"
+    (re.compile(r"(\d+)\s+months?\s+ago", re.I), "months"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\s+ago", re.I), "months_word"),
+    # "a month ago"
+    (re.compile(r"\ba\s+month\s+ago\b", re.I), "a_month"),
+    # "last Saturday" / "last Monday"
+    (re.compile(r"last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.I), "last_day"),
+    # "yesterday"
+    (re.compile(r"\byesterday\b", re.I), "yesterday"),
+]
+
+
+def _parse_date(date_str: str):
+    """Parse 'YYYY/MM/DD ...' into a datetime.date."""
+    from datetime import date
+    m = _DATE_RE.match(date_str)
     if not m:
+        return None
+    return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+def _resolve_temporal_window(query: str, question_date: str):
+    """Parse relative time expressions and return (center_date, margin_days) or None."""
+    from datetime import date, timedelta
+
+    q_date = _parse_date(question_date)
+    if not q_date:
+        return None
+
+    for pattern, kind in _RELATIVE_PATTERNS:
+        m = pattern.search(query)
+        if not m:
+            continue
+
+        if kind == "days":
+            n = int(m.group(1))
+            return (q_date - timedelta(days=n), 2)
+        elif kind == "days_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(days=n), 2)
+        elif kind == "weeks":
+            n = int(m.group(1))
+            return (q_date - timedelta(weeks=n), 4)
+        elif kind == "weeks_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(weeks=n), 4)
+        elif kind == "a_week":
+            return (q_date - timedelta(weeks=1), 4)
+        elif kind == "months":
+            n = int(m.group(1))
+            return (q_date - timedelta(days=n * 30), 7)
+        elif kind == "months_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(days=n * 30), 7)
+        elif kind == "a_month":
+            return (q_date - timedelta(days=30), 7)
+        elif kind == "last_day":
+            day_name = m.group(1).lower()
+            target_dow = _DAY_NAMES[day_name]
+            diff = (q_date.weekday() - target_dow) % 7
+            if diff == 0:
+                diff = 7  # "last Saturday" when today is Saturday means 7 days ago
+            return (q_date - timedelta(days=diff), 2)
+        elif kind == "yesterday":
+            return (q_date - timedelta(days=1), 1)
+
+    return None
+
+
+def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
+                          query: str = ""):
+    from datetime import timedelta
+
+    q_date = _parse_date(question_date)
+    if not q_date:
         return
-    q_days = int(m.group(1)) * 365 + int(m.group(2)) * 30 + int(m.group(3))
+
+    # try to resolve a specific temporal window from the query
+    window = _resolve_temporal_window(query, question_date) if query else None
 
     for doc in corpus:
-        dm = _DATE_RE.match(doc.get("timestamp", ""))
-        if not dm or doc["id"] not in scores:
+        d_date = _parse_date(doc.get("timestamp", ""))
+        if not d_date or doc["id"] not in scores:
             continue
-        d_days = int(dm.group(1)) * 365 + int(dm.group(2)) * 30 + int(dm.group(3))
-        diff = q_days - d_days
-        if diff < 0:
-            scores[doc["id"]] *= 0.95
-        elif diff < 7:
-            scores[doc["id"]] *= 1.15
-        elif diff < 30:
-            scores[doc["id"]] *= 1.05
+
+        diff_days = (q_date - d_date).days
+
+        if window:
+            center, margin = window
+            dist = abs((d_date - center).days)
+            if dist <= margin:
+                # strong boost — this doc falls inside the resolved temporal window
+                scores[doc["id"]] *= 2.5
+            elif diff_days < 0:
+                scores[doc["id"]] *= 0.90
+        else:
+            # generic proximity boost (no temporal expression detected)
+            if diff_days < 0:
+                scores[doc["id"]] *= 0.95
+            elif diff_days < 7:
+                scores[doc["id"]] *= 1.15
+            elif diff_days < 30:
+                scores[doc["id"]] *= 1.05
 
 
 # ── retrieval ────────────────────────────────────────────────────
@@ -135,7 +243,7 @@ def engram_retrieve(query: str, entry: dict, config: Config,
     # temporal boost
     question_date = entry.get("question_date")
     if question_date:
-        _apply_temporal_boost(scores, user_corpus + asst_corpus, question_date)
+        _apply_temporal_boost(scores, user_corpus + asst_corpus, question_date, query)
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -149,6 +257,26 @@ def engram_retrieve(query: str, entry: dict, config: Config,
                         for did in rerank_ids]
         reranked = cross_encoder_rerank(query, rerank_texts, config.cross_encoder_model)
         new_ranked = [(rerank_ids[idx], score) for idx, score in reranked]
+
+        # post-rerank temporal boost — cross-encoder wipes pre-rerank scores,
+        # so we re-apply temporal signal to the final CE scores
+        question_date = entry.get("question_date")
+        if question_date:
+            window = _resolve_temporal_window(query, question_date)
+            if window:
+                center, margin = window
+                id_to_date = {}
+                for doc in user_corpus + asst_corpus:
+                    id_to_date[doc["id"]] = _parse_date(doc.get("timestamp", ""))
+                boosted = []
+                for did, score in new_ranked:
+                    d_date = id_to_date.get(did)
+                    if d_date and abs((d_date - center).days) <= margin:
+                        boosted.append((did, score + 5.0))
+                    else:
+                        boosted.append((did, score))
+                new_ranked = sorted(boosted, key=lambda x: x[1], reverse=True)
+
         reranked_set = set(rerank_ids)
         for did, score in ranked:
             if did not in reranked_set:

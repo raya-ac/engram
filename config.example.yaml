@@ -15,6 +15,7 @@ embedding_model: BAAI/bge-small-en-v1.5
 # local:  cross-encoder/ms-marco-MiniLM-L-6-v2 (free, ~300ms for 20 docs)
 # voyage: rerank-2.5 (best quality), rerank-2.5-lite (faster/cheaper)
 cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+hf_token: ""                        # Hugging Face token for authenticated downloads / rate limits
 
 # auto-detects backend from model name. set explicitly to override.
 # auto picks mlx (Apple GPU) > sentence_transformers (CPU) for local models.
