@@ -358,6 +358,6 @@ integration layer. further guides and reference material live in [docs](docs/).
 
 ## license
 
-[MIT](LICENSE).
+[Engram Public Use License 1.0](LICENSE).
 
 ![the memory workspace, using fictional verification data](docs/assets/workspace-library.png)

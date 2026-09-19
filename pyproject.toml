@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "engram-memory-system"
 version = "0.6.2"
 description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
-license = "MIT"
+license = { text = "Engram Public Use License 1.0" }
 requires-python = ">=3.11"
 readme = "README.md"
 authors = [
@@ -16,7 +16,6 @@ keywords = ["memory", "retrieval", "embeddings", "rag", "mcp", "ai", "cognitive"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
