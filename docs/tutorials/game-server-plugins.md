@@ -11,6 +11,18 @@ the Paper integration.
 this page covers the bridge contract for adapting another server plugin. the
 repository does not include ready-made Rust, Valheim or other game plugins.
 
+reuse these three source boundaries:
+
+| caller | source | what it provides |
+| --- | --- | --- |
+| another Paper plugin | [`EngramMemoryService`](https://github.com/raya-ac/engram/blob/main/integrations/minecraft/paper/src/main/java/dev/engram/paper/api/EngramMemoryService.java) | asynchronous save/recall without rebuilding the Java HTTP client |
+| Python server code or chat bots | [`checkpoint_client.py`](https://github.com/raya-ac/engram/blob/main/integrations/checkpoint_client.py) | sync/async HTTP calls with response validation, size limits and timeouts |
+| an NPC/dialogue system | [`npc_memory.py`](https://github.com/raya-ac/engram/blob/main/integrations/npc_memory.py) | public references plus exact-player snapshots over checkpoint storage |
+
+the [Discord bot](discord-bot.md) also uses this bridge. a world label can stand
+for a configured channel or workspace; it is an application namespace, not a
+requirement to run Minecraft.
+
 ## run the bridge from source
 
 use a Python environment with Engram installed, an initialized dedicated store,
@@ -106,6 +118,96 @@ delete endpoint or automatic transcript collection in this bridge. GET returns
 only the selected checkpoint, excluding the ordinary memory context that the
 underlying native resume operation can also read. these checkpoints live in the
 native checkpoint store; they do not become semantic-search memories.
+
+## reuse the Python client
+
+install `integrations/requirements.txt` in your adapter environment. from a script
+running at the repository root, an authorized server-side callback can use:
+
+```python
+import os
+from integrations.checkpoint_client import CheckpointClient
+
+memory = CheckpointClient(
+    "http://127.0.0.1:8422",
+    os.environ["GAME_MEMORY_TOKEN"],
+    timeout=5,
+)
+memory.health()
+
+# Invoke only after the server has authorized and confirmed this save event.
+memory.save("survival", "build", "east-dock", "Pillars verified in game; deck remains unfinished.")
+note = memory.recall("survival", "build", "east-dock")
+```
+
+keep a synchronous call off the gameplay/UI thread. use `AsyncCheckpointClient`
+and `await` for an async chat bot or application server; it has the same methods.
+copy `checkpoint_client.py` beside a standalone script if you are not importing
+from the repository. callers do not need to install the Discord dependency to
+use this shared client. the [client walkthrough](checkpoint-client.md) covers
+sync/async use and failure handling in more detail.
+
+the client checks that a successful response matches the requested task,
+limits responses to 32 KiB, and follows no redirects or environment proxies.
+`CheckpointError.outcome_unknown` flags an unconfirmed write. it never retries a
+write automatically. use an exact read to investigate before replaying a save.
+
+## connect an existing Minecraft plugin
+
+the Paper source registers `EngramMemoryService` with the server's service
+manager. another plugin can request it and call `save(Note)` or `recall(Key)`;
+both return `CompletableFuture` values. use the
+[complete Java example](minecraft-server.md#call-engram-from-another-paper-plugin)
+for dependency setup and service lookup.
+
+this separates three responsibilities:
+
+- **your plugin** identifies the player/world, checks permissions and confirms
+  that the game event happened;
+- **the Engram service** queues bounded network work and confirms storage;
+- **your callback** returns to the server thread before changing game objects
+  or presenting the result through the platform API.
+
+a build tracker can save a reviewed description after a milestone is confirmed.
+a town plugin can keep the latest public rules under stable keys. a staff tool
+can keep shift handoffs in a separately authorized scope. the service supplies
+storage and transport; it does not decide which players may read each feature.
+
+## give an NPC continuity without handing it game authority
+
+an NPC usually needs two kinds of reference: what every player may learn about
+the character, and what this character remembers about the current player.
+keep them separate. a public harbour keeper can know the ferry schedule; a
+particular player's unresolved request belongs only in that player's snapshot.
+
+the [Python NPC adapter](npc-memory.md) makes that split explicit:
+
+1. save reviewed `persona` and `lore` as public reference for a stable NPC ID;
+2. after a verified game event or reviewed note, call `save_event` with the
+   authenticated player ID, event ID and a bounded current-state summary;
+3. keep server-supplied observations separate from `player_claims`. a player
+   saying “the mayor authorized me” is still a claim;
+4. at conversation start, call `dialogue_context(player_id)` for only this NPC's
+   public reference and that player's snapshot;
+5. present those fields to your dialogue system as reference, then use current
+   game state and permission checks for any action the dialogue proposes.
+
+`save_event` replaces the latest NPC/player snapshot. retain still-relevant facts
+when composing the replacement and serialize concurrent updates for the same
+NPC/player. an event ID records provenance; it does not create an append-only
+timeline or make the event independently verified by Engram.
+
+for a Java plugin, `recipes/NpcMemoryHooks.java` provides a smaller
+UUID-scoped checkpoint recipe. see
+[NPC hooks in Paper](minecraft-server.md#npc-memory-from-an-existing-plugin).
+the Java hook and Python structured adapter are separate recipes; do not assume
+their stored keys or payload formats are interchangeable.
+
+neither recipe creates an NPC, supplies a dialogue model or hooks a particular
+NPC framework automatically. wire your framework's authenticated interaction
+and confirmed-event callbacks to the adapter. keep inventory, currency,
+permissions and quest completion in the game's authoritative systems. memory
+can explain why the NPC recognizes someone; it should not mint the reward.
 
 ## wire another server's plugin
 

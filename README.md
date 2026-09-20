@@ -311,6 +311,14 @@ a [Minecraft Paper plugin](integrations/minecraft/paper/), a
 [task app assistant](examples/integrations/task_assistant.py).
 the website tutorials explain configuration, adaptation and verification.
 
+there is also a [Discord channel bot](integrations/discord_bot.py), an
+[NPC memory adapter](integrations/npc_memory.py), and a shared
+[sync/async checkpoint client](integrations/checkpoint_client.py).
+other Paper plugins can call the registered `EngramMemoryService` directly.
+the [what you can build guide](https://engram-memory.dev/tutorials/what-you-can-build/)
+walks through returning-player NPC dialogue, quest journals, build companions,
+town lore, community handoffs and chat assistants, with the source to start from.
+
 setup guides now cover [Codex](docs/getting-started/codex.md),
 [Claude Code](docs/getting-started/claude-code.md),
 [Claude Desktop](docs/getting-started/claude-desktop.md),

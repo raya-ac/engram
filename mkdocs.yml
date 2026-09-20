@@ -94,9 +94,13 @@ nav:
     - Triage: maintainers/triage.md
     - Releasing: maintainers/releasing.md
   - Tutorials:
+    - What You Can Build: tutorials/what-you-can-build.md
     - Build an Integration: tutorials/integration-patterns.md
+    - Reusable Checkpoint Client: tutorials/checkpoint-client.md
     - Open WebUI Memory Filter: tutorials/open-webui-filter.md
+    - Discord Channel Bot: tutorials/discord-bot.md
     - Minecraft Plugin Source: tutorials/minecraft-server.md
+    - NPC Memory and Dialogue: tutorials/npc-memory.md
     - Other Game Server Plugins: tutorials/game-server-plugins.md
     - Task App Assistant: tutorials/task-assistant.md
     - Build an Agent: tutorials/build-an-agent.md

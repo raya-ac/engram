@@ -143,6 +143,7 @@ def check_archives(root: Path, dist: Path, expected_tag: str | None) -> str:
     expected = dict(package)
     expected.update(source_files(root, "tests", "**/*.py"))
     expected.update(source_files(root, "integrations", "**/*.py"))
+    expected.update(source_files(root, "integrations", "requirements*.txt"))
     expected.update(source_files(root, "examples/integrations", "**/*.py"))
     expected.update(source_files(root, "examples/integrations", "**/*.json"))
     expected.update(source_files(root, "benchmarks/longmemeval", "*.py"))

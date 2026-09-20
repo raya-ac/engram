@@ -2,7 +2,9 @@
 
 this tutorial connects real Paper commands to Engram. staff can save a server
 rule, record a build at their current coordinates, or leave a handoff for the
-next group. recall reads the named note for the current world.
+next group. recall reads the named note for the current world. other plugins can
+use the same connection through the included Java service, including the
+[NPC memory hooks](#npc-memory-from-an-existing-plugin).
 
 the repository includes the [Java plugin source](https://github.com/raya-ac/engram/tree/main/integrations/minecraft/paper)
 and [Python bridge source](https://github.com/raya-ac/engram/blob/main/integrations/game_server_bridge.py).
@@ -164,6 +166,193 @@ the plugin displays results only to the requesting player or console. retrieved
 text is plain reference text: slash commands and formatting tags inside notes
 are never executed. output is capped at ten short messages and marks truncation.
 
+## call Engram from another Paper plugin
+
+the plugin registers `dev.engram.paper.api.EngramMemoryService` with Bukkit's
+[ServicesManager](https://jd.papermc.io/paper/1.21.11/org/bukkit/plugin/ServicesManager.html).
+your plugin can save and recall without copying HTTP code or receiving the bridge
+token. the service uses the same configured world allowlist, worker, queue,
+request limits and connection as staff commands.
+
+build/install the source artifact into the Maven repository used by your build:
+
+```sh
+mvn -B -ntp -f integrations/minecraft/paper/pom.xml install
+```
+
+in your plugin's POM, use it as a **provided** dependency:
+
+```xml
+<dependency>
+  <groupId>dev.engram</groupId>
+  <artifactId>engram-paper</artifactId>
+  <version>0.1.0</version>
+  <scope>provided</scope>
+</dependency>
+```
+
+in your plugin's `plugin.yml`, add:
+
+```yaml
+depend: [EngramMemory]
+```
+
+this is a locally built source dependency, not an artifact published to Maven
+Central. keep the API classes out of your plugin's shaded JAR: both plugins need
+the same service interface class. Paper documents the dependency/load-order
+behavior in its [plugin.yml reference](https://docs.papermc.io/paper/dev/plugin-yml/#dependencies).
+
+look up the service in your own plugin's `onEnable`:
+
+```java
+import dev.engram.paper.api.EngramMemoryService;
+
+EngramMemoryService memory = getServer().getServicesManager()
+    .load(EngramMemoryService.class);
+if (memory == null) {
+    getLogger().severe("EngramMemory service is unavailable");
+    getServer().getPluginManager().disablePlugin(this);
+    return;
+}
+```
+
+the public [service source](https://github.com/raya-ac/engram/blob/main/integrations/minecraft/paper/src/main/java/dev/engram/paper/api/EngramMemoryService.java)
+defines immutable records and two methods:
+
+| method/type | contract |
+| --- | --- |
+| `save(Note)` | returns `CompletableFuture<SaveResult>` after the bridge confirms the write |
+| `recall(Key)` | returns `CompletableFuture<Optional<Checkpoint>>`; an empty optional means no saved note |
+| `Key(world, kind, key)` | exact identity inside the bridge's fixed server project |
+| `Note(key, summary)` | a complete replacement snapshot; the longer constructor also accepts decisions, next steps and blockers |
+| `Checkpoint.note()` / `.updatedAt()` | full bounded note and its saved timestamp, without chat-display truncation |
+| `Failure.reason()` | distinguishes blocked world, busy queue, stopped service, bridge failure and invalid response |
+
+for example, a town-management plugin can save a reviewed construction handoff:
+
+```java
+var key = new EngramMemoryService.Key("world", "handoff", "town-east-dock");
+var note = new EngramMemoryService.Note(
+    key, "Dock supports passed the builder's review; roof work remains.",
+    java.util.List.of("Keep the public path open"),
+    java.util.List.of("Bring twelve copper blocks"), java.util.List.of());
+var saved = memory.save(note);
+```
+
+constructors reject invalid labels and oversized text. a note allows a
+4,000-character summary and up to eight 500-character entries in each list;
+the encoded request must still fit the bridge's 16 KiB limit. all lists are
+copied. saving replaces omitted lists with empty ones. concurrent saves to the
+same key are last-writer-wins, with no compare-and-swap or automatic merge: assign
+one owner per checkpoint or serialize updates in your plugin.
+
+calls enqueue I/O and are safe to submit from either thread. **never `join()` or
+`get()` a pending future on the game thread.** completion callbacks may run on
+any thread, including immediately for a rejected request. snapshot Bukkit
+objects before submitting, then schedule player/world access back through
+`getServer().getScheduler().runTask(yourPlugin, ...)`. check that your plugin and
+player are still available, and recheck interaction permissions/current state
+before displaying or acting on a delayed result. callbacks should be short.
+
+the command permission nodes protect `/engram`; Java API callers are trusted
+server plugins and must authorize their own players and events. the service
+does not infer a player from a key. when EngramMemory stops, it unregisters the
+service and fails waiting futures. retain no assumption that a cancelled or
+failed in-flight save was rolled back; recall before retrying.
+
+## recipes to build on this source
+
+### player build continuity
+
+use a stable build ID from your claim/build plugin as the key. a player finishing
+a work session chooses “save progress”; your handler verifies ownership and
+captures their world and coordinates on the main thread. save a complete
+snapshot: completed work, materials still needed, and the next useful action.
+
+when an authorized builder reopens the project, recall that key and display the
+snapshot with its saved time. compare it with the current claim and world before
+offering navigation or work suggestions. the note is not a teleport destination
+authorization or proof that a structure is still present. the existing
+`/engram save build` command implements the explicit save/coordinate path for
+staff; a player-facing menu and claim checks belong to your integration.
+
+### shared town lore
+
+keep a small set of reviewed keys such as `rule/town-canon`, `note/town-history`
+and `note/current-festival`. a town editor approves a replacement snapshot;
+your NPC or quest plugin recalls those named keys when a conversation needs
+them. write separate keys for separate topics instead of replacing one town
+record with every conversation.
+
+an approved lore entry can supply names and background for dialogue. a player
+claim such as “the mayor gave me the vault” is a reported claim until the town
+system confirms it; it should not overwrite canon or grant access. ownership,
+economy and quest flags remain in their authoritative game systems.
+
+### staff handoff
+
+use `handoff/staff-current` for a reviewed shift summary, or a stable task key
+for each ongoing incident. save observed state, decisions already made and the
+next checks. example: “rail tunnel closed for repairs; west entrance marked;
+next shift must inspect the support beams before reopening.”
+
+the next shift recalls the note, checks the actual tunnel and records a new
+snapshot after inspection. Engram does not close routes, ban players or infer
+moderation actions. a historical audit trail requires a separate event log;
+repeatedly saving this checkpoint keeps only its latest state.
+
+### NPC memory from an existing plugin
+
+the compiled [NpcMemoryHooks source](https://github.com/raya-ac/engram/blob/main/integrations/minecraft/paper/src/main/java/dev/engram/paper/recipes/NpcMemoryHooks.java)
+adds explicit save/recall hooks to your NPC or quest implementation:
+
+```java
+import dev.engram.paper.recipes.NpcMemoryHooks;
+
+var npcNotes = new NpcMemoryHooks(memory);
+
+// Capture these from your authorized interaction handler, on the server thread.
+String world = player.getWorld().getName();
+java.util.UUID playerId = player.getUniqueId();
+java.util.UUID npcId = persistentNpcId; // your NPC system's saved identity
+
+var recalled = npcNotes.recall(world, npcId, playerId);
+
+// Call only after your quest system verifies the outcome and reviews this snapshot.
+var saved = npcNotes.saveReviewedState(world, npcId, playerId,
+    "Bridge delivery accepted; reward recorded by quest system. Town tour remains available.");
+```
+
+these are calls from your existing handlers, not newly registered Paper or
+Citizens events. the helper creates no NPC and generates no dialogue. it hashes
+the stable NPC/player UUID pair into a 64-character key; the world and bridge
+project provide the remaining scope. use persistent IDs, not display names or
+a freshly generated UUID per interaction. hashing separates keys but is not
+access control or anonymization.
+
+wire a conversation feature through these steps:
+
+1. **interaction:** your handler verifies the player can interact with that NPC
+   and snapshots the IDs/world. request the saved pair-specific note.
+2. **context:** an empty result means no remembered state. a failed future means
+   memory is unavailable; do not turn either into a fabricated past encounter.
+3. **prompt or script:** combine the note as labeled reference data with current
+   quest facts and reviewed town lore. delimit remembered text separately from
+   instructions. clip the supplied context to your dialogue budget and retain
+   `updatedAt` so old context is visible.
+4. **outcome:** the quest plugin checks inventory, quest flags or other current
+   state before accepting delivery or granting a reward. model output and old
+   notes do not authorize game actions.
+5. **save:** after the verified event, replace the snapshot with the current
+   relationship/quest summary. handle save failure visibly; do not append a raw
+   chat transcript or repeat the write every game tick.
+
+a useful NPC snapshot might say: “the player repaired the east bridge; the
+quest system recorded the reward; the archivist offered a town tour.” on the
+next visit, dialogue can acknowledge that history while the quest system prevents
+a duplicate reward. Engram provides the stored context; your NPC framework,
+dialogue renderer and optional model integration remain your code.
+
 ## failures and implementation details
 
 `Engram request queued` is not a save confirmation. wait for `Saved…`, a returned
@@ -178,9 +367,11 @@ right Engram config. missing notes require checking world, kind, key and project
 scope; they do not require lowering retrieval confidence.
 
 the Java tests cover HTTP framing/authentication, redirects, response limits,
-timeouts and plain-text rendering. `ActualBridgeTest` additionally exercises
+timeouts, plain-text rendering, API scope, immutable records, queue saturation,
+shutdown completion and NPC/player key separation. `ActualBridgeTest` exercises
 Java → Python → SQLite when `ENGRAM_TEST_BRIDGE_URL` and
 `ENGRAM_TEST_BRIDGE_TOKEN` point to an isolated test bridge allowing `world`.
+its service check saves a typed snapshot and recalls it through a fresh service.
 these checks do not establish that a live Paper server loaded the plugin or
 that in-game permissions behaved correctly; use the server checks above.
 

@@ -70,6 +70,7 @@ include = [
     "/engram",
     "/tests",
     "/integrations/**/*.py",
+    "/integrations/requirements*.txt",
     "/examples/integrations/**/*.py",
     "/examples/integrations/**/*.json",
     "/benchmarks/longmemeval/*.py",

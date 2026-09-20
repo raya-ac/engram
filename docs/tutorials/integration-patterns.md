@@ -9,13 +9,15 @@ event is allowed to save it. then choose the Engram interface that fits your app
 | build | tutorial | what you implement |
 | --- | --- | --- |
 | a chat filter | [Open WebUI filter](open-webui-filter.md) | add recalled reference context to a chat request with deliberate save behavior |
+| a Discord bot | [Discord channel notes](discord-bot.md) | save and recall exact notes through slash commands, with channel and moderator-role checks |
 | a Minecraft server plugin | [Minecraft server](minecraft-server.md) | build the Paper plugin source and connect it to the local Engram bridge |
+| NPC memory | [NPC reference snapshots](npc-memory.md) | keep public persona/lore separate from an exact player's latest interaction state |
 | another game server plugin | [game server integrations](game-server-plugins.md) | adapt server commands and trusted identities to the bridge contract |
 | a local task assistant | [task assistant](task-assistant.md) | resume a project's task and explicitly save its next checkpoint |
 | your own Python agent | [build an agent](build-an-agent.md) | connect a long-lived native client to your app's memory workflow |
 
 the [integration source](https://github.com/raya-ac/engram/tree/main/integrations)
-contains the Open WebUI filter, game bridge and Paper plugin. the
+contains the Open WebUI filter, Discord bot, game bridge, NPC adapter and Paper plugin. the
 [local client examples](https://github.com/raya-ac/engram/tree/main/examples/integrations)
 contain the task assistant and reusable JSONL client. each tutorial names its
 dependencies, setup and verification steps; connecting Engram alone does not
@@ -26,6 +28,7 @@ install a chat filter or game plugin.
 | your app already has… | use | important boundary |
 | --- | --- | --- |
 | an MCP client | [stdio MCP](../guides/client-configs.md) | discover the actual tools; general `recall` searches the configured store |
+| a server plugin or chat bot with named notes | [checkpoint bridge](game-server-plugins.md) | exact world/kind/key reads and replacements; no semantic search or arbitrary operations |
 | control of local subprocesses | [native JSONL](../native-api.md) | scoped context/checkpoints and store-wide semantic search are different operations |
 | a server-side HTTP integration | [web REST API](../reference/rest-api.md) | authenticated workspace access, not per-user or per-project authorization |
 | a small scheduled or manual script | [CLI](../reference/cli.md) | explicit one-shot commands with a selected config |
@@ -36,6 +39,36 @@ it has no general `remember` operation. use `session_checkpoint` for a reviewed
 task summary; use a documented MCP, REST, CLI or Python write path when you need
 an ordinary searchable memory. checkpoints are separate from the semantic memory
 pool and are retrieved through native context/resume operations.
+
+the interface also determines what “remember” means. the Open WebUI filter saves
+an ordinary memory that can later match a semantic question. the Discord bot and
+game bridge replace an exact named checkpoint. the NPC adapter stores bounded
+structured snapshots inside those checkpoints. choose the behavior before
+copying a save call; a checkpoint key will not appear automatically in semantic
+search.
+
+## extend the source you already have
+
+| feature you want | start here | add in your application |
+| --- | --- | --- |
+| a reviewed release note in chat | `discord_bot.py`: `CommandPolicy` and `NoteCommands` | a trusted channel mapping and moderator role; `/engram-save release` replaces the current note |
+| a Save to memory button in a notes app | `open_webui/engram_filter.py`: explicit save HTTP path | selected text, source-note reference and an authorized click handler |
+| an issue-tracker handoff | `examples/integrations/task_assistant.py` | map a trusted project directory and stable issue ID to checkpoint/resume |
+| an NPC remembers one player | `npc_memory.py`: `NPCMemory.save_event` and `dialogue_context` | an authenticated player ID, NPC ID and game-confirmed event |
+| a Paper quest/build plugin uses memory | `EngramMemoryService` and `recipes/NpcMemoryHooks` | permission-checked event handlers and a main-thread continuation for game changes |
+| another Python server or worker | `checkpoint_client.py`: sync and async clients | trusted ID mapping, explicit save events and a UI that distinguishes missing notes from errors |
+
+the [source directory](https://github.com/raya-ac/engram/tree/main/integrations)
+contains these adapters; the task assistant is under
+[examples/integrations](https://github.com/raya-ac/engram/tree/main/examples/integrations).
+the notes-app and issue-tracker rows describe places to attach the existing code,
+not prebuilt plugins for a particular service.
+
+for example, a helpdesk integration can save an approved resolution under a
+stable issue key when a responder clicks “save handoff.” reopening that issue
+recalls the exact note. if the goal is finding similar fixes across tickets,
+use a separate authorized semantic-retrieval path instead. keep account routing
+in application code in either case.
 
 ## design the event before writing the adapter
 
@@ -72,7 +105,7 @@ save action and a fresh-process resume.
 
 ## choose what an app remembers
 
-these are extension patterns, not additional shipped plugins:
+use these record choices when adapting the source above:
 
 | app | recall when | save when | useful record | keep outside memory |
 | --- | --- | --- | --- | --- |

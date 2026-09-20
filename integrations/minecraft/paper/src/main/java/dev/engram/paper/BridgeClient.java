@@ -2,6 +2,8 @@ package dev.engram.paper;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.engram.paper.api.EngramMemoryService.Key;
+import dev.engram.paper.api.EngramMemoryService.Note;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.Proxy;
@@ -83,21 +85,30 @@ final class BridgeClient implements AutoCloseable {
     }
 
     JsonObject save(String world, String kind, String key, String summary) throws BridgeException {
-        validateKey(world, kind, key);
-        if (summary == null || summary.isBlank() || summary.length() > 4000) {
-            throw new IllegalArgumentException("summary must contain 1–4000 characters");
-        }
+        return save(new Note(new Key(world, kind, key), summary));
+    }
+
+    JsonObject save(Note note) throws BridgeException {
         JsonObject payload = new JsonObject();
-        payload.addProperty("world", world);
-        payload.addProperty("kind", kind);
-        payload.addProperty("key", key);
-        payload.addProperty("summary", summary);
+        payload.addProperty("world", note.key().world());
+        payload.addProperty("kind", note.key().kind());
+        payload.addProperty("key", note.key().key());
+        payload.addProperty("summary", note.summary());
+        payload.add("decisions", strings(note.decisions()));
+        payload.add("next_steps", strings(note.nextSteps()));
+        payload.add("blockers", strings(note.blockers()));
         JsonObject result = request("POST", "v1/checkpoints", payload);
         if (!result.has("status") || !result.get("status").isJsonPrimitive()
                 || !"saved".equals(result.get("status").getAsString())) {
             throw new BridgeException("Bridge did not confirm a saved checkpoint.");
         }
         return result;
+    }
+
+    private static com.google.gson.JsonArray strings(List<String> values) {
+        var array = new com.google.gson.JsonArray();
+        values.forEach(array::add);
+        return array;
     }
 
     JsonObject recall(String world, String kind, String key) throws BridgeException {
