@@ -172,3 +172,87 @@ class TestTemporalResolution:
         cached = store_with_memories.get_search_cache(cache_key)
         assert cached is not None
 
+
+class TestCalibrationAndFusion:
+    def test_sigmoid_properties(self):
+        from engram.retrieval import _sigmoid
+
+        assert _sigmoid(0.0) == 0.5
+        assert _sigmoid(50.0) == 1.0
+        assert _sigmoid(-50.0) == 0.0
+        assert 0.0 < _sigmoid(-5.0) < _sigmoid(0.0) < _sigmoid(5.0) < 1.0
+
+    def test_rerank_sigmoid_calibration(self, store_with_memories, config, monkeypatch):
+        # mock cross-encoder to return fixed logits: 3.0, 0.0, -3.0
+        def mock_ce(query, docs, model):
+            logits = [3.0, 0.0, -3.0]
+            return [(i, logits[i % len(logits)]) for i in range(len(docs))]
+
+        monkeypatch.setattr("engram.retrieval.cross_encoder_rerank", mock_ce)
+        config.retrieval.min_confidence = 0.0
+
+        results = search("test", store_with_memories, config, top_k=3, rerank=True)
+        assert len(results) > 0
+        for r in results:
+            assert 0.0 <= r.score <= 1.0
+            assert "cross_encoder" in r.sources
+            assert "cross_encoder_calibrated" in r.sources
+            assert 0.0 <= r.sources["cross_encoder_calibrated"] <= 1.0
+
+    def test_rerank_threshold_gating_calibrated(self, store_with_memories, config, monkeypatch):
+        # logit 2.0 -> sigmoid ~0.88; logit -2.0 -> sigmoid ~0.12
+        def mock_ce(query, docs, model):
+            return [(0, 2.0), (1, -2.0)] if len(docs) >= 2 else [(0, 2.0)]
+
+        monkeypatch.setattr("engram.retrieval.cross_encoder_rerank", mock_ce)
+        config.retrieval.min_confidence = 0.60
+
+        results = search("test", store_with_memories, config, top_k=5, rerank=True)
+        # only the candidate with calibrated score >= 0.60 should pass
+        for r in results:
+            assert r.score >= 0.60
+
+    def test_rerank_late_fusion(self, store_with_memories, config, monkeypatch):
+        # equal cross-encoder scores for all docs
+        def mock_ce(query, docs, model):
+            return [(i, 0.0) for i in range(len(docs))]
+
+        monkeypatch.setattr("engram.retrieval.cross_encoder_rerank", mock_ce)
+        config.retrieval.min_confidence = 0.0
+        config.retrieval.rerank_fusion_alpha = 0.30
+
+        results = search("test", store_with_memories, config, top_k=3, rerank=True)
+        assert len(results) > 0
+        # fused score is bounded in [0, 1]
+        for r in results:
+            assert 0.0 <= r.score <= 1.0
+
+    def test_gaussian_temporal_decay(self):
+        import math
+        from engram.retrieval import _apply_boosts, _build_query_features
+        from engram.store import Memory, Store
+        from engram.config import Config
+        from datetime import date
+
+        cfg = Config()
+        features = _build_query_features("something 3 days ago", cfg)
+
+        class DummyStore:
+            def __init__(self):
+                self._mems = {
+                    "m_center": Memory(id="m_center", content="text", fact_date="2026-04-07"),
+                    "m_margin": Memory(id="m_margin", content="text", fact_date="2026-04-05"), # dist = 2 == margin
+                    "m_far": Memory(id="m_far", content="text", fact_date="2026-04-01"),    # dist = 6 == 3*margin
+                }
+            def get_memory(self, mid):
+                return self._mems.get(mid)
+
+        dummy_store = DummyStore()
+        candidates = [("m_center", 1.0), ("m_margin", 1.0), ("m_far", 1.0)]
+        boosted = dict(_apply_boosts(features, candidates, dummy_store, cfg, reference_date="2026-04-10"))
+
+        # center (dist=0) has higher boost than margin (dist=2) which has higher boost than far (dist=6)
+        assert boosted["m_center"] > boosted["m_margin"] > boosted["m_far"]
+        # decay is smooth and strictly positive
+        assert boosted["m_far"] > 0
+

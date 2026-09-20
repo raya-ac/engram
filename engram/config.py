@@ -20,6 +20,7 @@ class RetrievalConfig:
     enable_query_expansion: bool = True
     exact_match_boost: float = 1.22
     search_cache_size: int = 128
+    rerank_fusion_alpha: float = 0.0
 
 
 @dataclass

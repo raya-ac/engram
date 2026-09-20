@@ -176,10 +176,9 @@ def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
         if window:
             center, margin = window
             dist = abs((d_date - center).days)
-            if dist <= margin:
-                # strong boost — this doc falls inside the resolved temporal window
-                scores[doc["id"]] *= 2.5
-            elif diff_days < 0:
+            kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
+            scores[doc["id"]] *= (1.0 + 1.5 * kernel)
+            if diff_days < 0:
                 scores[doc["id"]] *= 0.90
         else:
             # generic proximity boost (no temporal expression detected)
@@ -261,21 +260,38 @@ def engram_retrieve(query: str, entry: dict, config: Config,
         # post-rerank temporal boost — cross-encoder wipes pre-rerank scores,
         # so we re-apply temporal signal to the final CE scores
         question_date = entry.get("question_date")
-        if question_date:
-            window = _resolve_temporal_window(query, question_date)
-            if window:
-                center, margin = window
-                id_to_date = {}
-                for doc in user_corpus + asst_corpus:
-                    id_to_date[doc["id"]] = _parse_date(doc.get("timestamp", ""))
-                boosted = []
-                for did, score in new_ranked:
-                    d_date = id_to_date.get(did)
-                    if d_date and abs((d_date - center).days) <= margin:
-                        boosted.append((did, score + 5.0))
-                    else:
-                        boosted.append((did, score))
-                new_ranked = sorted(boosted, key=lambda x: x[1], reverse=True)
+        window = _resolve_temporal_window(query, question_date) if question_date else None
+        center, margin = window if window else (None, None)
+
+        id_to_date = {}
+        if window:
+            for doc in user_corpus + asst_corpus:
+                id_to_date[doc["id"]] = _parse_date(doc.get("timestamp", ""))
+
+        fusion_alpha = getattr(config.retrieval, "rerank_fusion_alpha", 0.0)
+        pre_rank_map = {did: i for i, (did, _) in enumerate(ranked[:len(rerank_ids)])}
+
+        def _sig(x: float) -> float:
+            return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, x))))
+
+        boosted = []
+        for did, score in new_ranked:
+            d_date = id_to_date.get(did)
+            t_boost = 0.0
+            if window and d_date:
+                dist = abs((d_date - center).days)
+                kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
+                t_boost = 5.0 * kernel
+
+            calibrated_ce = _sig(score + t_boost)
+            if fusion_alpha > 0.0 and did in pre_rank_map:
+                pre_norm = 1.0 - (pre_rank_map[did] / len(rerank_ids))
+                final_score = (1.0 - fusion_alpha) * calibrated_ce + fusion_alpha * pre_norm
+            else:
+                final_score = calibrated_ce
+            boosted.append((did, final_score))
+
+        new_ranked = sorted(boosted, key=lambda x: x[1], reverse=True)
 
         reranked_set = set(rerank_ids)
         for did, score in ranked:
@@ -329,10 +345,13 @@ def main():
     parser.add_argument("dataset", help="Path to longmemeval JSON")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--rerank", action="store_true", help="Cross-encoder rerank top-35")
+    parser.add_argument("--fusion-alpha", type=float, default=0.0, help="Late fusion weight for pre-rerank RRF (0.0=pure cross-encoder)")
     parser.add_argument("--output", help="Output JSONL path")
     args = parser.parse_args()
 
     config = Config.load()
+    if args.fusion_alpha > 0.0:
+        config.retrieval.rerank_fusion_alpha = args.fusion_alpha
 
     print("warming up...")
     embed_query("warmup", config.embedding_model)

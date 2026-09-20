@@ -54,6 +54,15 @@ RETRIEVAL_PROFILES = {
 RETRIEVAL_NOISE_SCALE = 0.02
 
 
+def _sigmoid(x: float) -> float:
+    """Numerically stable logistic sigmoid mapping logits to [0.0, 1.0]."""
+    if x >= 40.0:
+        return 1.0
+    if x <= -40.0:
+        return 0.0
+    return 1.0 / (1.0 + math.exp(-x))
+
+
 def classify_intent(query: str) -> str:
     scores = {}
     for intent, pattern in INTENT_PATTERNS.items():
@@ -185,28 +194,48 @@ def search(
             # so we condition final scores on temporal window proximity when a date is resolved
             window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
             boosted_reranked = []
+
+            fusion_alpha = getattr(rc, "rerank_fusion_alpha", 0.0)
+            pre_scores = dict(boosted)
+            cand_pre = [pre_scores.get(mid, 0.0) for mid in valid_ids]
+            max_pre = max(cand_pre) if cand_pre else 1.0
+            min_pre = min(cand_pre) if cand_pre else 0.0
+            pre_span = max_pre - min_pre if max_pre > min_pre else 1.0
+
             for idx, ce_score in reranked:
                 mid = valid_ids[idx]
                 mem = candidate_memories[mid]
                 d_date = _get_memory_date(mem)
-                b_score = ce_score
+                t_boost = 0.0
                 in_window = False
                 if window and d_date:
                     center, margin = window
-                    if abs((d_date - center).days) <= margin:
-                        b_score += 5.0
+                    dist = abs((d_date - center).days)
+                    kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
+                    t_boost = 5.0 * kernel
+                    if kernel >= 0.5:
                         in_window = True
-                boosted_reranked.append((mid, b_score, ce_score, in_window))
+
+                # Sigmoid calibration: map raw cross-encoder logits + evidence boost to [0.0, 1.0]
+                calibrated_ce = _sigmoid(ce_score + t_boost)
+
+                if fusion_alpha > 0.0:
+                    pre_norm = (pre_scores.get(mid, 0.0) - min_pre) / pre_span
+                    final_score = (1.0 - fusion_alpha) * calibrated_ce + fusion_alpha * pre_norm
+                else:
+                    final_score = calibrated_ce
+
+                boosted_reranked.append((mid, final_score, ce_score, t_boost))
 
             boosted_reranked.sort(key=lambda x: x[1], reverse=True)
 
             results = []
-            for mid, b_score, ce_score, in_window in boosted_reranked[:k]:
+            for mid, final_score, ce_score, t_boost in boosted_reranked[:k]:
                 mem = candidate_memories[mid]
                 results.append(
                     RetrievalResult(
                         memory=mem,
-                        score=b_score,
+                        score=final_score,
                         sources={
                             "dense": dict(dense_candidates).get(mid, 0),
                             "bm25": dict(bm25_candidates).get(mid, 0),
@@ -215,7 +244,8 @@ def search(
                             "boosted": dict(boosted).get(mid, 0),
                             "exact_match": _exact_match_signal(features, mem),
                             "cross_encoder": ce_score,
-                            "temporal_boost": 5.0 if in_window else 0.0,
+                            "cross_encoder_calibrated": _sigmoid(ce_score),
+                            "temporal_boost": t_boost,
                         },
                     )
                 )
@@ -268,7 +298,11 @@ def search(
 
         if results and RETRIEVAL_NOISE_SCALE > 0:
             for r in results:
-                r.score = max(0, r.score + random.gauss(0, RETRIEVAL_NOISE_SCALE))
+                noise = random.gauss(0, RETRIEVAL_NOISE_SCALE)
+                if rerank:
+                    r.score = max(0.0, min(1.0, r.score + noise))
+                else:
+                    r.score = max(0.0, r.score + noise)
             results.sort(key=lambda r: r.score, reverse=True)
 
         if rerank and results:
@@ -445,9 +479,9 @@ def _apply_boosts(
             if window:
                 center, margin = window
                 dist = abs((mem_d - center).days)
-                if dist <= margin:
-                    score *= 2.5
-                elif diff_days < 0:
+                kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
+                score *= (1.0 + 1.5 * kernel)
+                if diff_days < 0:
                     score *= 0.90
             else:
                 if diff_days < 0:
