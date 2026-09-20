@@ -75,12 +75,13 @@ def test_exception_context_and_other_loggers_are_preserved(options):
     ("XLMRobertaForSequenceClassification", "BAAI/bge-reranker-base", "roberta.embeddings.position_ids"),
     ("BertModel", "BAAI/bge-small-en-v1.5", "embeddings.position_ids"),
 ])
-def test_actual_transformers_report_and_missing_weights(caplog, model_class, model_id, key):
+def test_actual_transformers_report_and_missing_weights(caplog, monkeypatch, model_class, model_id, key):
     loading = pytest.importorskip("transformers.utils.loading_report")
     logger = logging.getLogger("transformers.modeling_utils")
     model = type(model_class, (), {})()
     info = loading_info(loading, key)
-    # Transformers disables propagation to the root logger by default.
+    # Capture exactly once whether this Transformers version propagates or not.
+    monkeypatch.setattr(logger, "propagate", False)
     logger.addHandler(caplog.handler)
     try:
         with caplog.at_level(logging.WARNING, logger=logger.name):
