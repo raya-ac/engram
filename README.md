@@ -304,6 +304,23 @@ use `engram reembed --dry-run` before `engram reembed`.
 
 ## use it from an agent
 
+building memory into your own app? the [integration guide](docs/tutorials/integration-patterns.md)
+links usable source for an [Open WebUI filter](integrations/open_webui/engram_filter.py),
+a [Minecraft Paper plugin](integrations/minecraft/paper/), a
+[game-server bridge](integrations/game_server_bridge.py), and a
+[task app assistant](examples/integrations/task_assistant.py).
+the website tutorials explain configuration, adaptation and verification.
+
+setup guides now cover [Codex](docs/getting-started/codex.md),
+[Claude Code](docs/getting-started/claude-code.md),
+[Claude Desktop](docs/getting-started/claude-desktop.md),
+[Cursor](docs/getting-started/cursor.md), [VS Code / Copilot](docs/getting-started/vscode.md),
+[Windsurf / Cascade](docs/getting-started/windsurf.md), [Cline](docs/getting-started/cline.md),
+[OpenCode](docs/getting-started/opencode.md), and [Gemini CLI](docs/getting-started/gemini-cli.md).
+the [client hub](https://engram-memory.dev/guides/client-configs/) explains shared
+stores, actual connection checks and custom integrations. each client has its
+own config format; the JSON below is an example for clients using `mcpServers`.
+
 start a stdio MCP server:
 
 ```sh

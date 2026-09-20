@@ -1,0 +1,27 @@
+name: EngramMemory
+version: '0.1.0'
+main: dev.engram.paper.EngramPlugin
+api-version: '1.21.11'
+description: Explicit world notes and handoffs through a local Engram bridge.
+website: https://engram-memory.dev
+commands:
+  engram:
+    description: Save and recall an explicit world note.
+    usage: /engram <status|save|recall|help>
+permissions:
+  engram.status:
+    description: Check the configured local bridge.
+    default: op
+  engram.save:
+    description: Save or replace a world checkpoint.
+    default: op
+  engram.recall:
+    description: Read a world checkpoint.
+    default: op
+  engram.*:
+    description: All Engram commands.
+    default: op
+    children:
+      engram.status: true
+      engram.save: true
+      engram.recall: true

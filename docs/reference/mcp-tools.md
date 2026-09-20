@@ -6,22 +6,22 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 
 | tool | params | description |
 |------|--------|-------------|
-| `recall` | `query` (required), `top_k` (default: `retrieval.top_k`), `mode` (default: "full_context") | hybrid search — HNSW + BM25 + graph + Hopfield + RRF + cross-encoder. mode filters by memory type: `facts_only`, `facts_plus_rules`, `full_context` |
+| `recall` | `query` (required), `top_k` (default: `retrieval.top_k`), `mode` (default: "full_context") | relevance-ranked hybrid search with configured retrieval channels and reranking. mode filters by memory type: `facts_only`, `facts_plus_rules`, `full_context` |
 | `recall_by_type` | `memory_type` (required: fact/procedure/narrative), `limit` (default: 20) | get memories filtered by semantic type |
 | `recall_entity` | `name` (required) | everything about a person/project/tool — memories, relationships, timeline |
-| `recall_timeline` | `start` (required, YYYY-MM-DD or YYYY-MM), `end` | memories in a date range |
+| `recall_timeline` | `start` (required, YYYY-MM-DD or YYYY-MM), `end` | memories by recorded `fact_date`, rather than creation time; without `end`, matches the `start` prefix |
 | `recall_related` | `name` (required), `max_hops` (default: 2) | multi-hop graph traversal from an entity |
-| `recall_recent` | `limit` (default: 20) | last N memories by creation time |
-| `recall_layer` | `layer` (required: working/episodic/semantic/procedural), `limit` (default: 20) | search within a specific layer |
-| `recall_context` | `query` (required), `max_tokens` (default: 2000) | formatted context block ready for prompt injection |
+| `recall_recent` | `limit` (default: 20) | newest non-forgotten memories by creation time, across the store; no semantic query |
+| `recall_layer` | `layer` (required: working/episodic/semantic/procedural), `limit` (default: 20) | list non-forgotten memories in a layer, ordered by importance |
+| `recall_context` | `query` (required), `max_tokens` (default: 2000) | retrieve a formatted block for prompt context within a token budget |
 | `recall_code` | `query` (required), `project`, `top_k` (default: 10) | search the codebase layer for functions, classes, files |
-| `recall_hints` | `query` (required), `top_k` (default: 10), `hint_length` (default: 60) | truncated snippets + entity names for recognition without replacing cognition |
+| `recall_hints` | `query` (required), `top_k` (default: 10), `hint_length` (default: 60 characters) | relevance-ranked retrieval with short snippets, memory IDs and entity names; can record accesses |
 | `recall_explain` | `query` (required), `top_k` (default: `retrieval.top_k`), `mode` (default: "full_context"), optional `reference_date` | returned and rejected candidates, scores, confidence decisions, passage retries and effective settings; no access reinforcement |
 | `find_similar` | `memory_id` (required), `top_k` (default: 5) | find memories most similar by embedding distance |
 | `find_duplicates` | `threshold` (default: 0.92), `limit` (default: 20) | preview near-duplicate pairs without merging |
 | `search_entities` | `query` (required), `limit` (default: 20) | fuzzy search for entities by partial name |
 | `compress` | `query` (required), `max_tokens` (default: 2000) | compressed version of retrieved memories |
-| `get_skills` | `query` (required), `max_skills` (default: 3), `format` (default: true) | task-aware skill selection — 2-3 focused procedural guides |
+| `get_skills` | `query` (required), `max_skills` (default: 3), `format` (default: true) | select relevant procedural guides up to the requested maximum |
 
 ### retrieval explanations
 
@@ -47,7 +47,7 @@ order, which can differ from sorting scores. see
 | `remember_decision` | `decision` (required), `rationale`, `importance` (default: 0.8) | decision + rationale → procedural |
 | `remember_error` | `error` (required), `prevention`, `importance` (default: 0.7) | error pattern + prevention → procedural |
 | `remember_project` | `name` (required), `status`, `location`, `notes` | structured project info → semantic |
-| `remember_negative` | `content` (required), `context`, `scope`, `importance` (default: 0.75) | what does NOT exist — prevents hallucinated recommendations |
+| `remember_negative` | `content` (required), `context`, `scope`, `importance` (default: 0.75) | record explicit exclusions, absent features and assumptions to avoid |
 | `forget` | `memory_id` (required) | soft-delete a memory |
 | `bulk_forget` | `confirm` (required: true), `source_file`, `layer`, `older_than` (YYYY-MM-DD) | mass cleanup by criteria |
 | `tag` | `memory_id` (required), `add` (array), `remove` (array) | add or remove tags |
@@ -60,7 +60,7 @@ order, which can differ from sorting scores. see
 
 | tool | params | description |
 |------|--------|-------------|
-| `invalidate` | `memory_id` (required), `reason` | mark a fact as no longer true |
+| `invalidate` | `memory_id` (required), `reason` | record invalidation metadata; use `update_status` to change lifecycle status |
 | `update_status` | `memory_id` (required), `new_status` (required: active/challenged/invalidated/merged/superseded), `reason` | transition lifecycle status with audit trail |
 | `status_history` | `memory_id` (required) | full status transition history — what changed, when, why |
 | `promote` | `memory_id` (required), `target_layer` (required) | move to a higher layer |
@@ -75,7 +75,7 @@ order, which can differ from sorting scores. see
 |------|--------|-------------|
 | `entity_graph` | `name` (required) | relationship subgraph as JSON |
 | `entity_timeline` | `name` (required) | entity's memories chronologically |
-| `update_entity` | `name` (required), `alias`, `metadata` | add aliases, change type |
+| `update_entity` | `name` (required), `alias`, `metadata` | add an alias; the current handler does not apply `metadata` or change entity type |
 | `merge_entities` | `source_name` (required), `target_name` (required) | combine duplicates, moves all links |
 
 ## codebase
@@ -113,10 +113,10 @@ order, which can differ from sorting scores. see
 |------|--------|-------------|
 | `ingest` | `path` (required) | ingest a file or directory |
 | `ingest_sessions` | `limit` (default: 20) | ingest recent Claude Code sessions |
-| `session_summary` | — | generate summary from diary + recent events |
-| `session_handoff` | `session_id`, `save` (default: true), `limit` (default: 8) | build a structured handoff packet for the current or specified session and optionally persist it |
-| `session_checkpoint` | `note`, `limit` (default: 8) | append an optional checkpoint note and persist a richer handoff packet for the current session |
-| `resume_context` | `session_id`, `limit` (default: 3) | load the latest saved handoff packet so a new agent session can resume quickly |
+| `session_summary` | — | build and save the current handoff, returning its summary and selected sections |
+| `session_handoff` | `session_id` (optional), `save` (default: true), `limit` (default: 8 items per section) | build a packet for the current or specified MCP session; save it unless `save` is false |
+| `session_checkpoint` | `note` (optional), `limit` (default: 8 items per section) | append a checkpoint note when supplied, then build and save the current MCP session's packet |
+| `resume_context` | `session_id` (optional), `limit` (default: 3 handoffs) | read an exact saved handoff, or list handoffs by last update; return a generated, unsaved fallback if none exists |
 | `focus_brief` | `query` (required), `top_k` (default: 8) | build a compact briefing with dominant entities, layer mix, key memories, and suggested follow-up pulls |
 | `compare_queries` | `query_a` (required), `query_b` (required), `top_k` (default: 8) | compare overlap, divergence, and entity differences across two retrieval paths |
 | `hotspots` | `hours` (default: 72.0), `limit` (default: 8) | surface the hottest entities, layers, sources, and memories in a recent window |
@@ -128,7 +128,7 @@ order, which can differ from sorting scores. see
 | `status` | — | memory counts, entities, DB size |
 | `config_show` | — | loaded effective configuration, source of each setting, warnings and version; credentials redacted |
 | `health` | — | cache, FTS index, orphaned entities, ANN status, embedding backend |
-| `layers` | `query`, `max_tokens` (default: 4000) | L0-L3 graduated context for prompt injection |
+| `layers` | `query`, `max_tokens` (default: 4000) | L0-L3 graduated prompt context |
 | `access_patterns` | `limit` (default: 20) | most-recalled memories, hit rates |
 | `memory_map` | — | high-level map of entire system |
 | `count_by` | `group_by` (required: layer/source_type/entity/month) | group counts |
@@ -144,21 +144,36 @@ startup; see [configuration](config.md).
 
 | tool | params | description |
 |------|--------|-------------|
-| `diary_write` | `entry` (required) | append to session diary |
-| `diary_read` | — | read current session diary |
+| `diary_write` | `entry` (required) | append a persistent note tagged with the current MCP session ID |
+| `diary_read` | — | read up to 50 recent diary entries across the store, newest first; use the in-process diary if storage has none |
 
 ## continuity pattern
 
-for resumable agent work, the default flow is:
+clients must invoke this workflow through their instructions or explicit user
+requests. connecting a server does not install startup or shutdown hooks.
 
-1. `resume_context` at session startup
-2. normal `remember`, `remember_decision`, `remember_negative`, and `diary_write` calls during work
-3. `recall_explain` when retrieval quality needs debugging or tuning
-4. `session_checkpoint` or `session_handoff` near a stop point if you want to explicitly persist the current packet
+1. call `recall_recent` with `limit: 5` for chronology, then `recall_hints` with a concrete project-and-task query.
+2. when resuming work, read `resume_context` before ordinary `recall` refreshes the current packet. use `recall` for specific semantic questions, not to find the latest session.
+3. save useful outcomes, decisions and progress during work. use `recall_explain` for non-reinforcing retrieval diagnosis.
+4. before stopping, explicitly save an authored summary with `remember` (`memory_type: "narrative"`, `importance: 0.8` for substantial work), then `session_checkpoint` or `session_handoff` to save the final packet.
 
-the active MCP session also refreshes its handoff automatically after ordinary
-recalls, memory writes, diary writes, and memory edits. `recall_explain` does not
-refresh it.
+automatic handoff refresh runs after ordinary `recall`, successful stored/updated
+`remember` calls (including their specialized wrappers), `diary_write`, and
+`edit_memory`. skipped writes and other mutations do not trigger it.
+`recall_recent`, `recall_hints`, `recall_explain` and `resume_context` do not
+refresh handoffs; hints still use ordinary retrieval and can record accesses.
+
+the core MCP session ID belongs to the server process. handoffs combine its
+diary with bounded recent store-wide memories and events, so they are not
+project-filtered conversation transcripts. saved `resume_context` results have
+`latest` and `handoffs`, with each packet under the saved row's `metadata`;
+generated fallbacks contain the packet directly and are not saved by that read.
+`session_handoff` rebuilds rather than loading a saved snapshot.
+
+see [session continuity](../guides/session-continuity.md) for examples and scope.
+the [native local API](../native-api.md) has a separate, project-and-task
+checkpoint contract; its arguments are not interchangeable with this MCP
+`session_checkpoint(note, limit)`.
 
 ## dormant review
 

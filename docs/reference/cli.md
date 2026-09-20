@@ -1,6 +1,8 @@
 # CLI commands
 
-all commands available via `engram <command>`.
+all commands are available via `engram <command>`. put global options before
+the command, for example `engram --config /absolute/path/to/config.yaml search
+"release checklist"`. the same interface is available as `python -m engram`.
 
 ## setup and checks
 
@@ -94,7 +96,11 @@ rewrites a file. see [configuration](config.md) for precedence and all overrides
 ```bash
 engram ingest <paths...> [-j JOBS] [--no-queries]
 ```
-ingest files or directories. supports markdown, plaintext, JSON (Claude Code, ChatGPT, Slack), PDF. `-j` for parallel extraction. `--no-queries` skips hypothetical query generation.
+ingest files or directories. supports markdown, plaintext, JSON (Claude Code,
+ChatGPT, Slack) and PDF. `--no-queries` skips hypothetical-query generation,
+not the configured LLM fact-extraction call. extraction failures can fall back
+to storing source chunks. the current sequential CLI loop does not use `-j` to
+run extraction in parallel. see [the ingestion boundary](../getting-started/quickstart.md#optional-file-ingestion).
 
 ### search
 ```bash
@@ -124,7 +130,9 @@ change rank without changing scores. see [retrieval internals](../architecture/r
 ```bash
 engram remember <content> [--source SOURCE] [--layer LAYER] [--importance IMPORTANCE]
 ```
-store a memory directly. default layer is episodic, default importance 0.7.
+store a memory directly using the configured embedding model. default layer
+is episodic and default importance is 0.7. the command attempts optional LLM
+hypothetical-query enrichment; unavailable enrichment does not prevent the save.
 
 ### entity
 ```bash
@@ -156,15 +164,27 @@ extract reusable procedural patterns from recent session activity.
 
 ### index
 ```bash
-engram index rebuild    # full HNSW index rebuild
-engram index status     # show index size, vector count, last built
+engram index rebuild    # load the configured index, or build if it cannot load
+engram index status     # inspect saved index metadata and file size
 ```
+
+in 0.8.1, `rebuild` calls the store's load-or-build initializer; an existing
+loadable index can be reused. it does not force replacement. for a fresh build,
+retain the old files, choose a new `ann.index_path` with no index or companion
+metadata file, then run the command and restart consumers with that config.
+see [ANN index behavior](../architecture/ann-index.md#cli-behavior-in-081).
 
 ### reembed
 ```bash
 engram reembed [--batch-size N] [--dry-run]
 ```
-re-embed all memories with the current model. use after switching embedding models.
+re-embed every non-forgotten record (`forgotten = 0`) with the configured model,
+including records whose lifecycle status is not active. `--dry-run` reports the
+count without computing replacement vectors. writes are committed in batches,
+so an interrupted run can leave mixed old/new vectors.
+
+the final ANN step can load an existing index. select a fresh index path when
+changing models; see [model migration](../guides/embedding-backends.md#change-models-on-an-existing-store).
 
 ## data management
 
@@ -172,13 +192,23 @@ re-embed all memories with the current model. use after switching embedding mode
 ```bash
 engram export <output> [--layer LAYER] [--include-embeddings]
 ```
-export to JSON or JSONL. `--include-embeddings` adds base64 vectors for portable backup.
+export non-forgotten records, optionally filtered by layer, to JSON or JSONL.
+status is not restricted to active. `--include-embeddings` adds base64 vectors.
+JSON includes the whole entity/relationship/mention tables even with `--layer`;
+JSONL includes only memory records. lifecycle fields and history are omitted,
+so this is not a full database backup. see [export scope](../guides/export-import.md).
 
 ### import
 ```bash
 engram import <input> [--skip-duplicates]
 ```
-restore from exported file. `--skip-duplicates` skips memories with matching content hash.
+import records into the selected store; matching IDs can be updated.
+`--skip-duplicates` checks `chunk_hash`. omitted lifecycle fields use defaults,
+so imported records become active narrative memories. provided vectors are
+retained without automatic model/dimension conversion; absent vectors are
+embedded with the configured model. a JSON model-mismatch warning does not
+perform re-embedding. import is incremental, not a rollback or complete restore.
+see [import behavior and limitations](../guides/export-import.md#import-into-the-intended-destination).
 
 ### migrate-postgres
 ```bash
@@ -198,9 +228,14 @@ poll a directory for new/changed files and auto-ingest. default 30s interval.
 ### serve
 ```bash
 engram serve --web [--port PORT]      # web dashboard (default 8420)
-engram serve --mcp                     # MCP server (stdio, for Claude Code)
+engram serve --mcp [--no-warmup]      # stdio MCP for a supported client
 engram serve --mcp-sse [--port PORT]  # MCP server (HTTP/SSE, default 8421)
 ```
+
+`--no-warmup` requires `--mcp`. it skips eager model loading; tools can still
+load models when called. use the [agent setup hub](../guides/client-configs.md)
+for client-specific launch settings and [web troubleshooting](../getting-started/troubleshooting.md#web-workspace-and-ports)
+for token/port behavior.
 
 ## info
 

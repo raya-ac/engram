@@ -1,29 +1,34 @@
 # Scan a Codebase
 
-index a project directory into engram's codebase layer. extracts file trees, function/class signatures, import graphs, and config files — ~10x fewer tokens than raw code.
+scan a project directory into Engram's codebase layer using its MCP tool.
+the scanner stores structural summaries and selected configuration text; output
+size depends on the project and is not a fixed compression ratio.
 
 ## scan
 
-```bash
-engram ingest ~/projects/myapp
+connect an agent using the [client setup guide](../guides/client-configs.md),
+then ask it to call the MCP tool with the project directory:
+
+```text
+scan_codebase(path="/absolute/path/to/myapp", project_name="myapp")
 ```
 
-or via MCP:
-
-```
-scan_codebase(path="~/projects/myapp", project_name="myapp")
-```
+`engram ingest` is a separate text/document ingestion path; it does not invoke
+this structural code scanner.
 
 ## what gets extracted
 
 - **file tree** — directory structure with file sizes
 - **function signatures** — `def function_name(params) -> return_type`
 - **class definitions** — class names, methods, inheritance
-- **import graphs** — what imports what
+- **dependency summary** — counts of extracted external import names
 - **config files** — package.json, pyproject.toml, Makefile targets
 - **dependency lists** — requirements.txt, package.json deps
 
-stored in the `codebase` layer with compressed content (~10x fewer tokens than raw source).
+stored in the `codebase` layer with project metadata. extracted signatures are
+pattern-based summaries, not a complete language-aware representation of the
+source. selected config-file content is included, so choose the scan directory
+with the intended memory store and model provider in mind.
 
 ## search
 
@@ -66,11 +71,13 @@ engram drift --fix              # apply
 list_projects()
 ```
 
-shows all scanned projects with file counts and memory counts.
+shows project names, memory counts and a breakdown of stored record types.
 
 ## tips
 
-- re-scan after major refactors to update the codebase layer
+- re-scan after major refactors, then inspect stale notes: a scan adds records
+  and does not replace or remove every previous project snapshot
 - use `drift_check()` regularly to catch stale code references
 - combine with `remember_decision()` to capture *why* the code is structured that way
-- the codebase layer is exempt from forgetting — it persists permanently
+- the normal forgetting cycle processes episodic/working layers, not codebase
+  records; explicit edits, invalidation or forgetting can still change them

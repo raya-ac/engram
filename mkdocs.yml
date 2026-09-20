@@ -50,10 +50,21 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
-    - Claude Code Setup: getting-started/claude-code.md
+    - Troubleshooting: getting-started/troubleshooting.md
+  - Connect Your Agent:
+    - Choose Your Client: guides/client-configs.md
+    - Codex: getting-started/codex.md
+    - Claude Code: getting-started/claude-code.md
+    - Claude Desktop: getting-started/claude-desktop.md
+    - Cursor: getting-started/cursor.md
+    - VS Code / Copilot: getting-started/vscode.md
+    - Windsurf / Cascade: getting-started/windsurf.md
+    - Cline: getting-started/cline.md
+    - OpenCode: getting-started/opencode.md
+    - Gemini CLI: getting-started/gemini-cli.md
+    - Other Clients / Custom Agents: getting-started/other-clients.md
   - Guides:
     - Session Continuity: guides/session-continuity.md
-    - Client Configs: guides/client-configs.md
     - Postgres Migration: guides/postgres-migration.md
     - Embedding Backends: guides/embedding-backends.md
     - Retrieval Pipeline: guides/retrieval-pipeline.md
@@ -83,6 +94,11 @@ nav:
     - Triage: maintainers/triage.md
     - Releasing: maintainers/releasing.md
   - Tutorials:
+    - Build an Integration: tutorials/integration-patterns.md
+    - Open WebUI Memory Filter: tutorials/open-webui-filter.md
+    - Minecraft Plugin Source: tutorials/minecraft-server.md
+    - Other Game Server Plugins: tutorials/game-server-plugins.md
+    - Task App Assistant: tutorials/task-assistant.md
     - Build an Agent: tutorials/build-an-agent.md
     - Scan a Codebase: tutorials/scan-a-codebase.md
     - Negative Knowledge: tutorials/negative-knowledge.md

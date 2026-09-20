@@ -142,6 +142,9 @@ def check_archives(root: Path, dist: Path, expected_tag: str | None) -> str:
     metadata_version(sdist_files.pop("PKG-INFO"), version, "sdist metadata")
     expected = dict(package)
     expected.update(source_files(root, "tests", "**/*.py"))
+    expected.update(source_files(root, "integrations", "**/*.py"))
+    expected.update(source_files(root, "examples/integrations", "**/*.py"))
+    expected.update(source_files(root, "examples/integrations", "**/*.json"))
     expected.update(source_files(root, "benchmarks/longmemeval", "*.py"))
     expected.update(source_files(root, "benchmarks/production_retrieval", "*.py"))
     for name in ("dev.json", "holdout.json", "validation_v2.json"):

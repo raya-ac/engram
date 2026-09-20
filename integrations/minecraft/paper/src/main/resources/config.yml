@@ -1,0 +1,12 @@
+# The Python bridge must run on this host. Redirects and external hosts are refused.
+bridge-url: 'http://127.0.0.1:8422'
+# Read this variable from the Minecraft server process's environment.
+token-env: 'GAME_MEMORY_TOKEN'
+# Optional fallback when the host cannot supply environment variables.
+# Keep this server-local file private. Never commit a real token.
+token: ''
+request-timeout-seconds: 5
+# Actual Bukkit world names, also allowed explicitly on the bridge command line.
+allowed-worlds:
+  - world
+console-world: world

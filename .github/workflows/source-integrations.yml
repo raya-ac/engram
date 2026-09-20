@@ -1,0 +1,43 @@
+name: source integrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/**'
+      - 'engram/**'
+      - 'scripts/check_game_plugin.py'
+      - '.github/workflows/source-integrations.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'integrations/**'
+      - 'engram/**'
+      - 'scripts/check_game_plugin.py'
+      - '.github/workflows/source-integrations.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  paper:
+    name: Paper source and real Engram bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: integrations/minecraft/paper/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bridge dependencies without model runtimes
+        run: |
+          python -m pip install --no-deps -e .
+          python -m pip install fastapi uvicorn numpy PyYAML
+      - name: Compile and test source against an isolated Engram bridge
+        run: python scripts/check_game_plugin.py

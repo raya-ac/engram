@@ -252,7 +252,7 @@ configure embeddings. Gemini also accepts `GOOGLE_API_KEY` as a fallback.
 |---------|------|-------|
 | `claude_cli` | Claude Code login | uses `claude` CLI subprocess |
 | `anthropic` | `ANTHROPIC_API_KEY` or `llm.api_key` | direct API, any Claude model |
-| `openai` | `OPENAI_API_KEY` or `llm.api_key` | any OpenAI/compatible model |
+| `openai` | `OPENAI_API_KEY` or `llm.api_key` | a model supported by the OpenAI backend |
 | `mlx` | local | runs Qwen/Llama/etc on Apple Silicon GPU |
 
 install the backend you need:

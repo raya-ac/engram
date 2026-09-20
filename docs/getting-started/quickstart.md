@@ -1,121 +1,159 @@
-# Quick Start
+# quick start
 
-## initialize and check
+save one useful note, retrieve it, then connect the agent you want to use.
+these commands assume [Engram is installed](installation.md) in your active
+Python environment.
 
-after [installing Engram 0.8.0 or newer](installation.md), start with:
+## 1. create a store, or keep the one you have
+
+for a new installation:
 
 ```sh
-engram --version
-engram init
+engram init --yes --preset portable
 ```
 
-follow the prompts for a new store, or use `engram init --yes` for the local
-defaults. `--preset portable` chooses `sentence_transformers`; `--preset light`
-also selects the smaller MiniLM reranker. setup prints the config path and MCP
-connection settings without editing your agent's configuration. it refuses
-existing config/database files and does not load models.
+setup prints the new config path and agent connection settings. it refuses
+existing files and does not load models. if you already have a store, skip
+`init` and use its config path.
 
-run the command printed at the end of setup:
+replace `/absolute/path/to/config.yaml` in the commands below with that path.
+use the same path in your shell, web process and agent connection.
+
+```sh
+engram --config /absolute/path/to/config.yaml config show
+engram --config /absolute/path/to/config.yaml doctor
+```
+
+`config show` tells you which file and environment settings are effective.
+`doctor` checks existing storage and model readiness. an `incomplete` result is
+expected when optional checks have not run.
+
+## 2. check the complete local path
 
 ```sh
 engram --config /absolute/path/to/config.yaml doctor --full
 ```
 
-this checks real model inference, an isolated local MCP endpoint and a synthetic
-save/retrieve cycle without an LLM. first use may download local weights; a
-configured hosted model can contact its provider with synthetic text. diagnostic
-writes stay in temporary storage, and your memory records remain unchanged.
-the MCP self-test checks the local endpoint; use the printed snippet to connect
-your agent separately.
+this checks model inference, the local MCP endpoint and a synthetic save/retrieve
+cycle in temporary storage. local weights may download on first use. no
+Claude account or generative LLM is required; a hosted embedding/reranking model
+uses its own configured provider. your existing memory records are unchanged.
 
-plain `doctor` performs the lighter configuration/storage/package checks. its
-`incomplete` status means optional checks were skipped or remain unverified;
-failed checks exit with status 1, invalid configuration with status 2.
+[doctor statuses and fixes](troubleshooting.md#understand-doctor-results)
+explain skipped checks, failures and exit codes.
 
-with a custom setup path, keep passing `--config /absolute/path/to/config.yaml`
-before the commands below. environment overrides still apply to both setup and
-the agent process. [the CLI reference](../reference/cli.md#init) covers unattended
-setup, all presets and Postgres.
+## 3. remember something
 
-## ingest some files
-
-file extraction uses your configured LLM backend; the default is the Claude CLI.
-configure that backend before ingestion. the setup and doctor checks above do
-not require an LLM.
-
-```bash
-engram ingest ~/notes/
-engram ingest ~/projects/docs/ ~/journal/
+```sh
+engram --config /absolute/path/to/config.yaml remember "The release checklist lives in docs/release-checklist.md." --importance 0.8
 ```
 
-supports markdown, plaintext, JSON (Claude Code JSONL, Claude.ai JSON, ChatGPT JSON, Slack), PDF.
+the command prints `Remembered:` and a memory ID. this is a deliberate write to
+your selected store. embeddings use the configured model.
 
-## search
+manual remembering works without a working Claude installation or LLM account.
+it also attempts optional hypothetical-query enrichment through `llm.backend`;
+when that is unavailable, the note is saved without generated queries. an
+available configured LLM may therefore be called. `doctor` and `demo` provide
+an explicitly LLM-free synthetic walkthrough.
 
-```bash
-engram search "what happened on march 28"
-engram search "melee garden architecture" --debug
-engram search "apple sandbox bypass" --rerank
+## 4. retrieve and inspect it
+
+```sh
+engram --config /absolute/path/to/config.yaml search "Where is the release checklist?"
+engram --config /absolute/path/to/config.yaml search "Where is the release checklist?" --rerank
 ```
 
-`--debug` shows the retrieval stage breakdown (dense, BM25, graph, RRF scores).
-`--rerank` enables the configured cross-encoder, `BAAI/bge-reranker-base` by
-default. its additional inference time depends on the model and hardware.
+the first command uses ordinary hybrid retrieval. `--rerank` adds the configured
+cross-encoder and its final relevance gate. use an explanation to see both
+returned and rejected candidates:
 
-## remember something
-
-```bash
-engram remember "deploy command: npm run build && rsync" --layer procedural
-engram remember "Ari prefers casual tone" --importance 0.9
+```sh
+engram --config /absolute/path/to/config.yaml search "Where is the release checklist?" --rerank --explain
 ```
 
-## check status
+explanation mode leaves memory access history, dormant evaluations and the
+result cache unchanged. `--debug` is an alias for `--explain`. for structured
+output, add `--json`; the explained response contains `results` and
+`explanation`.
 
-```bash
-engram status
+an empty result can be correct. inspect the explanation and the selected store
+before changing a threshold. the [retrieval guide](../guides/retrieval-pipeline.md)
+covers the stages and their limits.
+
+## 5. connect your agent
+
+open the [agent setup hub](../guides/client-configs.md), choose your client, and
+use the interpreter/config paths printed by `init`.
+
+stdio clients launch Engram as a child process. the underlying command is:
+
+```sh
+/absolute/path/to/python -m engram --config /absolute/path/to/config.yaml serve --mcp
 ```
 
-shows memory counts by layer, entity count, relationships, DB size, and ANN index status.
+this command normally waits for protocol input; it is not an interactive chat.
+your client starts and manages it. after registration, reconnect the client and
+ask it to inspect Engram's `config_show` tool before writing or recalling data.
+a successful `doctor` self-test does not prove that the external client attached.
 
-## entity lookup
+## try the isolated demo
 
-```bash
-engram entity Ari --graph
+Engram 0.8.1 includes a walkthrough using the fictional Lantern project:
+
+```sh
+engram demo
 ```
 
-## start the web dashboard
+it shows saved memories, ordinary and reranked recall, read-only explanations,
+and a saved project checkpoint in a temporary store. it uses real local models
+without a generative LLM. inherited Engram configuration overrides are ignored;
+local weights may still download. omit `--config` because the demo owns its
+isolated configuration.
 
-```bash
-engram serve --web
-# → http://127.0.0.1:8420
+| command | behavior |
+| --- | --- |
+| `engram demo --yes` | run without prompts, then clean up |
+| `engram demo --keep` | keep the printed demo directory for later inspection |
+| `engram demo --web` | finish the walkthrough, then keep the local demo workspace open until you press Enter |
+| `engram demo --web --port 8422` | use a different local web port |
+
+use the complete URL printed for the demo workspace, including its generated
+token. `--yes --web` only checks web readiness and then stops the process; omit
+`--yes` when you want to browse. `--keep` retains files, not a running server.
+
+## inspect your own store in the browser
+
+```sh
+engram --config /absolute/path/to/config.yaml serve --web
 ```
 
-17 panels: neural map, search, memories, entities, timeline, remember, analytics, heatmap, context, ingest, health, dedup, cognition, bridges, drift, patterns, plus an inspector panel.
+open `http://127.0.0.1:8420/` unless your `web.host`, `web.port` or `--port`
+selects another address. this workspace uses your real store and its edit/write
+controls affect that store. the server also warms models and the ANN index.
 
-## start the MCP server
+if `web.auth_token` is configured, use the token-authenticated browser URL;
+[web troubleshooting](troubleshooting.md#web-workspace-and-ports) explains the
+flow. the [web workspace guide](../guides/web-workspace.md) covers its controls.
 
-```bash
-engram serve --mcp       # stdio (for Claude Code)
-engram serve --mcp-sse   # HTTP/SSE (for remote clients)
+## optional file ingestion
+
+file extraction is separate from storing and retrieving a manual note. it uses
+`llm.backend`, which defaults to `claude_cli`. available choices are the Claude
+CLI, Anthropic API, OpenAI API and local MLX generation. configure that backend
+and its authentication before relying on extracted facts.
+
+```sh
+engram --config /absolute/path/to/config.yaml ingest ./notes/
+engram --config /absolute/path/to/config.yaml ingest ./notes/ --no-queries
 ```
 
-## watch a directory
+`--no-queries` skips hypothetical-query generation; it **does not disable fact
+extraction's LLM call**. if extraction fails, the current implementation can
+store the text chunk as a fallback, so an ingested record alone does not prove
+that LLM extraction succeeded. provider-backed extraction sends the source text
+to that configured provider.
 
-```bash
-engram watch ~/notes/ --interval 30
-```
-
-polls for new/changed files and auto-ingests.
-
-## export and import
-
-```bash
-engram export backup.json --include-embeddings
-engram import backup.json --skip-duplicates
-```
-
-## run tests
-
-```bash
-pytest tests/ -v    # 72 tests, ~3s
-```
+see [LLM configuration](../reference/config.md#llm-backends),
+[export and import](../guides/export-import.md), and
+[troubleshooting](troubleshooting.md) for the next steps.
