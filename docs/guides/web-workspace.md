@@ -66,8 +66,10 @@ store; no synthetic records are added to a live installation.
 
 ## the workspace
 
-![Desktop memory workspace with fictional verification data](../assets/workspace-library.png)
+![Current dark workspace on desktop with fictional verification data](../assets/workspace-library-dark.png)
 
-![Mobile memory workspace with fictional verification data](../assets/workspace-mobile.png){ width="390" }
+*the current dark workspace on desktop, using fictional verification data.*
 
-these screenshots use fictional verification data.
+![Current dark workspace on mobile with fictional verification data](../assets/workspace-mobile-dark.png)
+
+*the current dark workspace on mobile, using fictional verification data.*

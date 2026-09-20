@@ -43,6 +43,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 90px; }
 .md-typeset h1 { font-size: 2.4em; }
 .md-typeset h2 { margin-top: 2.2em; }
 .md-typeset { line-height: 1.75; }
+.md-typeset img[src*="/workspace-mobile"] { width: 390px; max-width: 100%; height: auto; }
 .md-typeset a { text-underline-offset: 4px; }
 .md-typeset a:hover { text-decoration: underline; }
 .md-typeset table:not([class]) { border: 1px solid var(--eg-line); border-radius: 0; }

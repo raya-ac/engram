@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memories · engram</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%20fill%3D%22none%22%3E%0A%20%20%3Ctitle%3Eengram%3C%2Ftitle%3E%0A%20%20%3Cdesc%3EA%20folded%20lowercase%20e%2C%20cut%20into%20three%20continuous%20memory%20traces.%3C%2Fdesc%3E%0A%20%20%3Cpath%20d%3D%22M424%2080H224C122.4%2080%2040%20162.4%2040%20264S122.4%20448%20224%20448H424V384H224C157.7%20384%20104%20330.3%20104%20264S157.7%20144%20224%20144H360V224H208V288H424V80Z%22%20fill%3D%22%23D99A78%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M403%20101H224C134%20101%2061%20174%2061%20264S134%20427%20224%20427H424M382%20122H224C145.6%20122%2082%20185.6%2082%20264S145.6%20406%20224%20406H424M403%20102V267H208M382%20123V246H208%22%20stroke%3D%22%23111110%22%20stroke-width%3D%225%22%2F%3E%0A%3C%2Fsvg%3E">
 <style>
 :root {
   --bg: #09090a;
@@ -150,22 +151,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   color:var(--pink);
 }
 .brand-mark {
-  width:24px;
-  height:24px;
-  border:1px solid var(--pink);
-  border-radius:4px;
-  position:relative;
-  background:var(--surface);
-}
-.brand-mark:before {
-  content:'';
-  position:absolute;
-  inset:4px;
-  border-radius:2px;
-  background:var(--pink);
-}
-.brand-mark:after {
-  display:none;
+  display:block;
+  width:34px;
+  height:34px;
+  flex-shrink:0;
 }
 .header-actions {
   display:flex;
@@ -1395,7 +1384,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
     font-size:8px;
   }
   .brand-mark {
-    display:none;
+    width:28px;
+    height:28px;
+  }
+  .brand-stack {
+    gap:8px;
   }
   .header-actions {
     gap:8px;
@@ -1535,7 +1528,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 <div class="layout">
   <div class="header">
     <div class="brand-stack">
-      <div class="brand-mark"></div>
+      <svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" aria-hidden="true" focusable="false">
+        <path d="M424 80H224C122.4 80 40 162.4 40 264S122.4 448 224 448H424V384H224C157.7 384 104 330.3 104 264S157.7 144 224 144H360V224H208V288H424V80Z" fill="#D99A78"/>
+        <path d="M403 101H224C134 101 61 174 61 264S134 427 224 427H424M382 122H224C145.6 122 82 185.6 82 264S145.6 406 224 406H424M403 102V267H208M382 123V246H208" stroke="#111110" stroke-width="5"/>
+      </svg>
       <div class="brand-copy">
         <span class="brand-kicker">a working memory</span>
         <h1>engram</h1>
