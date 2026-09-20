@@ -273,15 +273,18 @@ class FakePostgres:
 
 
 def test_postgres_uses_environment_without_printing_or_saving_secret(tmp_path, monkeypatch):
-    monkeypatch.setenv("ENGRAM_POSTGRES_DSN", "postgresql://private:secret@database")
+    username = "engram_redaction_user_83ad"
+    password = "engram_redaction_password_f46b"
+    monkeypatch.setenv("ENGRAM_POSTGRES_DSN", f"postgresql://{username}:{password}@database")
     store = FakePostgres()
     monkeypatch.setattr(setup, "_new_store", lambda config: store)
     result = run_setup(tmp_path, storage="postgres")
     assert store.initialized and store.closed
     assert result["storage"] == "postgres"
     assert result["db_path"] is None
-    assert "private" not in json.dumps(result)
-    assert "secret" not in Path(result["config_file"]).read_text()
+    emitted = json.dumps(result) + Path(result["config_file"]).read_text()
+    assert username not in emitted
+    assert password not in emitted
     assert any("pg_try_advisory_lock" in query for query in store.queries)
 
 
