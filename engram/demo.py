@@ -1,411 +1,292 @@
-"""Interactive demo — walk through every engram feature with synthetic data.
-
-Usage:
-    engram demo              # CLI walkthrough
-    engram demo --web        # also start the web dashboard so you can watch
-    engram demo --keep       # keep the demo database after (default: cleanup)
-"""
+"""A focused fictional-project walkthrough, isolated from the user's store."""
 
 from __future__ import annotations
 
-import math
+import copy
+import json
 import os
+import secrets
+import shlex
+import shutil
+import socket
+import subprocess
 import sys
 import tempfile
 import time
-import uuid
+from pathlib import Path
+from urllib.error import URLError
+from urllib.request import ProxyHandler, Request, build_opener
 
-# terminal colors
-C = {
-    "reset": "\033[0m", "bold": "\033[1m", "dim": "\033[2m",
-    "green": "\033[32m", "cyan": "\033[36m", "yellow": "\033[33m",
-    "red": "\033[31m", "magenta": "\033[35m", "blue": "\033[34m",
+from engram.config import Config
+
+
+class DemoError(ValueError):
+    """A demo failure that can be reported without a traceback or credentials."""
+
+
+_BOILERPLATE = "The equipment inventory lists spare cables, folding chairs and blank forms. "
+MEMORIES = (
+    ("overview", "semantic", "fact", "Lantern is a fictional community observatory scheduling project."),
+    ("rollback", "procedural", "procedure", "For a Lantern release, save the previous signed build before deployment. If the health check fails, restore that build and repeat the health check."),
+    ("access-key", "semantic", "fact", _BOILERPLATE * 60 + "The Lantern project's emergency access key is stored in the copper lockbox. " + _BOILERPLATE * 10),
+    ("inspection", "procedural", "procedure", "The Lantern project's emergency access key is inspected every Monday. Mira records the inspection date."),
+    ("decision", "episodic", "narrative", "The Lantern team chose a manual approval before each public release. The next task is to rehearse rollback."),
+    ("lunch", "semantic", "fact", "The Lantern office serves vegetable soup for lunch on Thursdays."),
+)
+RECALL_QUERY = "Where is the Lantern project's emergency access key stored?"
+_PROVIDER_ENV = {
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "VOYAGE_API_KEY", "GEMINI_API_KEY",
+    "GOOGLE_API_KEY", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN",
+    "PGPASSWORD", "PGPASSFILE", "PGSERVICE", "PGSERVICEFILE", "PGOPTIONS",
 }
 
 
-def c(text, color):
-    return f"{C[color]}{text}{C['reset']}"
+def _child_environment():
+    return {key: value for key, value in os.environ.items()
+            if not key.startswith("ENGRAM_") and key not in _PROVIDER_ENV}
 
 
-def header(text):
-    w = 60
-    print(f"\n{c('━' * w, 'dim')}")
-    print(f"  {c(text, 'bold')}")
-    print(f"{c('━' * w, 'dim')}\n")
+def _command(config_path, *args):
+    # Config.load gives env precedence. Unset current overrides when reusing this store.
+    prefix = []
+    for name in sorted(key for key in os.environ if key.startswith("ENGRAM_")):
+        prefix.extend(["-u", name])
+    return shlex.join([*(["env", *prefix] if prefix else []), sys.executable,
+                       "-m", "engram", "--config", str(config_path), *args])
 
 
-def step(text):
-    print(f"  {c('→', 'cyan')} {text}")
+def _write_json(path, value):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2, allow_nan=False)
+        stream.write("\n")
 
 
-def result(text):
-    print(f"    {c(text, 'green')}")
+def _state(store):
+    return tuple(store.conn.iterdump()), copy.deepcopy(store._search_cache)
 
 
-def wait(msg="Press Enter to continue..."):
-    input(f"\n  {c(msg, 'dim')}")
-    print()
+def _stop_web(process):
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
-def run_demo(keep_db=False, start_web=False, web_port=8421):
-    """Run the full interactive demo."""
+def _web_ready(url, token, config_path, db_path):
+    request = Request(url + "api/config", headers={"Authorization": "Bearer " + token})
+    try:
+        # Local readiness must not pass through an inherited HTTP proxy.
+        with build_opener(ProxyHandler({})).open(request, timeout=0.5) as response:
+            report = json.load(response)
+        return (report.get("config_file") == str(config_path)
+                and report.get("values", {}).get("db_path") == str(db_path)
+                and report.get("values", {}).get("storage_backend") == "sqlite")
+    except (OSError, URLError, ValueError):
+        return False
 
-    # create temporary database
-    tmp_dir = tempfile.mkdtemp(prefix="engram_demo_")
-    db_path = os.path.join(tmp_dir, "demo.db")
 
-    print(f"""
-{c('╔══════════════════════════════════════════════════════════╗', 'magenta')}
-{c('║', 'magenta')}  {c('engram', 'bold')} — interactive demo                              {c('║', 'magenta')}
-{c('║', 'magenta')}                                                          {c('║', 'magenta')}
-{c('║', 'magenta')}  a cognitive memory system that actually remembers things {c('║', 'magenta')}
-{c('╚══════════════════════════════════════════════════════════╝', 'magenta')}
-
-  Using temporary database: {c(db_path, 'dim')}
-""")
-
-    # suppress model loading noise
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    import logging
-    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
-
-    step("Loading embedding models...")
-
-    # setup
-    from engram.config import Config
-    config = Config()
-    config.db_path = db_path
-
-    from engram.store import Store, Memory, MemoryLayer, SourceType
-    from engram.embeddings import embed_documents
-    from engram.surprise import compute_surprise, adjust_importance
-    from engram.lifecycle import retention_l2, retention_huber, retention_elastic, compute_retention
-    from engram.entities import process_entities_for_memory
-    from engram.deep_retrieval import DeepReranker
-    from engram.retrieval import search as hybrid_search
-
-    store = Store(config)
-    store.init_db()
-
-    # optionally start web server in background
-    web_proc = None
-    if start_web:
-        import subprocess
-        env = os.environ.copy()
-        env["ENGRAM_DB_PATH"] = db_path
-        web_proc = subprocess.Popen(
-            [sys.executable, "-m", "engram", "serve", "--web", "--port", str(web_port)],
-            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+def _start_web(config, config_path, directory, *, timeout=20):
+    url = f"http://127.0.0.1:{config.web.port}/"
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.1", config.web.port))
+        except OSError:
+            raise DemoError("demo web port is unavailable; choose another --port") from None
+    fd = os.open(directory / "web.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as log:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "engram", "--config", str(config_path),
+             "serve", "--web", "--port", str(config.web.port)],
+            env=_child_environment(), cwd=Path(__file__).resolve().parents[1],
+            stdin=subprocess.DEVNULL, stdout=log, stderr=log,
         )
-        time.sleep(2)
-        print(f"  {c('Web dashboard running at', 'dim')} {c(f'http://127.0.0.1:{web_port}', 'cyan')}")
-        print(f"  {c('Open it in your browser to watch the neural map light up!', 'dim')}\n")
+    try:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise DemoError("demo web process exited during startup; its log is in the demo directory")
+            if _web_ready(url, config.web.auth_token, config_path, config.db_path):
+                return process, url + "?token=" + config.web.auth_token
+            time.sleep(0.1)
+        raise DemoError("demo web startup timed out; its log is in the demo directory")
+    except BaseException:
+        _stop_web(process)
+        raise
 
-    # ================================================================
-    # PHASE 1: Basic memory storage
-    # ================================================================
-    header("Phase 1: Storing memories")
 
-    memories_data = [
-        ("Ari prefers short, direct responses. No filler, no preamble.", "semantic", 0.8),
-        ("The deploy pipeline uses blue-green deployment with a 5-minute canary window.", "procedural", 0.8),
-        ("Decision: Use SQLite instead of PostgreSQL for the config service. Rationale: single-node, no concurrent writes, eliminates ops complexity.", "procedural", 0.9),
-        ("melee.garden is a competitive Melee platform with 45+ pages, AI coaching, Slippi AI Arena, and stream overlays.", "semantic", 0.7),
-        ("Error: Mock database tests passed but production migration failed. Prevention: always use real database connections for integration tests.", "procedural", 0.85),
-        ("2026-03-28: Built and deployed melee.garden in ~20 hours. Full platform: frame data for all 26 characters, Supabase auth, cloud sync.", "episodic", 0.6),
-        ("2026-04-07: Built engram memory system. 4-stage hybrid retrieval, entity graph, dream cycle, web dashboard.", "episodic", 0.7),
-        ("The AI coach in melee.garden uses Qwen 3.5 2B via MLX on Mac, with a direct personality and memory system using localStorage.", "semantic", 0.6),
-        ("Kubernetes pods should have resource limits set. Without them, a single pod can starve the node.", "procedural", 0.7),
-        ("React server components reduce client bundle size by keeping data-fetching logic on the server.", "semantic", 0.5),
-        ("The nginx rate limiter uses leaky bucket algorithm. Config: limit_req_zone with burst and nodelay.", "procedural", 0.65),
-        ("2026-04-09: Read Titans paper — surprise-based memorization where memory updates are proportional to loss gradient.", "episodic", 0.8),
-    ]
-
-    step("Storing 12 memories across episodic, semantic, and procedural layers...")
-    print()
-
-    stored_ids = []
-    for content, layer, importance in memories_data:
-        mem = Memory(
-            id=str(uuid.uuid4()), content=content,
-            source_type=SourceType.HUMAN, layer=layer, importance=importance,
-        )
-        emb = embed_documents([content], config.embedding_model)
-        if emb.size > 0:
-            mem.embedding = emb[0]
-
-        # surprise scoring
-        surprise_info = compute_surprise(mem.embedding, store)
-        mem.importance = adjust_importance(mem.importance, surprise_info)
-        mem.metadata["surprise"] = surprise_info["surprise"]
-
-        store.save_memory(mem)
-        process_entities_for_memory(store, mem.id, content)
-        stored_ids.append(mem.id)
-
-        surprise_bar = "█" * int(surprise_info["surprise"] * 20)
-        surprise_empty = "░" * (20 - int(surprise_info["surprise"] * 20))
-        surprise_color = "green" if surprise_info["surprise"] > 0.5 else "yellow" if surprise_info["surprise"] > 0.3 else "red"
-        print(f"    {c(f'[{layer:10s}]', 'dim')} surprise={c(f'{surprise_bar}{surprise_empty}', surprise_color)} {surprise_info['surprise']:.2f}  imp={mem.importance:.2f}")
-        print(f"             {c(content[:70] + ('...' if len(content) > 70 else ''), 'dim')}")
-
-    stats = store.get_stats()
-    print()
-    result(f"Stored {stats['memories']['total']} memories, {stats['entities']} entities, {stats['relationships']} relationships")
-
-    wait()
-
-    # ================================================================
-    # PHASE 2: Surprise-based dedup detection
-    # ================================================================
-    header("Phase 2: Surprise scoring — detecting redundancy")
-
-    step("Storing a near-duplicate of the deploy pipeline memory...")
-    print()
-
-    dup_content = "Our deployment uses blue-green with canary releases lasting about 5 minutes before full cutover."
-    dup_emb = embed_documents([dup_content], config.embedding_model)
-    dup_surprise = compute_surprise(dup_emb[0], store)
-
-    print(f"    Original: {c('The deploy pipeline uses blue-green deployment with a 5-minute canary window.', 'dim')}")
-    print(f"    Duplicate: {c(dup_content, 'dim')}")
-    print()
-    print(f"    Surprise score:  {c(f'{dup_surprise['surprise']:.4f}', 'red')} {'(very low — system knows this already)' if dup_surprise['surprise'] < 0.3 else ''}")
-    print(f"    Nearest distance: {c(f'{dup_surprise['nearest_distance']:.4f}', 'red')}")
-    print(f"    Is duplicate:    {c(str(dup_surprise['is_duplicate']), 'red' if dup_surprise['is_duplicate'] else 'green')}")
-    print(f"    Importance adj:  {c(f'{dup_surprise['importance_modifier']:+.4f}', 'red')}")
-
-    if dup_surprise["nearest_id"]:
-        nearest = store.get_memory(dup_surprise["nearest_id"])
-        if nearest:
-            print(f"    Nearest memory:  {c(nearest.content[:80], 'cyan')}")
-
-    print()
-    step("Now storing something genuinely novel...")
-    print()
-
-    novel_content = "Black holes emit Hawking radiation due to quantum effects near the event horizon, causing them to slowly evaporate."
-    novel_emb = embed_documents([novel_content], config.embedding_model)
-    novel_surprise = compute_surprise(novel_emb[0], store)
-
-    print(f"    Content: {c(novel_content[:80], 'dim')}")
-    print(f"    Surprise score:  {c(f'{novel_surprise['surprise']:.4f}', 'green')} {'(novel — nothing like this in memory)' if novel_surprise['surprise'] > 0.5 else ''}")
-    print(f"    Importance adj:  {c(f'{novel_surprise['importance_modifier']:+.4f}', 'green')}")
-
-    wait()
-
-    # ================================================================
-    # PHASE 3: Hybrid retrieval
-    # ================================================================
-    header("Phase 3: Hybrid retrieval — dense + BM25 + graph")
-
-    queries = [
-        "deployment strategy",
-        "what happened on march 28",
-        "database testing mistakes",
-    ]
-
-    for query in queries:
-        step(f"Searching: {c(query, 'cyan')}")
-        results = hybrid_search(query, store, config, top_k=3)
-        for i, r in enumerate(results):
-            print(f"    {c(f'[{i+1}]', 'dim')} score={r.score:.3f} {c(f'[{r.memory.layer}]', 'dim')} {r.memory.content[:80]}")
-        print()
-
-    wait()
-
-    # ================================================================
-    # PHASE 4: Retention curves
-    # ================================================================
-    header("Phase 4: Retention regularization — three decay models")
-
-    step("Comparing L2 (exponential), Huber (robust), and Elastic (sparse) retention...")
-    print()
-
-    half_life = 30
-    print(f"    {'Age (days)':>12}  {'L2':>8}  {'Huber':>8}  {'Elastic':>8}")
-    print(f"    {'─' * 45}")
-
-    for days in [0, 7, 15, 30, 45, 60, 90]:
-        l2 = retention_l2(days, half_life)
-        hub = retention_huber(days, half_life, 0.5)
-        ela = retention_elastic(days, half_life, 0.3)
-
-        def bar(v):
-            filled = int(v * 8)
-            return c("█" * filled + "░" * (8 - filled), "green" if v > 0.5 else "yellow" if v > 0.2 else "red")
-
-        print(f"    {days:>12}  {bar(l2)} {l2:.3f}  {bar(hub)} {hub:.3f}  {bar(ela)} {ela:.3f}")
-
-    print()
-    print(f"    {c('L2:', 'cyan')} classic exponential — everything fades smoothly")
-    print(f"    {c('Huber:', 'cyan')} robust to burst-then-quiet — gentler on old memories")
-    print(f"    {c('Elastic:', 'cyan')} sparse — strong memories stay, weak ones drop faster")
-
-    wait()
-
-    # ================================================================
-    # PHASE 5: Deep reranker
-    # ================================================================
-    header("Phase 5: Deep retrieval — learning from access patterns")
-
-    step("Simulating access patterns (some memories get recalled more than others)...")
-    print()
-
-    # simulate access patterns
-    import random
-    random.seed(42)
-    for _ in range(50):
-        idx = random.choice(range(len(stored_ids)))
-        store.record_access(stored_ids[idx], f"simulated query {random.randint(1,100)}")
-
-    # train reranker
-    reranker_path = config.resolved_db_path.parent / "reranker.npz"
-    reranker = DeepReranker(model_path=reranker_path)
-
-    step("Training the MLP reranker on access log data...")
-    train_result = reranker.train(store, epochs=30)
-
-    if train_result.get("status") == "trained":
-        result(f"Trained on {train_result['samples']} samples, final loss: {train_result['final_loss']:.4f}")
-    else:
-        print(f"    {c(f'Not enough data: {train_result}', 'yellow')}")
-
-    print()
-    step("Searching with the deep reranker active...")
-    results_with = hybrid_search("deployment", store, config, top_k=3, deep_reranker=reranker)
-    for i, r in enumerate(results_with):
-        deep_score = r.sources.get("deep_reranker", "n/a")
-        print(f"    {c(f'[{i+1}]', 'dim')} deep={deep_score:.3f if isinstance(deep_score, float) else deep_score} {c(f'[{r.memory.layer}]', 'dim')} {r.memory.content[:70]}")
-
-    wait()
-
-    # ================================================================
-    # PHASE 6: Entity graph
-    # ================================================================
-    header("Phase 6: Entity graph — automatic knowledge linking")
-
-    step("Entities extracted automatically from memory content:")
-    print()
-
-    entities = store.list_entities(limit=20)
-    type_colors = {"person": "cyan", "tool": "green", "concept": "yellow", "date": "magenta", "url": "blue", "path": "dim"}
-    for e in entities[:15]:
-        mem_count = store.conn.execute(
-            "SELECT COUNT(*) as cnt FROM entity_mentions WHERE entity_id = ?", (e.id,)
-        ).fetchone()["cnt"]
-        color = type_colors.get(e.entity_type, "dim")
-        print(f"    {c(e.canonical_name, color)} {c(f'({e.entity_type})', 'dim')} — {mem_count} memories")
-
-    print()
-
-    # show a relationship
-    for e in entities[:5]:
-        rels = store.get_entity_relationships(e.id)
-        if rels:
-            step(f"Relationships for {c(e.canonical_name, 'cyan')}:")
-            for r in rels[:3]:
-                print(f"      → {r['relation_type']} → {r['target_name']}")
-            break
-
-    wait()
-
-    # ================================================================
-    # PHASE 7: Cognitive scaffolding
-    # ================================================================
-    header("Phase 7: Cognitive scaffolding — hints vs full recall")
-
-    step("Full recall dumps entire memory content:")
-    full = hybrid_search("testing approach", store, config, top_k=2)
-    for r in full:
-        print(f"    {c('[FULL]', 'cyan')} {r.memory.content}")
-    print()
-
-    step("Hint mode returns just enough to trigger recognition:")
-    for r in full:
-        hint = r.memory.content[:60] + "..."
-        entities_for = store.conn.execute(
-            "SELECT e.canonical_name FROM entity_mentions em JOIN entities e ON e.id = em.entity_id WHERE em.memory_id = ? LIMIT 3",
-            (r.memory.id,),
-        ).fetchall()
-        ent_names = [row["canonical_name"] for row in entities_for]
-        print(f"    {c('[HINT]', 'yellow')} {c(hint, 'dim')}  entities: {c(', '.join(ent_names), 'cyan')}")
-
-    print()
-    print(f"    {c('The idea:', 'dim')} hints trigger recognition without replacing cognition.")
-    print(f"    {c('Pull full context only when you actually need it.', 'dim')}")
-
-    wait()
-
-    # ================================================================
-    # PHASE 8: System stats
-    # ================================================================
-    header("Phase 8: System overview")
-
-    final_stats = store.get_stats()
-    mems = final_stats["memories"]
-
-    print(f"    {c('Memories:', 'bold')}       {mems['total']}")
-    for layer in ["episodic", "semantic", "procedural"]:
-        count = mems.get(layer, 0)
-        bar = "█" * count + "░" * (12 - count)
-        color = {"episodic": "cyan", "semantic": "green", "procedural": "magenta"}.get(layer, "dim")
-        print(f"      {layer:12s}  {c(bar, color)} {count}")
-
-    print(f"    {c('Entities:', 'bold')}       {final_stats['entities']}")
-    print(f"    {c('Relationships:', 'bold')}  {final_stats['relationships']}")
-    print(f"    {c('Database:', 'bold')}       {final_stats['db_size_mb']} MB")
-    print(f"    {c('Reranker:', 'bold')}       {'trained' if reranker.is_trained else 'untrained'}")
-
-    # ================================================================
-    # Cleanup
-    # ================================================================
-    print()
-    if keep_db:
-        result(f"Demo database kept at: {db_path}")
-        print(f"    Run: engram --config /dev/null status  # with ENGRAM_DB_PATH={db_path}")
-    else:
-        store.close()
-        import shutil
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        result("Demo database cleaned up.")
-
-    if web_proc:
-        if keep_db:
-            result(f"Web dashboard still running at http://127.0.0.1:{web_port}")
+def _show_results(output, label, results):
+    output(label)
+    if not results:
+        output("  no results passed this search's eligibility and relevance rules")
+    for rank, result in enumerate(results, 1):
+        output(f"  {rank}. {result.memory.id}  score={result.score:.4f}")
+        if "excerpt_raw_score" in result.sources:
+            start, end = int(result.sources["source_start"]), int(result.sources["source_end"])
+            output("    source excerpt: " + result.memory.content[start:end])
         else:
-            web_proc.terminate()
-            result("Web dashboard stopped.")
+            output("    " + result.memory.content[:120])
 
-    print(f"""
-{c('━' * 60, 'dim')}
 
-  {c('What you just saw:', 'bold')}
+def _walkthrough(config, config_path, directory, *, yes, input_fn, output):
+    from engram.embeddings import embed_documents, set_backend, set_default_model
+    from engram.project_context import ProjectContext
+    from engram.retrieval import search
+    from engram.store import Memory, Store
 
-  1. {c('Surprise scoring', 'cyan')} — novel memories get boosted, duplicates get flagged
-  2. {c('Hybrid retrieval', 'cyan')} — dense + BM25 + graph fused with RRF
-  3. {c('Retention curves', 'cyan')} — three forgetting models (L2, Huber, elastic)
-  4. {c('Deep reranker', 'cyan')} — MLP trained on actual access patterns
-  5. {c('Entity graph', 'cyan')} — automatic knowledge linking from text
-  6. {c('Cognitive scaffolding', 'cyan')} — hints that trigger recognition without replacing it
+    def pause():
+        if not yes:
+            input_fn("Press Enter to continue: ")
 
-  {c('Get started:', 'bold')}
-    pip install -e .
-    engram remember "your first memory"
-    engram search "what do I know"
-    engram serve --web
+    project = directory / "lantern-project"
+    project.mkdir()
+    report = config.describe()
+    _write_json(directory / "config-report.json", report)
+    output("1. Isolated setup and effective configuration")
+    output(f"  config: {config_path}")
+    output(f"  SQLite: {config.db_path}")
+    output(f"  local models: {config.embedding_model}; {config.cross_encoder_model}")
+    output(f"  final confidence cutoff: {config.retrieval.min_confidence}; excerpt retries enabled")
+    output("  inherited Engram settings are ignored; ANN and dormant recall are off for this small demo")
+    pause()
 
-  {c('See examples/ for agent integration guides.', 'dim')}
+    set_backend(config.embedding_backend)
+    set_default_model(config.embedding_model)
+    store = Store(config)
+    try:
+        store.init_db()
+        output("2. Saving six fictional project memories with local embeddings")
+        output("  first use may download local model weights; no LLM or hosted inference is used")
+        output("  the long access-key note is deliberately padded to illustrate excerpt retries, not to measure accuracy")
+        vectors = embed_documents([item[3] for item in MEMORIES], config.embedding_model)
+        if len(vectors) != len(MEMORIES):
+            raise DemoError("local embeddings did not return one vector per demo memory")
+        for (identifier, layer, memory_type, content), vector in zip(MEMORIES, vectors):
+            store.save_memory(Memory(
+                id=identifier, content=content, layer=layer, memory_type=memory_type,
+                embedding=vector, importance=0.7, source_type="remember:human",
+                source_file="demo:fictional", metadata={"project_path": str(project)},
+            ))
+        hybrid = search("Lantern release rollback procedure", store, config, top_k=3, rerank=False)
+        _show_results(output, "3. Ordinary hybrid recall (records accesses in this demo store)", hybrid)
 
-{c('━' * 60, 'dim')}
-""")
+        before = _state(store)
+        reranked, debug = search(RECALL_QUERY, store, config, top_k=3, rerank=True, debug=True)
+        explanation = debug.to_dict()
+        if before != _state(store):
+            raise DemoError("explanation changed stored records or the result cache")
+        _write_json(directory / "explanation.json", explanation)
+        _show_results(output, "4. Reranked recall and its read-only explanation", reranked)
+        output(f"  query: {RECALL_QUERY}")
+        for candidate in explanation["candidates"]:
+            output(f"  {candidate['memory_id']}: {candidate['outcome']} — {candidate['reason']}")
+            passage = candidate.get("passage", {})
+            if "excerpt_raw_score" in passage:
+                output(f"    excerpt {passage['source_start']}:{passage['source_end']}; full logit={passage['base_raw_score']:.4f}, excerpt logit={passage['excerpt_raw_score']:.4f}")
+        output("  actual model scores decide acceptance; the production cutoff has not been lowered")
+        output("  explanation left stored memories, access history and the result cache unchanged")
+        pause()
+    finally:
+        store.close()
+
+    output("5. Save an explicit project checkpoint, then reopen it")
+    context = ProjectContext(config, str(project))
+    try:
+        context.checkpoint("release rehearsal", summary="Lantern's rollback procedure is recorded; a rehearsal is the next task.",
+                           decisions=["Keep manual release approval."],
+                           next_steps=["Rehearse restoring the previous signed build."])
+    finally:
+        context.close()
+    context = ProjectContext(config, str(project))
+    try:
+        before = _state(context.store)
+        resumed = context.context(task="release rehearsal", limit=3)
+        if before != _state(context.store):
+            raise DemoError("resuming the checkpoint changed stored records")
+        output("  " + resumed["checkpoints"][0]["summary"])
+        output("  next: " + resumed["checkpoints"][0]["next_steps"][0])
+    finally:
+        context.close()
+    output("This fictional workflow illustrates the APIs; its rankings are not a general accuracy or cross-agent continuity measurement.")
+    return {"hybrid_ids": [row.memory.id for row in hybrid],
+            "reranked_ids": [row.memory.id for row in reranked],
+            "explanation_unchanged": True, "checkpoint": resumed["checkpoints"][0]}
+
+
+def run_demo(keep_db=False, start_web=False, web_port=8421, yes=False, *, input_fn=None, output_fn=print):
+    """Run locally; --keep retains files, never an orphan web process."""
+    if type(web_port) is not int or not 1 <= web_port <= 65535:
+        raise DemoError("demo port must be an integer from 1 to 65535")
+    if not yes and input_fn is None and not sys.stdin.isatty():
+        raise DemoError("interactive demo requires a terminal; use --yes for an unattended run")
+    input_fn = input_fn or input
+    directory = Path(tempfile.mkdtemp(prefix="engram-demo-")).resolve()
+    config_path = directory / "config.json"
+    process = None
+    complete = False
+    try:
+        config = Config.from_mapping({
+            "storage_backend": "sqlite", "db_path": str(directory / "memory.db"),
+            "embedding_backend": "sentence_transformers",
+            "ann": {"enabled": False, "index_path": str(directory / "hnsw.index")},
+            "dormant_recall": {"mode": "off"},
+            "web": {"host": "127.0.0.1", "port": web_port, "auth_token": secrets.token_urlsafe(24)},
+        }, apply_environment=False)
+        from dataclasses import asdict
+        _write_json(config_path, asdict(config))
+        fd = os.open(config.db_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+        output_fn("Engram demo: the fictional Lantern project")
+        summary = _walkthrough(config, config_path, directory, yes=yes, input_fn=input_fn, output=output_fn)
+        if start_web:
+            process, url = _start_web(config, config_path, directory)
+            output_fn("Demo workspace is ready after the walkthrough: " + url)
+            if yes:
+                output_fn("Readiness checked; --yes stops the web process when the demo finishes.")
+            else:
+                input_fn("Open the URL to inspect the demo. Press Enter when finished to stop the web process: ")
+        complete = True
+        output_fn("For your own store, run: engram init")
+        output_fn("Then run the doctor --full command printed by setup.")
+        return {"directory": str(directory), "config_file": str(config_path),
+                "kept": bool(keep_db), "complete": True, **summary}
+    except (KeyboardInterrupt, EOFError):
+        raise KeyboardInterrupt from None
+    except DemoError:
+        raise
+    except Exception as exc:
+        raise DemoError(f"demo could not complete ({type(exc).__name__}); check local model availability and runtime dependencies") from None
+    finally:
+        try:
+            _stop_web(process)
+        finally:
+            if keep_db:
+                output_fn(f"Kept {'completed' if complete else 'partial'} demo files: {directory}")
+                output_fn("Inspect: " + _command(config_path, "config", "show"))
+                output_fn("Doctor: " + _command(config_path, "doctor", "--full"))
+                output_fn("Recall: " + _command(config_path, "search", RECALL_QUERY, "--rerank", "--explain"))
+                if start_web:
+                    output_fn("Restart workspace: " + _command(config_path, "serve", "--web", "--port", str(web_port)))
+            else:
+                shutil.rmtree(directory)
+                output_fn("Temporary demo files removed; any demo web process is stopped.")
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--keep", action="store_true", help="Keep demo database after")
-    parser.add_argument("--web", action="store_true", help="Also start web dashboard")
-    parser.add_argument("--port", type=int, default=8421, help="Web port")
+    parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--port", type=int, default=8421)
+    parser.add_argument("--yes", action="store_true")
     args = parser.parse_args()
-    run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
+    try:
+        run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port, yes=args.yes)
+    except DemoError as exc:
+        parser.error(str(exc))
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None

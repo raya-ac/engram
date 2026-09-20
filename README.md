@@ -6,7 +6,7 @@
 
 memory for work that continues after the conversation ends.
 
-[website](https://engram-memory.dev) · [documentation](https://engram-memory.dev/getting-started/quickstart/) · [0.8.0 changelog](docs/changelog.md)
+[website](https://engram-memory.dev) · [documentation](https://engram-memory.dev/getting-started/quickstart/) · [0.8.1 changelog](docs/changelog.md)
 
 i built engram to keep the things an agent should be able to return to: decisions,
 errors, project context, procedures, and the connections between them. it stores
@@ -86,7 +86,16 @@ some write and maintenance paths use an LLM for extraction, enrichment, or
 consolidation. local embedding search can run without an LLM service. choosing an
 API embedding or LLM backend sends the relevant inputs to that provider.
 
-## what's new in 0.8.0
+## what's new in 0.8.1
+
+the demo now walks through a fictional project using current setup, recall and
+retrieval explanations. run `engram demo`, or `engram demo --yes` for an
+unattended walkthrough. its configuration and memories stay separate from yours.
+
+the harmless BGE `position_ids` loading report is quiet. genuine missing-weight,
+shape and model-loading problems still show up; model scores are unchanged.
+
+## what arrived in 0.8.0
 
 `engram init` guides storage and local model selection, creates a private new
 store, and prints connection settings for your agent. `--yes` supports unattended

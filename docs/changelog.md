@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 (September 20, 2026)
+
+- suppress only the known BGE reranker and default embedding reports about regenerated `position_ids` buffers; preserve other loading diagnostics and remove blanket Transformers warning suppression
+- refresh `engram demo` around a fictional project, current retrieval explanations and setup commands, with unattended execution and isolated demo storage
+- fix demo compatibility with Python 3.11 and ensure temporary data and web processes are cleaned up on exit
+- carry the web page's access token into same-origin API requests so authenticated workspaces load and search correctly
+
 ## 0.8.0 (September 20, 2026)
 
 - add guided `engram init` with local model presets, private new-store creation, environment-override reporting and portable MCP connection settings

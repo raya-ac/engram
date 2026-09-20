@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-memory-system"
-version = "0.8.0"
+version = "0.8.1"
 description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
 license = { text = "Engram Public Use License 1.0" }
 requires-python = ">=3.11"

@@ -103,6 +103,7 @@ def main():
     p_demo.add_argument("--keep", action="store_true", help="Keep demo database after")
     p_demo.add_argument("--web", action="store_true", help="Also start web dashboard")
     p_demo.add_argument("--port", type=int, default=8421, help="Web dashboard port")
+    p_demo.add_argument("--yes", action="store_true", help="Run the isolated demo without prompts; stop its web process after readiness")
 
     # drift
     p_drift = sub.add_parser("drift", help="Check memory drift against filesystem reality")
@@ -160,6 +161,18 @@ def main():
     p_serve.add_argument("--port", type=int, help="Port override")
 
     args = parser.parse_args()
+    if args.command == "demo":
+        if args.config:
+            parser.error("demo uses its own isolated configuration; omit --config")
+        from engram.demo import DemoError, run_demo
+        try:
+            run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port, yes=args.yes)
+        except DemoError as exc:
+            parser.error(str(exc))
+        except KeyboardInterrupt:
+            print("demo interrupted", file=sys.stderr)
+            raise SystemExit(130) from None
+        return
     if args.command == "serve" and args.no_warmup and not args.mcp:
         parser.error("--no-warmup requires --mcp")
     if args.command == "search" and args.top_k is not None and args.top_k < 1:
@@ -251,9 +264,6 @@ def main():
         cmd_import(args, config)
     elif args.command == "migrate-postgres":
         cmd_migrate_postgres(args, config)
-    elif args.command == "demo":
-        from engram.demo import run_demo
-        run_demo(keep_db=args.keep, start_web=args.web, web_port=args.port)
     elif args.command == "serve":
         cmd_serve(args, config)
     else:

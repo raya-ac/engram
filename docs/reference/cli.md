@@ -212,9 +212,34 @@ memory counts by layer, entities, relationships, DB size, ANN index status.
 
 ### demo
 ```bash
-engram demo [--keep] [--web] [--port PORT]
+engram demo [--yes] [--keep] [--web] [--port PORT]
 ```
-interactive walkthrough with sample data. `--keep` preserves the demo database. `--web` starts the dashboard.
+a fictional project walkthrough: inspect an isolated config, save memories with
+local embeddings, compare hybrid and reranked recall, read explanations including
+rejected candidates and excerpt retries, then save and reopen a project
+checkpoint. the production confidence cutoff remains in effect. results reflect
+the actual model run; this fixture is not a general retrieval or continuity
+measurement.
+
+`--yes` skips prompts and works without a terminal. the demo uses its own SQLite
+database, index path and portable local model backend, ignoring inherited
+`ENGRAM_*` overrides. it never reads your Engram config or memory store;
+`--config` is rejected. no LLM or hosted inference is used, though first use may
+download local model weights.
+
+temporary files are removed on completion or interruption. `--keep` retains the
+private config, database and explanation report, including partial output if a
+run fails, and prints commands to reuse that config. those commands unset the
+current `ENGRAM_*` overrides; newly added overrides still follow normal config
+precedence. retained demos include a `doctor --full` command. to start your own
+store after the walkthrough, run `engram init` and follow its printed doctor
+command.
+
+`--web` opens a loopback-only workspace **after** the walkthrough, with an isolated
+config and generated access token. interactive mode waits at a final prompt so
+you can inspect it; `--yes` checks readiness and exits. the child process is
+stopped on completion, errors or Ctrl-C, even with `--keep`. retained demos print
+a separate command for restarting the workspace. no client settings are edited.
 
 ## dormant review and Codex adapter
 

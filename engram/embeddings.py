@@ -18,19 +18,61 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import warnings
 from inspect import signature
 
 import numpy as np
 
-# suppress model loading noise
+# Avoid tokenizer fork warnings; keep genuine model-loading diagnostics visible.
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
-logging.getLogger("transformers").setLevel(logging.ERROR)
-warnings.filterwarnings("ignore", message=".*position_ids.*")
-warnings.filterwarnings("ignore", message=".*unauthenticated.*")
-warnings.filterwarnings("ignore", message=".*LOAD REPORT.*")
-warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+
+
+class _BGEPositionBufferFilter(logging.Filter):
+    """Hide only known harmless BGE buffer reports, never weight failures.
+
+    Transformers 5 logs this table instead of using warnings.warn(). BERT/XLM-R
+    regenerate position_ids as a non-persistent buffer. Match the entire known
+    report and fail open if its format, model, keys or diagnostic level changes.
+    """
+
+    _ansi = re.compile(r"\x1b\[[0-9;]*m")
+    _loggers = ("transformers.modeling_utils", "transformers.utils.loading_report")
+    _known_reports = {
+        "XLMRobertaForSequenceClassification LOAD REPORT from: BAAI/bge-reranker-base":
+            "roberta.embeddings.position_ids",
+        "BertModel LOAD REPORT from: BAAI/bge-small-en-v1.5":
+            "embeddings.position_ids",
+    }
+    _note = (
+        "- UNEXPECTED: can be ignored when loading from different task/architecture; "
+        "not ok if you expect identical arch."
+    )
+
+    def filter(self, record):
+        if (record.levelno != logging.WARNING or record.name not in self._loggers
+                or record.exc_info or record.stack_info):
+            return True
+        lines = self._ansi.sub("", record.getMessage()).strip().splitlines()
+        if len(lines) != 7 or lines[0] not in self._known_reports:
+            return True
+        header = [part.strip() for part in lines[1].split("|")]
+        row = [part.strip() for part in lines[3].split("|")]
+        harmless = (
+            header in (["Key", "Status", "", ""], ["Key", "Status", "Details"])
+            and set(lines[2].strip()) <= {"-", "+"} and "+" in lines[2]
+            and len(row) == len(header)
+            and row[:2] == [self._known_reports[lines[0]], "UNEXPECTED"]
+            and not any(row[2:])
+            and not lines[4].strip() and lines[5] == "Notes:"
+            and " ".join(lines[6].split()) == self._note
+        )
+        return not harmless
+
+
+_bge_position_buffer_filter = _BGEPositionBufferFilter()
+for _logger_name in _BGEPositionBufferFilter._loggers:
+    logging.getLogger(_logger_name).addFilter(_bge_position_buffer_filter)
 
 _bi_encoder = None
 _cross_encoders: dict[str, Any] = {}
@@ -145,9 +187,7 @@ def _get_bi_encoder(model_name: str = "BAAI/bge-small-en-v1.5"):
     global _bi_encoder
     if _bi_encoder is None:
         from sentence_transformers import SentenceTransformer
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            _bi_encoder = SentenceTransformer(model_name)
+        _bi_encoder = SentenceTransformer(model_name)
     return _bi_encoder
 
 
@@ -408,10 +448,8 @@ def _get_cross_encoder(model_name: str = "BAAI/bge-reranker-base"):
         from sentence_transformers.cross_encoder import CrossEncoder
         import torch
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                _cross_encoders[model_name] = CrossEncoder(model_name, device=device)
-            except Exception:
-                _cross_encoders[model_name] = CrossEncoder(model_name, device="cpu")
+        try:
+            _cross_encoders[model_name] = CrossEncoder(model_name, device=device)
+        except Exception:
+            _cross_encoders[model_name] = CrossEncoder(model_name, device="cpu")
     return _cross_encoders[model_name]
