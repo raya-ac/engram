@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>engram</title>
+  <desc>A folded lowercase e, cut into three continuous memory traces.</desc>
+  <path d="M424 80H224C122.4 80 40 162.4 40 264S122.4 448 224 448H424V384H224C157.7 384 104 330.3 104 264S157.7 144 224 144H360V224H208V288H424V80Z" fill="#D99A78"/>
+  <path d="M403 101H224C134 101 61 174 61 264S134 427 224 427H424M382 122H224C145.6 122 82 185.6 82 264S145.6 406 224 406H424M403 102V267H208M382 123V246H208" stroke="#111110" stroke-width="5"/>
+</svg>

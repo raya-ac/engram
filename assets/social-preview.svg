@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" fill="none">
+  <rect width="1280" height="640" fill="#111110"/>
+  <g transform="translate(760 -22) rotate(-14 256 256) scale(1.4)">
+    <path d="M424 80H224C122.4 80 40 162.4 40 264S122.4 448 224 448H424V384H224C157.7 384 104 330.3 104 264S157.7 144 224 144H360V224H208V288H424V80Z" fill="#D99A78"/>
+    <path d="M403 101H224C134 101 61 174 61 264S134 427 224 427H424M382 122H224C145.6 122 82 185.6 82 264S145.6 406 224 406H424M403 102V267H208M382 123V246H208" stroke="#111110" stroke-width="5"/>
+  </g>
+  <text x="58" y="65" fill="#D99A78" font-family="Menlo, monospace" font-size="14">PERSISTENT MEMORY FOR YOUR AGENTS</text>
+  <text x="45" y="322" fill="#F0EEE7" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="225" letter-spacing="-16">engram.</text>
+  <text x="58" y="456" fill="#F0EEE7" font-family="Helvetica, Arial, sans-serif" font-size="42" letter-spacing="-1.5">good work deserves</text>
+  <text x="58" y="507" fill="#F0EEE7" font-family="Helvetica, Arial, sans-serif" font-size="42" letter-spacing="-1.5">a longer memory.</text>
+  <text x="60" y="597" fill="#AAA9A0" font-family="Menlo, monospace" font-size="15">engram-memory.dev</text>
+</svg>

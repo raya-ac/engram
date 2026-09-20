@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" fill="none">
+  <defs>
+    <linearGradient id="copper" x1="140" y1="130" x2="690" y2="750" gradientUnits="userSpaceOnUse"><stop stop-color="#F0B696"/><stop offset=".5" stop-color="#D99A78"/><stop offset="1" stop-color="#935F48"/></linearGradient>
+    <pattern id="cut" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-32)"><path d="M0 0V8" stroke="#111110" stroke-opacity=".12"/></pattern>
+  </defs>
+  <g transform="translate(28 8) rotate(-14 400 400)">
+    <path d="M656 112H368C213.4 112 88 237.4 88 392S213.4 672 368 672H656V560H368C275.2 560 200 484.8 200 392S275.2 224 368 224H544V336H344V448H656V112Z" fill="url(#copper)"/>
+    <path d="M656 112H368C213.4 112 88 237.4 88 392S213.4 672 368 672H656V560H368C275.2 560 200 484.8 200 392S275.2 224 368 224H544V336H344V448H656V112Z" fill="url(#cut)"/>
+    <g stroke="#111110" stroke-width="6">
+      <path d="M628 140H368C228.8 140 116 252.8 116 392S228.8 644 368 644H656M600 168H368C244.3 168 144 268.3 144 392S244.3 616 368 616H656M572 196H368C259.8 196 172 283.8 172 392S259.8 588 368 588H656M628 143V420H344M600 171V392H344M572 199V364H344"/>
+    </g>
+    <path d="M657 112H368C213.4 112 88 237.4 88 392" stroke="#F7D8BD" stroke-opacity=".65" stroke-width="2"/>
+  </g>
+</svg>

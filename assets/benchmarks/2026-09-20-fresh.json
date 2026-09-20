@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "measurement_date": "2026-09-20",
+  "verified_at_utc": "2026-09-20T11:54:33.122388+00:00",
+  "status": "unreleased development candidate",
+  "dataset": {
+    "name": "LongMemEval-S cleaned",
+    "file": "longmemeval_s_cleaned.json",
+    "total_questions": 500,
+    "evaluated_questions": 470,
+    "abstention_questions_skipped": 30,
+    "sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442"
+  },
+  "execution": {
+    "fresh_process": true,
+    "saved_score_reuse": false,
+    "external_model_api_calls": false,
+    "command": "python benchmarks/longmemeval/run_engram.py data/longmemeval_s_cleaned.json --rerank --embedding-backend mlx --output fresh-results.jsonl"
+  },
+  "hits": {
+    "recall_any@1": 439,
+    "recall_all@1": 155,
+    "recall_any@3": 462,
+    "recall_all@3": 400,
+    "recall_any@5": 470,
+    "recall_all@5": 428,
+    "recall_any@10": 470,
+    "recall_all@10": 451,
+    "recall_any@30": 470,
+    "recall_all@30": 464,
+    "recall_any@50": 470,
+    "recall_all@50": 470
+  },
+  "metrics": {
+    "recall_any@1": 0.9340425531914893,
+    "recall_all@1": 0.32978723404255317,
+    "ndcg_any@1": 0.9340425531914893,
+    "recall_any@3": 0.9829787234042553,
+    "recall_all@3": 0.851063829787234,
+    "ndcg_any@3": 0.9379025996538257,
+    "recall_any@5": 1.0,
+    "recall_all@5": 0.9106382978723404,
+    "ndcg_any@5": 0.9474051654249406,
+    "recall_any@10": 1.0,
+    "recall_all@10": 0.9595744680851064,
+    "ndcg_any@10": 0.9551031736788013,
+    "recall_any@30": 1.0,
+    "recall_all@30": 0.9872340425531915,
+    "ndcg_any@30": 0.9592111525865068,
+    "recall_any@50": 1.0,
+    "recall_all@50": 1.0,
+    "ndcg_any@50": 0.9604211406924281
+  },
+  "by_question_type": {
+    "knowledge-update": {
+      "questions": 72,
+      "hits_at_5": 72,
+      "hits_at_10": 72
+    },
+    "multi-session": {
+      "questions": 121,
+      "hits_at_5": 121,
+      "hits_at_10": 121
+    },
+    "single-session-assistant": {
+      "questions": 56,
+      "hits_at_5": 56,
+      "hits_at_10": 56
+    },
+    "single-session-preference": {
+      "questions": 30,
+      "hits_at_5": 30,
+      "hits_at_10": 30
+    },
+    "single-session-user": {
+      "questions": 64,
+      "hits_at_5": 64,
+      "hits_at_10": 64
+    },
+    "temporal-reasoning": {
+      "questions": 127,
+      "hits_at_5": 127,
+      "hits_at_10": 127
+    }
+  },
+  "misses_at_5": [],
+  "run_metadata": {
+    "config": {
+      "confidence_filter": false,
+      "embedding_backend": "mlx",
+      "embedding_dim": 384,
+      "fusion_alpha": 0.0,
+      "limit": 0,
+      "passage_confidence_floor": 0.001,
+      "preserve_prior_candidate": true,
+      "question_ids": [],
+      "rerank": true,
+      "rerank_candidates": 35,
+      "rerank_passage_fallback": true,
+      "result_k": 5,
+      "top_k": 50
+    },
+    "cross_encoder_model": "BAAI/bge-reranker-base",
+    "dataset_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "fingerprint": "a93ec267e563044b6e9ae9b714bac672a6da083298173ce565f731017a892ef9",
+    "schema_version": 1,
+    "source_sha256": {
+      "benchmarks/longmemeval/evaluation.py": "2fda462185011a64150ab5ddfc1e1ecba4dde2d82b6d86684da92c9a85819670",
+      "benchmarks/longmemeval/run_engram.py": "d84b62328163941617b94709952148d492cd568a7fb55b9ae165b78742cdfd77",
+      "engram/ann_index.py": "e5304dce0fd450fe8c349ecb8807c08bd8ecbf0ca791881ee443ccbb32e8f987",
+      "engram/config.py": "bc4cd6450916c2e09c1a413a870c25eb63fbb4991f2d22f4cfd430f2678a7972",
+      "engram/embeddings.py": "9b1a4e89fc94a28a4c7d9aa5f28afa12d1c44a4314e02df9a85a976867729e46",
+      "engram/rerank_passages.py": "b8b98416d32c6ad4bccf4c4924e976a023e521a43f8d61d3457f0637e171c98c",
+      "engram/rerank_scoring.py": "0c4d02b7ea8e98caabdba06835c99f3b4741cf99b550800b3cc2fca2826ca049",
+      "engram/rerank_selection.py": "b180959b8c0dd79eb151d95313ead90d4634ad828682cc3fad2b0acc73414e04",
+      "engram/temporal.py": "3d0b1e2d626472a3190afc0afeb1298a8df5c7c2a80027645458418914ae5429"
+    }
+  },
+  "environment": {
+    "python": "3.12.13 (main, Mar  3 2026, 12:39:30) [Clang 17.0.0 (clang-1700.6.3.2)]",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "packages": {
+      "sentence-transformers": "5.4.0",
+      "transformers": "5.5.4",
+      "torch": "2.11.0",
+      "numpy": "2.4.4",
+      "mlx": "0.31.1",
+      "mlx-embeddings": "0.1.0",
+      "hnswlib": "0.8.0"
+    },
+    "models": {
+      "BAAI/bge-small-en-v1.5": {
+        "cached_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "config_sha256": "094f8e891b932f2000c92cfc663bac4c62069f5d8af5b5278c4306aef3084750"
+      },
+      "BAAI/bge-reranker-base": {
+        "cached_revision": "2cfc18c9415c912f9d8155881c133215df768a70",
+        "config_sha256": "289adf7ada1eb6b4afa7589a48a032d45a076cf2e46dcdb3b4cabc33be14f708"
+      }
+    }
+  },
+  "source_integrity_verified": true,
+  "raw_results_sha256": "7a55d55af2d0ceae0e7da3dc6beac5a627f0da8d88e3b6630641a9f5ff584a0f",
+  "limits": [
+    "Dataset used during development and threshold selection; not held-out accuracy.",
+    "Measures session ranking; generated answers are not evaluated.",
+    "Production confidence filtering is disabled in this benchmark.",
+    "Thirty abstention questions are excluded.",
+    "A separate native API long-memory fact remains rejected at the production cutoff."
+  ],
+  "public_rankings_sha256": "e1a2c3f4c19923110fce9ba877ddf8b428448e9ff093911fe766278687a65104",
+  "public_rankings_file": "2026-09-20-session-rankings.json"
+}
