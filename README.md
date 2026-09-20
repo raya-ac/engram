@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/raya-ac/engram/main/assets/logo-512.png" alt="engram" width="160">
+  <img src="https://raw.githubusercontent.com/raya-ac/engram/80ce57614d96a28dc2cb11fea30a788be0a39ea4/assets/logo-512.png" alt="engram" width="160">
 </p>
 
 # engram
