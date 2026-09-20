@@ -2,6 +2,74 @@
 
 all commands available via `engram <command>`.
 
+## setup and checks
+
+`init` and `doctor` are available from 0.8.0.
+
+### init
+
+```sh
+engram init
+engram --config /absolute/new/config.yaml init --yes --preset portable \
+  --db-path /absolute/new/memory.db
+engram --config /absolute/new/config.yaml init --yes --json
+```
+
+guided setup selects storage, model preset and new paths. `--yes` accepts the
+chosen options without prompts and is required without a terminal; `--json` also
+requires `--yes`. the global `--config` argument names a **new output file** for
+this command. otherwise it uses `~/.config/engram/config.yaml`, with SQLite at
+`~/.local/share/engram/memory.db`.
+
+`--preset local` uses BGE embeddings/reranking with automatic local embedding
+runtime selection. `portable` selects `sentence_transformers`; `light` also
+switches the reranker to MiniLM. these are local presets, with device selection
+left to the runtime. `--embedding-backend auto|mlx|sentence_transformers`,
+`--embedding-model` and `--cross-encoder-model` can override the preset. init
+accepts known local embedding models and local rerankers.
+
+setup validates before writing, creates private config/database files, and
+refuses existing files or SQLite sidecars. it never edits agent/global client
+settings or installs models. the output includes a portable MCP launch command,
+connection JSON and a `doctor --full` command. inherited environment overrides
+remain active; their names are reported without copying secrets into the output.
+make required variables available to the agent process too.
+
+for Postgres, set `ENGRAM_POSTGRES_DSN` in the environment and use
+`--storage postgres`. the database must exist with an empty current schema;
+setup does not clear or migrate existing tables. the environment-sourced DSN is
+not copied into the new config. use the migration command for an existing store.
+
+### doctor
+
+```sh
+engram --config /absolute/config.yaml doctor [--json]
+engram --config /absolute/config.yaml doctor --full [--json]
+```
+
+the basic check validates effective configuration, reads existing SQLite schema
+and counts, and inspects package metadata, credential presence and local model
+files. it does not initialize storage, load models or contact providers.
+Postgres reachability is skipped until requested.
+
+| flag | additional checks |
+| --- | --- |
+| `--check-models` | real configured embedding/reranker inference on synthetic text; may download weights or contact a provider |
+| `--check-connection` | isolated local stdio MCP handshake, tool discovery and redacted config read; also permits read-only inspection of configured Postgres storage |
+| `--smoke` | model checks plus a real synthetic save/retrieve cycle in temporary SQLite, using the configured retrieval gates; no LLM |
+| `--full` | all three checks above |
+
+doctor does not alter stored memories or client settings. temporary stores use
+isolated paths; normal SQLite read bookkeeping can still touch WAL/SHM sidecars.
+the MCP check verifies a local Engram endpoint, not whether another agent has
+attached. the synthetic SQLite check does not certify production Postgres writes.
+
+the report lists each check and an overall `pass`, `incomplete` or `fail`.
+`incomplete` means an optional check was skipped or a readiness warning remains;
+it is expected from a basic run. passing and incomplete reports exit 0, failed
+checks exit 1, and invalid configuration exits 2. `--json` returns the structured
+report for scripts.
+
 ## configuration
 
 ```sh

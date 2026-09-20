@@ -20,7 +20,7 @@ from engram.config import Config
 from engram.embeddings import RERANKER_BACKENDS, cosine_similarity_search, cross_encoder_rerank, embed_query
 from engram.rerank_scoring import rerank_score
 from engram.rerank_selection import preserve_prior_leader
-from engram.rerank_passages import rerank_with_passages
+from engram.rerank_passages import rerank_with_passages, retry_passages
 from engram.retrieval_explain import ExplanationTrace, build_explanation, eligibility_reason
 from engram.hopfield import hopfield_retrieve
 from engram.store import Memory, MemoryType, Store
@@ -251,37 +251,57 @@ def search(
             else:
                 reranked = cross_encoder_rerank(features.dense_query, docs, config.cross_encoder_model)
                 passage_details = {}
+            # post-rerank temporal boost — cross-encoder scores text semantics only,
+            # so we condition final scores on temporal window proximity when a date is resolved
+            window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
+            pre_rank_map = {mid: i for i, mid in enumerate(valid_ids)}
+
+            def score_candidates(ranking):
+                scored = []
+                for idx, ce_score in ranking:
+                    mid = valid_ids[idx]
+                    d_date = _get_memory_date(candidate_memories[mid])
+                    t_boost = 0.0
+                    if window and d_date:
+                        center, margin = window
+                        if abs((d_date - center).days) <= margin:
+                            t_boost = 5.0
+                    final_score = rerank_score(
+                        ce_score, prior_rank=pre_rank_map[mid],
+                        fusion_alpha=rc.rerank_fusion_alpha, temporal_boost=t_boost,
+                        normalized=config.cross_encoder_model in RERANKER_BACKENDS)
+                    scored.append((mid, final_score, ce_score, t_boost))
+                return sorted(scored, key=lambda row: row[1], reverse=True)
+
+            boosted_reranked = score_candidates(reranked)
+            rejected_indices = {pre_rank_map[mid] for mid, score, _, _ in boosted_reranked
+                                if score < rc.min_confidence}
+            confidence_gate_retry = (
+                rc.rerank_passage_fallback and rc.rerank_passage_floor > 0
+                and rc.min_confidence > 0 and rejected_indices
+                and config.cross_encoder_model not in RERANKER_BACKENDS
+            )
+            if confidence_gate_retry:
+                # Another candidate must not prevent inspection of a long
+                # memory whose relevant passage may be truncated. Retry only
+                # rejected candidates, reusing base scores and respecting the
+                # existing per-document excerpt budget and confidence gate.
+                prior_attempts = {index for index, detail in passage_details.items()
+                                  if "excerpt_raw_score" in detail}
+                reranked, passage_details = retry_passages(
+                    features.dense_query, docs, config.cross_encoder_model,
+                    reranked, passage_details, rerank_fn=cross_encoder_rerank,
+                    passage_query=_temporal_content_query(features.dense_query, ref_d),
+                    candidate_indices=rejected_indices)
+                for index, detail in passage_details.items():
+                    if "excerpt_raw_score" in detail and index not in prior_attempts:
+                        detail["confidence_gate_retry"] = 1.0
+                boosted_reranked = score_candidates(reranked)
+
             passage_by_id = {valid_ids[index]: detail for index, detail in passage_details.items()}
             if trace is not None:
                 trace.prior_ids = list(valid_ids)
                 trace.passages = passage_by_id
-
-            # post-rerank temporal boost — cross-encoder scores text semantics only,
-            # so we condition final scores on temporal window proximity when a date is resolved
-            window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
-            boosted_reranked = []
-
-            pre_rank_map = {mid: i for i, mid in enumerate(valid_ids)}
-            for idx, ce_score in reranked:
-                mid = valid_ids[idx]
-                mem = candidate_memories[mid]
-                d_date = _get_memory_date(mem)
-                t_boost = 0.0
-                if window and d_date:
-                    center, margin = window
-                    dist = abs((d_date - center).days)
-                    if dist <= margin:
-                        t_boost = 5.0
-
-                final_score = rerank_score(ce_score, prior_rank=pre_rank_map[mid],
-                                           fusion_alpha=rc.rerank_fusion_alpha,
-                                           temporal_boost=t_boost,
-                                           normalized=config.cross_encoder_model in RERANKER_BACKENDS)
-
-                boosted_reranked.append((mid, final_score, ce_score, t_boost))
-
-            boosted_reranked.sort(key=lambda x: x[1], reverse=True)
-            if trace is not None:
                 trace.scored = list(boosted_reranked)
             # Confidence is a separate eligibility gate. Reserve only a
             # candidate that would otherwise be allowed in the result set.

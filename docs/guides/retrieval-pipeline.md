@@ -98,13 +98,16 @@ using each query/document pair. the default local model is
 
 with `rerank_passage_fallback: true` (the default), a local reranker can retry
 one excerpt per long document when every full-document sigmoid score is below
-`rerank_passage_floor` (default 0.001). each excerpt contains a matching sentence and nearby context,
+`rerank_passage_floor` (default 0.001), or when that memory would otherwise fail
+the production confidence gate. already retried excerpts are not scored again.
+each excerpt contains a matching sentence and nearby context,
 is copied directly from the source, and is capped at 160 words. shorter
 documents and documents without matching query terms keep their original
 scores. the same semantic query scores both versions; the larger raw score
 survives. matching supports conservative regular English singular/plural forms
 and counts each original query term once per sentence. hosted rerankers skip
-the retry.
+the retry. repeated unrelated neighboring boilerplate can be omitted for an
+anchor covering every query term; unique and qualifying context is retained.
 
 this adds inference work and may omit useful context. set
 `rerank_passage_fallback: false` to disable it. [retrieval internals](../architecture/retrieval.md#focused-excerpt-retry)
@@ -173,8 +176,8 @@ retrieval:
   rerank_candidates: 20  # cross-encoder shortlist
   rerank_fusion_alpha: 0.0 # optional prior rank blend, from 0 to 1
   preserve_prior_candidate: true # keep the best eligible hybrid candidate
-  rerank_passage_fallback: true # retry one focused excerpt when all local scores are low
-  rerank_passage_floor: 0.001 # activation floor, independent of min_confidence
+  rerank_passage_fallback: true # one excerpt for weak scores or rejected long memories
+  rerank_passage_floor: 0.001 # early activation floor; zero disables excerpt retries
   dense_multiplier: 3    # dense candidates = top_k * 3
   bm25_multiplier: 3     # BM25 candidates = top_k * 3
 ```

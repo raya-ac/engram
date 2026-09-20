@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-memory-system"
-version = "0.7.0"
+version = "0.8.0"
 description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
 license = { text = "Engram Public Use License 1.0" }
 requires-python = ">=3.11"
@@ -70,6 +70,10 @@ include = [
     "/engram",
     "/tests",
     "/benchmarks/longmemeval/*.py",
+    "/benchmarks/production_retrieval/*.py",
+    "/benchmarks/production_retrieval/dev.json",
+    "/benchmarks/production_retrieval/holdout.json",
+    "/benchmarks/production_retrieval/validation_v2.json",
     "/README.md",
     "/LICENSE",
     "/pyproject.toml",

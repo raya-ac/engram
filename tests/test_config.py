@@ -55,6 +55,37 @@ class TestConfigDefaults:
         assert cfg.web.auth_token == ""
 
 
+class TestProposedConfiguration:
+    def test_mapping_uses_same_resolution_without_reading_a_file(self, monkeypatch):
+        monkeypatch.setenv("ENGRAM_RETRIEVAL_TOP_K", "7")
+        monkeypatch.setattr(Config, "_default_paths", lambda: pytest.fail("read default paths"))
+        supplied = {"embedding_model": "BAAI/bge-base-en-v1.5", "retrieval": {"top_k": 3}}
+        cfg = Config.from_mapping(supplied)
+        report = cfg.describe()
+        assert cfg.embedding_dim == 768
+        assert cfg.retrieval.top_k == 7
+        assert report["config_file"] is None
+        assert report["sources"]["embedding_model"] == "derived:provided"
+        assert report["sources"]["retrieval.top_k"] == "env:ENGRAM_RETRIEVAL_TOP_K"
+        assert supplied["retrieval"]["top_k"] == 3
+
+    def test_mapping_can_ignore_environment_without_credential_side_effects(self, monkeypatch):
+        monkeypatch.setenv("ENGRAM_RETRIEVAL_TOP_K", "invalid")
+        monkeypatch.setenv("HF_TOKEN", "environment-token")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-token")
+        cfg = Config.from_mapping({"hf_token": "file-token", "llm": {"backend": "anthropic"}},
+                                  apply_environment=False)
+        assert cfg.retrieval.top_k == 10
+        assert cfg.llm.api_key == ""
+        assert cfg.hf_token == "file-token"
+        assert os.environ["HF_TOKEN"] == "environment-token"
+
+    def test_invalid_mapping_cannot_be_hidden_by_environment(self, monkeypatch):
+        monkeypatch.setenv("ENGRAM_RETRIEVAL_TOP_K", "7")
+        with pytest.raises(ConfigError):
+            Config.from_mapping({"retrieval": {"top_k": 0}})
+
+
 class TestConfigFile:
     def test_load_from_yaml(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:

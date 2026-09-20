@@ -1,6 +1,47 @@
 # Quick Start
 
+## initialize and check
+
+after [installing Engram 0.8.0 or newer](installation.md), start with:
+
+```sh
+engram --version
+engram init
+```
+
+follow the prompts for a new store, or use `engram init --yes` for the local
+defaults. `--preset portable` chooses `sentence_transformers`; `--preset light`
+also selects the smaller MiniLM reranker. setup prints the config path and MCP
+connection settings without editing your agent's configuration. it refuses
+existing config/database files and does not load models.
+
+run the command printed at the end of setup:
+
+```sh
+engram --config /absolute/path/to/config.yaml doctor --full
+```
+
+this checks real model inference, an isolated local MCP endpoint and a synthetic
+save/retrieve cycle without an LLM. first use may download local weights; a
+configured hosted model can contact its provider with synthetic text. diagnostic
+writes stay in temporary storage, and your memory records remain unchanged.
+the MCP self-test checks the local endpoint; use the printed snippet to connect
+your agent separately.
+
+plain `doctor` performs the lighter configuration/storage/package checks. its
+`incomplete` status means optional checks were skipped or remain unverified;
+failed checks exit with status 1, invalid configuration with status 2.
+
+with a custom setup path, keep passing `--config /absolute/path/to/config.yaml`
+before the commands below. environment overrides still apply to both setup and
+the agent process. [the CLI reference](../reference/cli.md#init) covers unattended
+setup, all presets and Postgres.
+
 ## ingest some files
+
+file extraction uses your configured LLM backend; the default is the Claude CLI.
+configure that backend before ingestion. the setup and doctor checks above do
+not require an LLM.
 
 ```bash
 engram ingest ~/notes/

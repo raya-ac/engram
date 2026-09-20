@@ -74,3 +74,37 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+
+  postgres-onboarding:
+    name: postgres onboarding
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: engram_ci
+          POSTGRES_PASSWORD: engram_ci_ephemeral
+          POSTGRES_DB: engram_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U engram_ci -d engram_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      ENGRAM_TEST_POSTGRES_DSN: postgresql://engram_ci:engram_ci_ephemeral@127.0.0.1:5432/engram_ci
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Verify isolated PostgreSQL onboarding and diagnostics
+        run: python -m pytest tests/test_onboarding_postgres.py tests/test_setup.py tests/test_doctor.py -v --tb=short

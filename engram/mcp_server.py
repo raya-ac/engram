@@ -1642,7 +1642,7 @@ class MCPServer:
         return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32603, "message": message}}
 
 
-def run_mcp(config: Config):
+def run_mcp(config: Config, *, warmup_models: bool = True):
     import threading
 
     server = MCPServer(config)
@@ -1663,7 +1663,8 @@ def run_mcp(config: Config):
             sys.stderr.write(f"engram: warmup error: {e}\n")
             sys.stderr.flush()
 
-    threading.Thread(target=_warmup, daemon=True).start()
+    if warmup_models:
+        threading.Thread(target=_warmup, daemon=True).start()
 
     for line in sys.stdin:
         line = line.strip()

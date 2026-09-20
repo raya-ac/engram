@@ -6,7 +6,7 @@
 
 memory for work that continues after the conversation ends.
 
-[website](https://engram-memory.dev) · [documentation](https://engram-memory.dev/getting-started/quickstart/) · [0.7.0 changelog](docs/changelog.md)
+[website](https://engram-memory.dev) · [documentation](https://engram-memory.dev/getting-started/quickstart/) · [0.8.0 changelog](docs/changelog.md)
 
 i built engram to keep the things an agent should be able to return to: decisions,
 errors, project context, procedures, and the connections between them. it stores
@@ -86,21 +86,25 @@ some write and maintenance paths use an LLM for extraction, enrichment, or
 consolidation. local embedding search can run without an LLM service. choosing an
 API embedding or LLM backend sends the relevant inputs to that provider.
 
-## what's new in 0.7.0
+## what's new in 0.8.0
 
-configuration is now checked before startup: misspelled fields, invalid values,
-and missing explicit files fail clearly. every setting has an environment
-override, and `engram config show` explains where its value came from while
-redacting credentials. `config check` and `config schema` work without opening
-storage or loading models.
+`engram init` guides storage and local model selection, creates a private new
+store, and prints connection settings for your agent. `--yes` supports unattended
+setup. existing files and client settings stay untouched.
 
-retrieval explanations show the candidates that were returned **and rejected**,
-including confidence cutoffs, ranking signals, and excerpt retries. inspection
-does not reinforce memories or trigger dormant evaluations. the CLI, MCP,
-native JSONL API and web workspace share the same explanation format.
+`engram doctor` checks configuration, storage and model readiness. `--full` runs
+real model inference, an isolated local MCP handshake, and a synthetic
+save/retrieve cycle without an LLM. these checks leave your memories unchanged;
+the local handshake checks Engram's endpoint, not external agent attachment.
 
-the release also includes the BGE reranking fixes and fresh retrieval result
-below, plus a new engraved mark and dark website.
+local reranking can now retry a focused excerpt for a confidence-rejected long
+memory even when another candidate blocks the early retry. excerpt selection
+avoids repeated unrelated boilerplate beside a complete matching fact while
+retaining unique context and recognized qualifications. the existing confidence
+cutoff and one-excerpt-per-memory limit still apply.
+
+reproducible synthetic checks cover this production retrieval path separately
+from the historical LongMemEval development result below.
 
 ## benchmarks
 
@@ -171,13 +175,43 @@ source hashes, model revisions, package versions, settings and all question IDs.
 python 3.11 or newer is required:
 
 ```sh
-pip install engram-memory-system
+pip install --upgrade engram-memory-system
 engram --version
-engram config check
-engram config show
+engram init
 ```
 
-for the code in this checkout:
+engram 0.8.0 includes guided setup and doctor checks.
+
+`init` guides storage, local model selection and new config/database paths. it
+creates a private config and initialized store, then prints an MCP connection
+snippet for your agent. it does not edit client settings or download models.
+existing config, database and index files are refused.
+
+for unattended setup with explicit new paths:
+
+```sh
+engram --config /absolute/new/config.yaml init --yes --preset portable \
+  --db-path /absolute/new/memory.db
+engram --config /absolute/new/config.yaml doctor --full
+```
+
+`local` uses BGE embeddings and reranking with automatic local runtime selection.
+`portable` selects `sentence_transformers`; `light` also uses the smaller MiniLM
+reranker. the runtime chooses its device. without custom paths, setup uses
+`~/.config/engram/config.yaml` and `~/.local/share/engram/memory.db`.
+
+`doctor --full` checks configured models, an isolated local MCP endpoint, and a
+synthetic save/retrieve cycle without an LLM. it may download weights or contact
+a configured model provider with synthetic text. user memories and client
+settings remain unchanged; SQLite reads can use normal WAL/SHM bookkeeping. the
+local MCP check establishes endpoint behavior, not attachment by another agent.
+
+plain `doctor` checks configuration, existing storage and package/cache metadata.
+`incomplete` means optional checks were skipped or readiness remains unverified;
+failed checks exit 1 and invalid configuration exits 2. use the exact command
+printed by init when you chose a custom config path.
+
+to install the code in this checkout instead:
 
 ```sh
 git clone https://github.com/raya-ac/engram.git
@@ -185,27 +219,24 @@ cd engram
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
-cp config.example.yaml config.yaml
+engram init
 ```
 
 the default embedding model is `BAAI/bge-small-en-v1.5`; the default reranker is
-`BAAI/bge-reranker-base`. local models need to be
-available on first use; subsequent runs can use their cached weights. the default
-backend selects an available local implementation. set
-`embedding_backend: sentence_transformers` for an explicit CPU setup.
+`BAAI/bge-reranker-base`. models use cached weights after first download.
 
-check `config.yaml` before storing anything. it controls the database, models,
-LLM backend, web binding, and optional experiments. the default write-time LLM
-backend uses the Claude CLI; choose and configure a backend before using paths
-that need extraction or enrichment.
+inspect the generated config before storing your own material. it controls the
+database, models, LLM backend, web binding and optional experiments. extraction
+and enrichment use the configured LLM backend, which defaults to the Claude CLI.
+the setup and doctor checks above do not require an LLM.
 
 ```sh
-engram --config config.yaml config check
-engram --config config.yaml config show --json
+engram --config /absolute/path/to/config.yaml config check
+engram --config /absolute/path/to/config.yaml config show --json
 engram config schema --json
-engram --config config.yaml remember "the release requires a restore drill before activation"
-engram --config config.yaml search "release preparation" -k 5 --json
-engram --config config.yaml search "release preparation" --rerank --explain --json
+engram --config /absolute/path/to/config.yaml remember "the release requires a restore drill before activation"
+engram --config /absolute/path/to/config.yaml search "release preparation" -k 5 --json
+engram --config /absolute/path/to/config.yaml search "release preparation" --rerank --explain --json
 ```
 
 `--config` comes before the command. without it, engram checks the current
@@ -214,7 +245,14 @@ every field supports an `ENGRAM_*` environment override, such as
 `ENGRAM_RETRIEVAL_TOP_K=5`. environment values take precedence over the file;
 see [configuration](docs/reference/config.md) and [the example](config.example.yaml).
 `engram config show --defaults` inspects package defaults without reading local
-files or environment overrides. existing configuration files are never rewritten.
+files or environment overrides. setup reports inherited override names without
+printing their values; make required variables available to the agent process.
+existing configuration files are never rewritten.
+
+for a new Postgres store, set `ENGRAM_POSTGRES_DSN` in the environment and run
+`engram --config /absolute/new/postgres.yaml init --storage postgres --yes`.
+the database must already exist with an empty current schema. setup leaves the
+DSN in the environment and never clears existing tables.
 
 ## storage and models
 
@@ -353,14 +391,18 @@ available. debug output explains the ordinary ranking stages.
 `retrieval.rerank_passage_fallback` is enabled by default for local rerankers.
 when every full-document score, after sigmoid, is below `rerank_passage_floor`
 (default 0.001), it can retry one excerpt of up to 160 words from each long
-document with matching query terms. it keeps the larger full-document or
-excerpt logit and uses the same semantic query for both calls. short documents,
+document with matching query terms. production search also retries eligible long
+memories rejected by the final confidence gate, even when another candidate
+scores highly. each document still gets at most one excerpt. it keeps the larger
+full-document or excerpt logit and uses the same semantic query for both calls. short documents,
 documents without a lexical match, and hosted rerankers keep their original
 scores. set `rerank_passage_fallback: false` to disable the retry.
 
 excerpt matching includes conservative regular English singular/plural forms;
-each distinct original query term counts once per sentence. the activation
-floor was selected during development on LongMemEval. results on that dataset
+each distinct original query term counts once per sentence. the excerpt can omit
+repeated unrelated neighboring boilerplate when the matching sentence covers
+every query term; unique context and recognized qualifications are retained.
+the early activation floor was selected during development on LongMemEval. results on that dataset
 are development measurements, not held-out accuracy, and the floor is not a
 calibrated probability.
 

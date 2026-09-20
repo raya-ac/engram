@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "suite": "synthetic-production-retrieval-2026-09",
+  "split": "holdout",
+  "authorship": "New fictional examples authored before baseline evaluation; sealed from the implementation agent until candidate freeze. No private user data or LongMemEval material.",
+  "reference_date": "2026-07-01",
+  "cases": [
+    {
+      "id": "holdout-01",
+      "category": "short_explicit_fact",
+      "query": "Where are the spare paper rolls for the visitor ticket printer stored?",
+      "gold_ids": ["ticket-supplies"],
+      "memories": [
+        {"id": "ticket-supplies", "content": "Spare paper rolls for the visitor ticket printer are stored on the second shelf of the grey cupboard behind reception. The narrow rolls fit this printer; the wider ones belong to the shop till."},
+        {"id": "shop-till", "content": "The museum shop keeps till paper under the counter next to the gift bags. Staff check the supply before the weekend and add a note to the stationery order when it runs low."},
+        {"id": "visitor-desk", "content": "The visitor desk opens half an hour before the galleries. The opening volunteer turns on the desk lamp, checks the daily event sheet and puts out the large-print guides."}
+      ]
+    },
+    {
+      "id": "holdout-02",
+      "category": "late_fact_long_document",
+      "query": "Who orders replacement mailing envelopes for Bayview Library?",
+      "gold_ids": ["library-handover"],
+      "memories": [
+        {"id": "library-handover", "content": "Bayview Library handover for the summer programme. The reading room has been rearranged so that the smaller tables sit near the windows. People working alone have preferred those positions, while the long central table is useful for study groups. We have kept a clear route between the entrance and the information desk, including enough space for a mobility aid to turn beside the newspaper stand.\n\nThe children's display will change at the start of each month. Staff can choose a theme from the seasonal calendar, but they should include books for several reading levels rather than filling the display with picture books alone. The cardboard stands have been repaired and can be reused. Please keep the heavier books on the lower shelves, where younger visitors can take them out without pulling the stand forward.\n\nThe local-history group has finished labelling the latest batch of donated photographs. Most show street scenes and community events, and several donors have offered to help identify people in the background. We will hold a small identification afternoon before the autumn exhibition. Visitors will be asked to write their suggestions on separate cards so that uncertain identifications do not become permanent labels by accident.\n\nPublic computer bookings remain limited to one hour when there is a queue. A visitor who needs longer can ask at the desk and move to a free machine if one is available. The printed instructions beside the printers have been simplified. Staff will review them again after a fortnight, paying attention to the steps that people still ask about rather than adding every possible troubleshooting detail.\n\nThe quiet study area needs a new floor lamp, but the existing chairs are in good condition. We agreed to postpone replacing the small side tables because the proposed replacements would make the walkway narrower. A member of the volunteer team will measure the space before the next furniture order. The old display cabinet can be offered to the community centre once its contents have been moved.\n\nFor the visiting-author event, the bookings desk will keep a reserve list after the main allocation is full. The room plan allows a few seats near the doors for visitors who need to leave early. Book sales will be handled by the independent shop that is supplying the titles, and library volunteers will concentrate on greeting visitors and managing the signing queue.\n\nThe final handover item was the small stationery budget. Tessa Arun orders replacement mailing envelopes for Bayview Library. Other staff should tell her when the last unopened box is put into use, so that deliveries can be combined with the regular stationery order. This responsibility is separate from the volunteer who posts the weekly reservation notices."},
+        {"id": "reservation-post", "content": "Milo Chen takes Bayview Library's printed reservation notices to the post office on Friday afternoons. The notices are prepared at the circulation desk and bundled by postcode."},
+        {"id": "book-purchasing", "content": "Nora Ellis coordinates book purchasing for Bayview Library. Suggestions from readers are reviewed at the monthly collection meeting before orders are sent to suppliers."}
+      ]
+    },
+    {
+      "id": "holdout-03",
+      "category": "same_topic_distractors",
+      "query": "How many daily backups does PixelNotes currently retain?",
+      "gold_ids": ["pixelnotes-policy"],
+      "memories": [
+        {"id": "pixelnotes-policy", "content": "PixelNotes currently retains fourteen daily backups. The retention job removes older daily copies after the weekly archive has been checked. This policy replaced the initial seven-day setting."},
+        {"id": "pixelnotes-draft", "content": "The first PixelNotes deployment draft proposed retaining seven daily backups. That draft also assumed a single test workspace and preceded the revised backup policy."},
+        {"id": "pixelboard-policy", "content": "PixelBoard keeps thirty daily backups for its shared boards. Its backup storage is separate from PixelNotes, and the two applications have different retention schedules."}
+      ]
+    },
+    {
+      "id": "holdout-04",
+      "category": "negated_distractor",
+      "query": "Which print-room station is used to trim paper?",
+      "gold_ids": ["station-d"],
+      "memories": [
+        {"id": "station-c", "content": "Station C in the print room is reserved for colour calibration. Its ruler marks are used to align test charts, not to trim paper. Paper cutting should take place elsewhere."},
+        {"id": "station-d", "content": "Paper trimming takes place at Station D in the print room. The cutting mat and guides stay at that station so that finished sheets can be checked before packing."},
+        {"id": "station-a", "content": "Station A is the print-room packing bench. It has tissue paper, cardboard sleeves and labels for finished orders waiting to be collected."}
+      ]
+    },
+    {
+      "id": "holdout-05",
+      "category": "late_decision_long_document",
+      "query": "Where did the museum access panel decide to install the tactile gallery map?",
+      "gold_ids": ["access-panel-notes"],
+      "memories": [
+        {"id": "access-panel-notes", "content": "Museum access panel notes. The group started with a walk from the bus stop to the main entrance. The pavement was clear, but the temporary sign near the gate was difficult to read against the planting behind it. We agreed to try a plain backing panel before ordering a new sign. The gate itself opens easily and should remain secured in the open position during public hours.\n\nInside the building, the first discussion concerned the welcome desk. Its lower section is useful for visitors who prefer to sit while speaking to a volunteer. A small movable chair will be kept nearby rather than behind the counter. The panel also suggested that volunteers introduce themselves by name, because visitors cannot always read the small badges when there is a queue or strong light from the entrance windows.\n\nThe audio guide instructions need fewer steps. A visitor should be able to choose a language, adjust the volume and begin without reading a full page of technical information. The longer troubleshooting sheet can remain behind the desk for volunteers. We will test the revised instructions with people who have not used the devices before, since staff already know what each button does.\n\nIn the ceramics gallery, several labels were mounted lower than those in neighbouring rooms. The panel preferred the lower position and asked for a consistent height across the next exhibition. The labels should retain sufficient contrast, even when that means using a simpler design than the exhibition's main posters. Temporary labels can be printed in the office while the revised permanent set is prepared.\n\nThe seating route was reviewed next. There is already a bench near the garden doors, but visitors who stop in the central gallery have to return to the entrance to find another seat. Two lightweight chairs can be placed beside the short wall without obstructing the circulation route. The proposed long bench was rejected because it would narrow the turning space between the display cases.\n\nFor guided visits, the panel asked staff to offer a brief description of the room before discussing individual objects. This would help visitors understand the layout and decide where to stand. Guides should leave time for questions and avoid assuming that everyone can see the detail being discussed. The training session will include a short practice tour followed by feedback from panel members.\n\nThe meeting ended by deciding the position of the new orientation aid. The tactile gallery map will be installed on the wall immediately to the right of the main entrance. The panel chose this location so that visitors can use it before joining the welcome-desk queue. It will not be placed in the central gallery, as an earlier sketch had suggested."},
+        {"id": "orientation-sketch", "content": "An early museum orientation sketch showed a tactile gallery map in the central gallery. The drawing was a proposal for discussion by the access panel, not an installation instruction."},
+        {"id": "garden-sign", "content": "The museum's garden sign will be fitted near the outside gate. It shows opening hours and the route to the main entrance, with a separate arrow toward the courtyard café."}
+      ]
+    },
+    {
+      "id": "holdout-06",
+      "category": "absent_specification",
+      "query": "What brand is the lens fitted to the community camera?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "camera-loan", "content": "The community camera is available for weekend loans. The kit includes a fitted zoom lens, a charged battery, a strap and a padded carrying bag. Borrowers sign the equipment register at reception."},
+        {"id": "photography-guide", "content": "The photography workshop guide compares lenses from several manufacturers. It explains focal length and aperture using photographs taken with different cameras brought by participants."},
+        {"id": "camera-return", "content": "On return, the community camera kit is checked for its battery, strap and bag. The memory card is cleared only after the borrower confirms that their photographs have been copied."}
+      ]
+    },
+    {
+      "id": "holdout-07",
+      "category": "absent_cross_project_fact",
+      "query": "Which repository contains Aurora's deployment script?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "aurora-design", "content": "Aurora's design assets include its logo, colour palette and button states. The design team is reviewing the mobile navigation before the next usability session."},
+        {"id": "boreal-deploy", "content": "Boreal's deployment script is kept in the boreal-ops repository. The application repository links to those operational instructions from its release checklist."},
+        {"id": "aurora-copy", "content": "The Aurora copy review changed the account setup labels and shortened the welcome message. The review document records the approved wording and the alternatives that were considered."}
+      ]
+    },
+    {
+      "id": "holdout-08",
+      "category": "absent_lexical_overlap",
+      "query": "Which hotel was booked for the textile collective's conference trip?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "conference-registration", "content": "The textile collective registered four people for the regional craft conference. Their workshop choices include natural dyes, exhibition planning and small-business record keeping."},
+        {"id": "hotel-options", "content": "The conference visitor guide lists Rowan Inn and Harbour Lodge as nearby hotels. It gives walking times to the venue and links to each hotel's public booking page."},
+        {"id": "previous-retreat", "content": "For last year's separate weaving retreat, the textile collective stayed at Orchard House. The retreat was held outside the city and was organized independently of the craft conference."}
+      ]
+    }
+  ]
+}

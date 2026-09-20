@@ -24,6 +24,12 @@ shall should may might must not no nor any all both each few more most other
 some such only own same so too very this that these those here there
 s t ve re ll d m
 """.split())
+_CONTEXT_QUALIFIERS = re.compile(
+    r"\b(?:not|no|never|nor|unless|except|however|but|although|instead|previous(?:ly)?|"
+    r"former(?:ly)?|old|obsolete|outdated|draft|propos(?:ed|al)|rejected|unverified|"
+    r"uncertain|examples?|hypothetical|disputed|superseded|cancelled|canceled|"
+    r"incorrect|correction|retracted|warning|caution)\b", re.IGNORECASE)
+_REFERENCE_START = re.compile(r"^[\s\"'(]*(?:it|they|he|she|this|that|these|those|such)\b", re.IGNORECASE)
 
 
 def _forward_plural(token: str) -> str:
@@ -56,11 +62,12 @@ def _matched_query_terms(query_terms: set[str], sentence_terms: set[str]) -> set
 
 
 def _query_passage(query: str, document: str) -> tuple[str, int, int] | None:
-    """Choose a source-contiguous sentence and immediate neighboring context.
+    """Choose a source-contiguous sentence and useful neighboring context.
 
     Unique query terms, including regular singular/plural surface matches, are
     weighted by inverse sentence frequency. Each original term contributes once. Ties favor the first source span. Short documents and documents
-    without lexical evidence do not get a replacement passage.
+    without lexical evidence do not get a replacement passage. Only repeated,
+    nonmatching neighboring boilerplate may be omitted around a complete anchor.
     """
     words = list(re.finditer(r"\S+", document))
     if len(words) <= PASSAGE_WORD_BUDGET:
@@ -89,8 +96,23 @@ def _query_passage(query: str, document: str) -> tuple[str, int, int] | None:
     if weights[best] == 0:
         return None
     sentence_start, sentence_end, _ = sentences[best]
-    start = sentences[max(0, best - 1)][0]
-    end = sentences[min(len(sentences) - 1, best + 1)][1]
+    normalized_sentences = [re.sub(r"\s+", " ", document[a:b]).strip().casefold()
+                            for a, b, _ in sentences]
+    repetitions = Counter(normalized_sentences)
+    anchor = document[sentence_start:sentence_end]
+    anchor_covers_query = len(terms) >= 2 and sentences[best][2] == terms
+
+    def keep_neighbor(index):
+        a, b, matched = sentences[index]
+        # Repeated, unrelated boilerplate can overwhelm a short complete fact.
+        # Keep unique context, references and qualifications; this is a narrow
+        # duplication rule, not a general claim that context is unnecessary.
+        return (not anchor_covers_query or _REFERENCE_START.search(anchor)
+                or matched or repetitions[normalized_sentences[index]] == 1
+                or _CONTEXT_QUALIFIERS.search(document[a:b]))
+
+    start = sentences[best - 1][0] if best > 0 and keep_neighbor(best - 1) else sentence_start
+    end = sentences[best + 1][1] if best + 1 < len(sentences) and keep_neighbor(best + 1) else sentence_end
     word_starts = [word.start() for word in words]
     word_ends = [word.end() for word in words]
     first = bisect_right(word_ends, start)
@@ -171,9 +193,41 @@ def rerank_with_passages(
     if max(rerank_score(score, prior_rank=index) for index, score in scores.items()) >= confidence_floor:
         return ranked(), trace
 
+    return retry_passages(query, documents, model_name, ranked(), trace,
+                          rerank_fn=rerank_fn, passage_query=passage_query)
+
+
+def retry_passages(
+    query: str,
+    documents: list[str],
+    model_name: str,
+    ranked_scores: Iterable[tuple[int, float]],
+    previous_trace: dict[int, dict],
+    *,
+    rerank_fn: Callable[[str, list[str], str], Iterable[tuple[int, float]]],
+    passage_query: str | None = None,
+    candidate_indices: set[int] | None = None,
+) -> tuple[list[tuple[int, float]], dict[int, dict]]:
+    """Reuse full-document scores and retry each eligible excerpt at most once.
+
+    The caller chooses when a retry is warranted. Hosted models never enter
+    this local path, and an earlier excerpt attempt cannot be repeated.
+    """
+    scores = _validated_scores(ranked_scores, len(documents))
+    trace = {index: dict(previous_trace.get(index, {"base_raw_score": score}))
+             for index, score in scores.items()}
+
+    def ranked() -> list[tuple[int, float]]:
+        return sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+
+    if model_name in RERANKER_BACKENDS:
+        return ranked(), trace
+
     selection_query = query if passage_query is None else passage_query
     selected = []
     for index, document in enumerate(documents):
+        if (candidate_indices is not None and index not in candidate_indices) or "excerpt_raw_score" in trace[index]:
+            continue
         passage = _query_passage(selection_query, document)
         if passage is not None:
             text, start, end = passage

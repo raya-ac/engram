@@ -214,6 +214,23 @@ class Config:
         except (OSError, TypeError, ValueError, RuntimeError):
             raise ConfigError("config_file must be an accessible file path") from None
         raw = _read_config(selected) if selected is not None else {}
+        return cls._resolve(raw, selected=selected)
+
+    @classmethod
+    def from_mapping(cls, values: dict, *, apply_environment: bool = True) -> Config:
+        """Validate proposed settings before setup writes a configuration file.
+
+        Uses the same defaults and environment precedence as load(), without
+        discovering or reading a file. Disabling environment application also
+        disables provider credential fallback and token propagation.
+        """
+        if not isinstance(apply_environment, bool):
+            raise ConfigError("apply_environment must be a boolean")
+        return cls._resolve(values, apply_environment=apply_environment)
+
+    @classmethod
+    def _resolve(cls, raw: dict, *, selected: Path | None = None,
+                 apply_environment: bool = True) -> Config:
         cfg = cls()
         defaults = _flatten(asdict(cfg))
         cfg._sources = dict.fromkeys(defaults, "default")
@@ -222,8 +239,8 @@ class Config:
         for name, value in _file_values(raw, cfg).items():
             _validate_value(name, value, defaults[name])
             _set_field(cfg, name, value)
-            cfg._sources[name] = "file"
-        for name, default in defaults.items():
+            cfg._sources[name] = "file" if selected is not None else "derived:provided"
+        for name, default in (defaults.items() if apply_environment else ()):
             primary = _env_name(name)
             env = primary if primary in os.environ else next(
                 (alias for alias in _ENV_ALIASES.get(name, ()) if os.environ.get(alias)), None,
@@ -234,7 +251,7 @@ class Config:
                 cfg._sources[name] = f"env:{env}"
 
         # Preserve the provider-specific fallback already used by llm.py.
-        if not cfg.llm.api_key:
+        if apply_environment and not cfg.llm.api_key:
             alias = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}.get(cfg.llm.backend)
             if alias and os.environ.get(alias):
                 cfg.llm.api_key = os.environ[alias]
@@ -252,12 +269,12 @@ class Config:
                 cfg._warnings.append("embedding_dim: model is not in the dimension registry; set its dimension explicitly")
         cfg.validate()
         cfg._loaded_values = _flatten(asdict(cfg))
-        if cfg.hf_token:
+        if apply_environment and cfg.hf_token:
             # Model clients consume these aliases directly. Keep their runtime
             # value consistent with the precedence reported by this config.
             os.environ["HF_TOKEN"] = cfg.hf_token
             os.environ["HUGGING_FACE_HUB_TOKEN"] = cfg.hf_token
-        elif "ENGRAM_HF_TOKEN" in os.environ:
+        elif apply_environment and "ENGRAM_HF_TOKEN" in os.environ:
             # An explicit empty primary setting must not expose a stale alias
             # to a provider after configuration reports no supplied token.
             os.environ.pop("HF_TOKEN", None)
@@ -339,7 +356,7 @@ _HELP = {
     "retrieval.rerank_fusion_alpha": "Weight of the prior ranking in reranker score fusion; zero uses the reranker score alone.",
     "retrieval.preserve_prior_candidate": "Keep the strongest eligible prior candidate when selection would otherwise remove it.",
     "retrieval.rerank_passage_fallback": "Allow a bounded lexical excerpt retry for local rerankers.",
-    "retrieval.rerank_passage_floor": "Retry excerpts only when every base local sigmoid score is below this floor; not a calibrated probability.",
+    "retrieval.rerank_passage_floor": "Early local excerpt retry floor; zero disables all excerpt retries. Rejected long memories can also retry before the final confidence gate.",
     "dormant_recall.mode": "Off disables dormant recall; shadow records suggestions without injecting recall results.",
     "dormant_recall.candidate_limit": "Maximum dormant memories considered.",
     "dormant_recall.dormancy_days": "Minimum time since a dormant memory was accessed.",

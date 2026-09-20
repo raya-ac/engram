@@ -69,9 +69,74 @@ the earlier development validation also reached 470/470, reusing 16,904 exact
 query/document/model raw-score pairs and performing 85 fresh pair inferences.
 the fresh confirmation above is the published headline measurement.
 
-the isolated native JSONL API returned two short facts and abstained on an
-unrelated query. an additional long-memory fact was still rejected with the
-production cutoff of 0.6. this remains a known production false negative.
+the 0.7.0 isolated native JSONL API check returned two short facts and abstained
+on an unrelated query. an additional long-memory fact was rejected with the
+production cutoff of 0.6. the 0.8.0 retrieval changes recover that same
+synthetic fact at 0.926 with the cutoff unchanged. the diagnostic also verified
+that saved memories and access history were unchanged. this targeted regression
+check is separate from the historical LongMemEval result above.
+
+## production confidence checks
+
+0.8.0 adds a small synthetic evaluation through ordinary
+`search`, with the production confidence cutoff of 0.6 and a result limit of
+three. each question has its own isolated corpus. the runner uses local BGE
+embeddings and reranking on CPU, includes absent-answer questions, and records
+model revisions, weight hashes, source hashes and settings. gold IDs are used
+only after search returns.
+
+the targeted fix lets a confidence-rejected long memory try a focused excerpt
+even when another candidate scores highly. each document gets at most one
+excerpt. repeated unrelated neighboring boilerplate can be omitted around a
+complete matching sentence; unique context and recognized qualifications stay.
+the confidence threshold is unchanged. this heuristic can still omit important
+context and does not establish factual truth or answer completeness.
+
+the development and first held-out sets were measured before a later refinement
+to boilerplate handling. those earlier artifacts retain their original source
+fingerprints. final-source reruns of those sets are regression checks, not new
+held-out measurements. a separately authored validation set was frozen before
+its first run against the final source.
+
+| final-source check | answerable hits, 0.7.0 → 0.8.0 | absent-answer abstentions, 0.7.0 → 0.8.0 | non-gold memories returned, 0.7.0 → 0.8.0 |
+| --- | ---: | ---: | ---: |
+| development regression | 3/5 → 5/5 | 3/3 → 3/3 | 4 → 4 |
+| original held-out set, now a regression | 3/5 → 5/5 | 1/3 → 1/3 | 5 → 5 |
+| fresh final validation | 4/4 → 4/4 | 1/4 → 1/4 | 7 → 7 |
+
+[download the production check results and fingerprints](../assets/benchmarks/2026-09-20-production-v080.json).
+the measured final retrieval source fingerprint is
+`6ddd24e209d562b89b7c401162b4cca92f2f5b487c036d8c5fbd2de82291fb24`.
+
+the fresh final validation has four answerable and four absent-answer questions.
+both baseline and candidate retrieved all four answerable facts and abstained
+on only one of the four absent-answer questions. both returned seven non-gold
+memories, with four gold memories among eleven returned (36.36% precision).
+all accepted IDs and scores were identical. none of these cases activated the
+excerpt retry, so this set checks unchanged behavior and exposes existing false
+accepts; it does not independently validate the new excerpt-selection path.
+
+these are small engineering checks, not broad accuracy estimates or generated
+answer evaluations. a returned non-gold memory counts against precision even
+when it contains related context. the published 470/470 ranking result is
+unchanged and was not rerun for this work.
+
+to repeat a production check after caching the models locally:
+
+```sh
+python benchmarks/production_retrieval/run.py \
+  --fixture benchmarks/production_retrieval/dev.json --source-root . \
+  --validate-only --freeze-source /absolute/new/frozen-source.json
+python benchmarks/production_retrieval/run.py \
+  --fixture benchmarks/production_retrieval/validation_v2.json --source-root . \
+  --frozen-source /absolute/new/frozen-source.json \
+  --output /absolute/new/validation.json --work-dir /absolute/work-directory
+```
+
+the runner stays offline, refuses existing output files and checks source and
+fixture hashes again after inference. `holdout.json` and `validation_v2.json`
+require a previously frozen source manifest. these checked-in fixtures have now
+been used, so future runs on them should be described as regression checks.
 
 ## other systems and comparison scope
 

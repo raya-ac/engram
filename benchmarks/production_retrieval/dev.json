@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "suite": "synthetic-production-retrieval-2026-09",
+  "split": "dev",
+  "authorship": "New fictional examples authored before baseline evaluation; no private user data or LongMemEval material.",
+  "reference_date": "2026-07-01",
+  "cases": [
+    {
+      "id": "dev-01",
+      "category": "short_explicit_fact",
+      "query": "Where is the spare entrance key for the pottery workshop kept?",
+      "gold_ids": ["entrance-note"],
+      "memories": [
+        {"id": "entrance-note", "content": "The pottery workshop's spare entrance key is in a magnetic tin behind the blue noticeboard. Volunteers should return it there after opening the room."},
+        {"id": "tool-cabinet", "content": "The pottery workshop tool cabinet contains trimming tools, wire cutters and spare aprons. Its small brass key hangs beside the clay recycling sink."},
+        {"id": "kiln-booking", "content": "Kiln bookings are written in the red ledger on the front desk. Bisque firing normally starts on Thursday after the evening class has finished."}
+      ]
+    },
+    {
+      "id": "dev-02",
+      "category": "late_fact_long_document",
+      "query": "Which cabinet holds Maple Centre's signed fire-drill attendance sheets?",
+      "gold_ids": ["centre-handover"],
+      "memories": [
+        {"id": "centre-handover", "content": "Maple Centre operations handover, June. The first part of the morning was spent walking through the building with the incoming coordinator. The entrance mat has been replaced because its curled edge caught the wheels of the delivery trolley. We agreed that the umbrella stand should stay to the left of the doors so that visitors carrying large bags can pass without turning sideways. The reception clock is accurate again after the battery change.\n\nThe activity rooms are now booked through a shared calendar. Regular clubs retain their usual slots, but one-off events need a named contact and a clear finishing time. The choir asked whether it could leave music folders overnight; we offered the shallow trays in the rehearsal room, provided the folders are collected before the children's group arrives. Folding chairs should be counted when they are returned rather than at the start of the following booking.\n\nIn the kitchen, the replacement refrigerator has a smaller freezer compartment. The gardening club has therefore moved its ice packs to its own equipment box. Tea, coffee and wrapped biscuits are purchased from the centre's common budget, while catering for private functions remains the organizer's responsibility. The dishwasher's laminated guide is still legible and should remain beside the machine. A volunteer has offered to translate it, but that version has not yet been checked.\n\nThe courtyard planting is doing well despite the windy weather. Two large pots were moved away from the ramp because visitors were brushing against them when using the handrail. We will keep the herbs near the kitchen door and the flowering plants along the outer fence. There is no need to buy another watering can; the existing one was found behind the stack of outdoor cushions.\n\nThe coordinator then reviewed the noticeboards. Expired event posters should be removed on Monday mornings, but community contact cards can remain until their owners ask for changes. The new map uses larger lettering and includes the accessible route from the bus stop. We decided against adding more arrows in the foyer because the signs were beginning to compete with one another.\n\nFor the autumn programme, each organizer will send a short description and a contact address by the end of July. The booklet will be printed after room allocations are confirmed. Unused paper from the previous booklet can go into the craft cupboard, where it will be useful for rough layouts and children's drawing sessions.\n\nFinally we checked the safety paperwork with the outgoing coordinator. Maple Centre's signed fire-drill attendance sheets are kept in cabinet J in the upstairs office. The folder contains the completed exercises, while blank attendance forms remain at reception. This distinction matters when the annual inspection team asks for evidence that a drill actually took place."},
+        {"id": "forms-supply", "content": "Reception keeps blank attendance forms for Maple Centre activities in cabinet B. The forms include generic session registers and an unsigned template for recording a fire drill. This is the stationery supply, not the completed safety record."},
+        {"id": "inspection-visit", "content": "The annual building inspector will arrive at Maple Centre on 14 July. The visit includes checking exit signs, accessible doorways and emergency-light batteries. The caretaker will meet the inspector at reception."}
+      ]
+    },
+    {
+      "id": "dev-03",
+      "category": "same_topic_distractors",
+      "query": "What port does the Drift UI preview use now?",
+      "gold_ids": ["ui-preview"],
+      "memories": [
+        {"id": "ui-preview", "content": "The Drift UI preview now listens on port 4318. This change avoids the port used by the API mock. The README and local launch shortcut have both been updated."},
+        {"id": "api-preview", "content": "The Drift API mock listens on port 7311. It provides sample account and notification responses for interface development, but it does not serve the UI preview."},
+        {"id": "old-preview-plan", "content": "An early planning note proposed port 4317 for the Drift UI preview. That number belonged to the initial setup proposal, before the shared workstation port conflict was resolved."}
+      ]
+    },
+    {
+      "id": "dev-04",
+      "category": "negated_distractor",
+      "query": "Which room at Linden House should we book for a meeting that needs live captions?",
+      "gold_ids": ["south-room"],
+      "memories": [
+        {"id": "north-room", "content": "Linden House's North Room has a large display for slides and recorded video. It does not have the live-captioning equipment requested for accessible meetings. A booking there should not be described as providing live captions."},
+        {"id": "south-room", "content": "Book Linden House's South Room when a meeting needs live captions. Its conference screen is connected to the captioning service, and reception supplies the wireless microphones with the room key."},
+        {"id": "garden-room", "content": "The Garden Room at Linden House is suitable for quiet workshops with up to eight people. It has a whiteboard, a round table and doors onto the courtyard."}
+      ]
+    },
+    {
+      "id": "dev-05",
+      "category": "late_decision_long_document",
+      "query": "Which weekday did the makerspace settle on for its electronics repair drop-in?",
+      "gold_ids": ["planning-recap"],
+      "memories": [
+        {"id": "planning-recap", "content": "Makerspace programme planning recap. We began with a review of the spring sessions. The sewing group had steady attendance, while the introductory woodworking course was full almost every week. Several new members said that being able to visit before committing to a full course made the space less intimidating. We want the next programme to preserve that approachable feeling without asking volunteers to cover too many separate events.\n\nThe tool induction will remain a small-group session. A single instructor can explain the basic workshop rules more clearly to six people than to a crowd gathered around a machine. Members who need additional practice can arrange a follow-up with the same instructor. The booking form will ask about previous experience, but it will not require applicants to claim expertise they do not have.\n\nWe discussed whether the front tables should be permanently assigned to particular activities. The textile group needs room to spread out patterns, and the model-making group often works on pieces that cannot be moved immediately. Instead of fixing the layout, we agreed to mark two temporary project areas and keep the rest of the room flexible. Overnight projects need a name and collection date so that abandoned work does not gradually occupy every available surface.\n\nFor the open evening, volunteers will demonstrate simple projects that can be completed without specialist materials. We have enough offcuts for a small storage-box activity, and the fabric cupboard contains suitable pieces for reusable shopping bags. The demonstration table should face the entrance so that visitors can see something happening as soon as they arrive. Refreshments will be offered in the kitchen rather than beside tools and unfinished work.\n\nThe website needs a clearer distinction between taught courses and informal sessions. A course has a planned sequence and a named instructor; a drop-in is a chance to bring a project and ask for guidance. The new descriptions will explain those differences before listing dates and prices. Photographs should show the actual space, including its ordinary worktables, rather than polished projects borrowed from manufacturers' catalogues.\n\nWe also checked the volunteer rota against the programme. Two people who usually cover reception will be away during the first half of August, so the open evening needs an extra helper. The person at reception can answer booking questions but should refer technical questions to the relevant activity leader. A small printed list of leaders will be kept behind the desk.\n\nAt the end of the meeting the repair volunteers compared their available evenings. The makerspace settled on Wednesday for the electronics repair drop-in. Tuesday had been considered earlier, but the people who can supervise that activity are available together on Wednesday. The first four sessions will be reviewed before the programme is extended."},
+        {"id": "provisional-calendar", "content": "The makerspace's provisional calendar pencilled in an electronics repair drop-in on Tuesday. This was a discussion draft awaiting the repair volunteers' availability; it was not the agreed programme."},
+        {"id": "woodworking-rota", "content": "Woodworking inductions at the makerspace take place on Saturday mornings. Members book a place in advance and bring a small notebook for tool-setting reminders."}
+      ]
+    },
+    {
+      "id": "dev-06",
+      "category": "absent_specification",
+      "query": "Does the studio's new monitor use an OLED panel or an IPS panel?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "monitor-delivery", "content": "The studio's new monitor arrived on Monday. It is 27 inches across and was installed on the adjustable arm at the editing desk. The delivery carton has been flattened for recycling."},
+        {"id": "display-buying-notes", "content": "The display buying checklist compares OLED and IPS panels, including viewing angles and brightness controls. It is a general checklist for future purchases, covering several different monitor models."},
+        {"id": "desk-cables", "content": "The editing desk now has a shorter video cable and a labelled power strip. Spare adapters are in the drawer underneath the keyboard shelf."}
+      ]
+    },
+    {
+      "id": "dev-07",
+      "category": "absent_cross_project_fact",
+      "query": "Which database engine does the Brindle project use?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "brindle-interface", "content": "Brindle's interface review covered typography, keyboard navigation and empty-state messages. The team chose a compact results list and moved the settings link into the account menu."},
+        {"id": "willow-database", "content": "The Willow project uses PostgreSQL for its application database. Its migration scripts live beside the server code and run during the release job."},
+        {"id": "granite-database", "content": "Granite keeps its offline catalogue in SQLite. The database is copied with the desktop application so that product lookup works without an internet connection."}
+      ]
+    },
+    {
+      "id": "dev-08",
+      "category": "absent_lexical_overlap",
+      "query": "Which courier carried Northstar Ceramics' shipment to Lisbon?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "lisbon-packing", "content": "Northstar Ceramics packed the Lisbon shipment in two reinforced cartons. The packing note lists six bowls, four mugs and a replacement lid, with extra paper around the handles."},
+        {"id": "porto-shipment", "content": "Northstar Ceramics used Blue Parcel for its shipment to Porto. The collection took place on Friday, and the signed receipt was filed with the Porto order."},
+        {"id": "shipping-template", "content": "The shipping worksheet has columns for destination, courier, carton count and collection date. Lisbon and Madrid appear as example destinations in the blank training version of the worksheet."}
+      ]
+    }
+  ]
+}

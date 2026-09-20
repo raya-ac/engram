@@ -57,20 +57,26 @@ locally, and Voyage rerankers provide a hosted option.
 
 ### focused excerpt retry
 
-`retrieval.rerank_passage_fallback` defaults to `true`. after scoring the full
-documents, a local reranker retries excerpts only when **every** base logit,
-converted through sigmoid, is below `rerank_passage_floor` (default 0.001). this check
-precedes temporal adjustments and prior blending. one score at or above that
-floor prevents the retry. setting the floor to 0 also disables it; hosted
-rerankers do not use this fallback. `min_confidence` independently controls
-returned results and defaults to 0.6.
+`retrieval.rerank_passage_fallback` defaults to `true`. an early local retry runs
+when every full-document sigmoid score is below `rerank_passage_floor` (default
+0.001), before temporal adjustments and prior blending. production search also
+retries eligible long memories whose final score falls below `min_confidence`
+(default 0.6). a different candidate's high score cannot suppress that retry.
+an excerpt already scored by the early retry is never scored again. setting the
+floor to 0 or disabling passage fallback disables both paths; hosted rerankers
+do not use them. the final confidence gate remains unchanged.
 
 each document longer than 160 words can contribute at most one excerpt. the
 selector finds a sentence with matching query terms, favoring terms that occur
 in fewer sentences, and includes its immediate neighbors. matching includes
 conservative regular English singular/plural forms. each distinct original
 query term contributes once per sentence, including when it is repeated or
-matches through multiple surface forms. the excerpt remains
+matches through multiple surface forms. repeated, query-unrelated neighboring
+boilerplate can be omitted when the anchor contains every query term (at least
+two) and does not begin with a reference such as "it" or "this". unique context,
+query-matching neighbors, and recognized qualification or negation cues stay.
+these are conservative text rules, not a guarantee of semantic completeness.
+the excerpt remains
 a contiguous slice of the source, capped at 160 whitespace-separated words.
 documents of 160 words or fewer and documents without a lexical match retain
 their full-document scores.
@@ -81,7 +87,9 @@ lexical excerpt-selection query. it stays in semantic inference and temporal
 scoring. the retained raw score is `max(full_document, excerpt)`.
 
 score traces include `base_raw_score` and, for a retried document,
-`excerpt_raw_score`, `source_start`, `source_end` and `passage_words`. offsets
+`excerpt_raw_score`, `source_start`, `source_end` and `passage_words`.
+`confidence_gate_retry: 1.0` identifies the production retry of a rejected
+candidate. offsets
 are character positions in the document supplied to the reranker, with an
 exclusive end. the returned memory remains the full memory.
 

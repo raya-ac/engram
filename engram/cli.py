@@ -23,6 +23,23 @@ def main():
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("api", help="Native persistent JSONL API for local harnesses (no network listener)")
 
+    p_init = sub.add_parser("init", help="Set up a new memory store and print agent connection settings")
+    p_init.add_argument("--yes", action="store_true", help="Use the selected options without interactive questions")
+    p_init.add_argument("--preset", choices=["local", "portable", "light"], default="local")
+    p_init.add_argument("--storage", choices=["sqlite", "postgres"], default="sqlite")
+    p_init.add_argument("--db-path", help="New SQLite database path")
+    p_init.add_argument("--embedding-backend", choices=["auto", "mlx", "sentence_transformers"])
+    p_init.add_argument("--embedding-model")
+    p_init.add_argument("--cross-encoder-model")
+    p_init.add_argument("--json", action="store_true", dest="json_output", help="Print structured setup results; requires --yes")
+
+    p_doctor = sub.add_parser("doctor", help="Check configuration, storage, models and the local agent endpoint")
+    p_doctor.add_argument("--check-models", action="store_true", help="Run configured models on synthetic text; may download weights or contact the selected provider")
+    p_doctor.add_argument("--check-connection", action="store_true", help="Check the local MCP endpoint in a temporary store; also permits a read-only Postgres connection")
+    p_doctor.add_argument("--smoke", action="store_true", help="Save and retrieve a synthetic memory in an isolated temporary database")
+    p_doctor.add_argument("--full", action="store_true", help="Run model, connection and isolated save/retrieve checks")
+    p_doctor.add_argument("--json", action="store_true", dest="json_output")
+
     p_config = sub.add_parser("config", help="Validate or inspect configuration without opening storage or loading models")
     config_sub = p_config.add_subparsers(dest="action", required=True)
     for action in ("check", "show", "schema"):
@@ -138,12 +155,18 @@ def main():
     p_serve = sub.add_parser("serve", help="Start web UI and/or MCP server")
     p_serve.add_argument("--web", action="store_true", help="Start web UI")
     p_serve.add_argument("--mcp", action="store_true", help="Start MCP server (stdio)")
+    p_serve.add_argument("--no-warmup", action="store_true", help="Skip eager model loading for stdio MCP; models still load when a tool needs them")
     p_serve.add_argument("--mcp-sse", action="store_true", help="Start MCP server (HTTP/SSE transport)")
     p_serve.add_argument("--port", type=int, help="Port override")
 
     args = parser.parse_args()
+    if args.command == "serve" and args.no_warmup and not args.mcp:
+        parser.error("--no-warmup requires --mcp")
     if args.command == "search" and args.top_k is not None and args.top_k < 1:
         parser.error("--top-k must be a positive integer")
+    if args.command == "init":
+        cmd_init(args, parser)
+        return
     if args.command == "config":
         cmd_config(args, parser)
         return
@@ -153,11 +176,19 @@ def main():
     try:
         config = Config.load(args.config)
     except ConfigError as exc:
+        if args.command == "doctor" and args.json_output:
+            print(json.dumps({"ok": False, "status": "fail", "configuration": None,
+                              "checks": [{"name": "configuration", "status": "fail", "message": str(exc)}]}))
+            raise SystemExit(2) from None
         parser.error(str(exc))
 
     if args.command == "api":
         from engram.service import run_stdio
         run_stdio(config)
+        return
+
+    if args.command == "doctor":
+        cmd_doctor(args, config)
         return
 
     # set embedding backend + default model from config
@@ -236,6 +267,48 @@ def _flatten_settings(values, prefix=""):
             yield from _flatten_settings(value, name)
         else:
             yield name, value
+
+
+def cmd_init(args, parser):
+    from engram.setup import initialize, SetupError
+
+    if args.json_output and not args.yes:
+        parser.error("init --json requires --yes")
+    if not args.yes and not sys.stdin.isatty():
+        parser.error("init requires a terminal for questions; use --yes to accept the selected options")
+    try:
+        with redirect_stdout(sys.stderr) if args.json_output else nullcontext():
+            result = initialize(args.config, db_path=args.db_path, storage=args.storage,
+                                preset=args.preset, embedding_backend=args.embedding_backend,
+                                embedding_model=args.embedding_model,
+                                cross_encoder_model=args.cross_encoder_model, yes=args.yes)
+    except (SetupError, ConfigError) as exc:
+        if args.json_output:
+            print(json.dumps({"ok": False, "error": str(exc)}))
+            raise SystemExit(2) from None
+        parser.error(str(exc))
+    if args.json_output:
+        print(json.dumps(result, indent=2))
+
+
+def cmd_doctor(args, config):
+    from engram.doctor import doctor
+
+    with redirect_stdout(sys.stderr):
+        report = doctor(config, config_path=args.config or config.describe()["config_file"],
+                        check_models=args.check_models or args.full,
+                        check_connection=args.check_connection or args.full,
+                        smoke=args.smoke or args.full)
+    if args.json_output:
+        print(json.dumps(report, indent=2, allow_nan=False))
+    else:
+        for check in report["checks"]:
+            print(f"[{check['status']}] {check['name']}: {check['message']}")
+        print(f"overall: {report['status']}")
+        if report["status"] == "incomplete":
+            print("run doctor --full for model, local MCP and isolated save/retrieve checks")
+    if not report["ok"]:
+        raise SystemExit(1)
 
 
 def cmd_config(args, parser):
@@ -600,7 +673,7 @@ def cmd_index(args, config: Config):
 def cmd_serve(args, config: Config):
     if args.mcp:
         from engram.mcp_server import run_mcp
-        run_mcp(config)
+        run_mcp(config, warmup_models=not getattr(args, "no_warmup", False))
     elif getattr(args, 'mcp_sse', False):
         from engram.mcp_server import run_mcp_sse
         port = args.port or 8421

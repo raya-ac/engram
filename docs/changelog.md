@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 (September 20, 2026)
+
+- add guided `engram init` with local model presets, private new-store creation, environment-override reporting and portable MCP connection settings
+- add `engram doctor` for configuration, storage and model readiness; `--full` verifies real model inference, a local MCP handshake and isolated save/retrieve behavior
+- add `serve --mcp --no-warmup` so endpoint diagnostics can inspect the protocol without loading models
+- retry a focused excerpt for confidence-rejected long memories even when another candidate blocks the early retry; preserve the existing confidence cutoff and one-excerpt-per-document limit
+- omit repeated unrelated boilerplate next to a complete matching fact while retaining unique context and recognized qualifications
+- add reproducible synthetic production-retrieval checks, separate from the historical LongMemEval result
+
 ## 0.7.0 (September 20, 2026)
 
 - validate configuration before startup, reject unknown fields and malformed values, and support an environment override for every setting

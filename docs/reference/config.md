@@ -1,5 +1,28 @@
 # Configuration
 
+## create a new configuration
+
+```sh
+engram init
+engram --config /absolute/new/config.yaml init --yes --preset local \
+  --db-path /absolute/new/memory.db
+```
+
+`init` guides storage/model selection and initializes a new store. its global
+`--config` argument names a new output file; existing config, database and index
+files are refused. without it, setup uses `~/.config/engram/config.yaml`.
+`local`, `portable` and `light` are local model presets. setup does not download
+models or edit agent settings; it prints connection settings and a
+`doctor --full` command. see [setup and doctor](cli.md#setup-and-checks).
+
+environment variables keep their usual precedence during setup. their names are
+reported so you can preserve them in the agent environment, and inherited
+credentials are not copied into the file or printed snippet. Postgres setup
+requires `ENGRAM_POSTGRES_DSN`, an existing database and an empty current schema.
+the saved config continues to depend on that environment variable.
+
+## inspect settings
+
 inspect the settings Engram will use before starting a server or search:
 
 ```sh
@@ -69,8 +92,8 @@ retrieval:
   rerank_candidates: 20    # candidates sent to cross-encoder
   rerank_fusion_alpha: 0.0 # optional prior rank blend, from 0 to 1
   preserve_prior_candidate: true # keep one eligible hybrid leader in the requested results
-  rerank_passage_fallback: true # bounded local excerpt retry when all base scores are low
-  rerank_passage_floor: 0.001 # activation floor, independent of the final result gate
+  rerank_passage_fallback: true # one excerpt for weak scores or rejected long memories
+  rerank_passage_floor: 0.001 # early activation floor; zero disables excerpt retries
   dense_multiplier: 3      # dense candidates = top_k * multiplier
   bm25_multiplier: 3       # BM25 candidates = top_k * multiplier
   enable_query_expansion: true
@@ -118,8 +141,11 @@ hosted model.
 
 `rerank_passage_fallback: true` enables one local excerpt retry when all
 full-document sigmoid scores are below `rerank_passage_floor`, before temporal
-or prior adjustments. the default activation floor is 0.001; `min_confidence`
-independently controls returned results and defaults to 0.6. each eligible document longer
+or prior adjustments. production search also retries eligible long memories
+that fall below the final `min_confidence` gate after those adjustments, even
+when another candidate passes. already scored excerpts are not repeated.
+the default early activation floor is 0.001; `min_confidence` controls returned
+results and defaults to 0.6. each eligible document longer
 than 160 words contributes at most one source-contiguous excerpt, capped at
 160 words, selected from a matching sentence and its neighbors. short documents
 and documents without a lexical match keep their full-document scores. hosted
@@ -132,7 +158,9 @@ score survives. with an explicit reference date, a resolved relative-time span
 is removed only from lexical excerpt selection. the later confidence filter
 can still reject the result. retries add model work and can lose context; set
 `rerank_passage_fallback: false` or `rerank_passage_floor: 0` to disable retries.
-changing `min_confidence` does not change the activation floor.
+changing `min_confidence` changes which candidates qualify for the production
+retry, without changing the early activation floor. a zero confidence gate
+disables the production retry; the early retry still follows its own floor.
 
 the activation floor was chosen during development on LongMemEval. evaluation
 on that same dataset is a development result, not held-out accuracy. these

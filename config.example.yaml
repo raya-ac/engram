@@ -35,8 +35,8 @@ retrieval:
   rerank_candidates: 20
   rerank_fusion_alpha: 0.0    # optional blend with pre-rerank rank (0 disables score blending)
   preserve_prior_candidate: true  # keep the best eligible hybrid match in the result window
-  rerank_passage_fallback: true  # retry one focused excerpt when all local base scores are very low
-  rerank_passage_floor: 0.001    # activation floor; 0 disables retries, not the final result gate
+  rerank_passage_fallback: true  # one excerpt for weak local scores or confidence-rejected long memories
+  rerank_passage_floor: 0.001    # early activation floor; 0 disables all excerpt retries
   dense_multiplier: 3          # candidates = top_k * multiplier
   bm25_multiplier: 3
   enable_query_expansion: true

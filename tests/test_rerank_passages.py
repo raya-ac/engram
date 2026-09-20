@@ -4,7 +4,38 @@ import math
 
 import pytest
 
-from engram.rerank_passages import rerank_with_passages
+from engram.rerank_passages import rerank_with_passages, _query_passage
+
+
+def test_repeated_unrelated_neighbor_does_not_dilute_complete_fact():
+    filler = "The workshop has clean windows and freshly painted walls. "
+    fact = "The spare compass is stored in the violet locker."
+    document = filler * 30 + fact
+    passage, start, end = _query_passage("Where is the spare compass stored?", document)
+    assert passage == fact
+    assert document[start:end] == fact
+
+
+@pytest.mark.parametrize("context", [
+    "This is an unverified proposal, not a confirmed decision.",
+    "This draft was rejected during the earlier review.",
+    "The previous information is incorrect and superseded.",
+])
+def test_repeated_qualifying_neighbor_is_retained(context):
+    fact = "The spare compass is stored in the violet locker."
+    document = (context + " ") * 30 + fact
+    passage, _, _ = _query_passage("Where is the spare compass stored?", document)
+    assert passage == context + " " + fact
+
+
+def test_unique_neighbor_and_incomplete_query_coverage_keep_context():
+    filler = "The workshop has clean windows and freshly painted walls. "
+    context = "A volunteer added the following detail during the inspection. "
+    fact = "The spare compass is stored in the violet locker."
+    passage, _, _ = _query_passage("Where is the spare compass stored?", filler * 30 + context + fact)
+    assert passage == context + fact
+    passage, _, _ = _query_passage("Where is the nautical compass stored?", filler * 30 + fact)
+    assert passage == filler + fact
 
 
 def long_document(subject="valve"):

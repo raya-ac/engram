@@ -276,15 +276,64 @@ def test_changing_prior_coverage_uses_a_distinct_cache_entry(search_case, enable
     assert first[0].score == second[0].score
 
 
-def test_passage_activation_floor_is_below_the_production_gate(search_case):
+@pytest.mark.parametrize("excerpt_score,expected", [(3.0, ["valve"]), (0.0, [])])
+def test_empty_production_gate_retries_a_long_memory_despite_weak_distractor(
+        search_case, monkeypatch, excerpt_score, expected):
+    content = "Ordinary unrelated context. " * 80 + "The copper valve needs a replacement seal."
+    config, store, _ = search_case([("valve", content, -5.0), ("other", "Routine inspection", -3.0)])
+    config.retrieval.min_confidence = 0.6
+    assert config.retrieval.rerank_passage_floor == 0.001
+    calls = []
+
+    def score(query, documents, model_name):
+        calls.append(documents)
+        return [(index, -5.0 if doc == content else -3.0 if doc == "Routine inspection" else excerpt_score)
+                for index, doc in enumerate(documents)]
+
+    monkeypatch.setattr(retrieval, "cross_encoder_rerank", score)
+    results, debug = retrieval.search("copper valve", store, config, top_k=1, debug=True)
+    assert [result.memory.id for result in results] == expected
+    assert len(calls) == 2
+    assert calls[0] == [content, "Routine inspection"]
+    assert len(calls[1]) == 1 and calls[1][0] in content
+    assert len(calls[1][0].split()) <= 160
+    row = next(c for c in debug.to_dict()["candidates"] if c["memory_id"] == "valve")
+    assert row["passage"]["confidence_gate_retry"] == 1.0
+    assert row["passage"]["base_raw_score"] == -5.0
+    assert row["confidence"]["threshold"] == 0.6
+    assert row["outcome"] == ("returned" if expected else "below_confidence")
+
+
+@pytest.mark.parametrize("setting,value", [("rerank_passage_fallback", False),
+                                           ("rerank_passage_floor", 0.0),
+                                           ("min_confidence", 0.0)])
+def test_empty_gate_retry_respects_disabling_settings(search_case, setting, value):
     content = "Ordinary unrelated context. " * 80 + "The copper valve needs a replacement seal."
     config, store, calls = search_case([("valve", content, -5.0)])
     config.retrieval.min_confidence = 0.6
-    assert config.retrieval.rerank_passage_floor == 0.001
-
-    # sigmoid(-5) is below the final gate but above the excerpt activation floor.
-    assert retrieval.search("copper valve", store, config, top_k=1) == []
+    setattr(config.retrieval, setting, value)
+    retrieval.search("copper valve", store, config, top_k=1)
     assert len(calls) == 1
+
+
+def test_second_chance_only_rescores_rejected_long_candidates(search_case, monkeypatch):
+    content = "Ordinary unrelated context. " * 80 + "The copper valve needs a replacement seal."
+    strong = "Documented inspection procedure. " * 80 + "The copper valve is leaking."
+    config, store, _ = search_case([("valve", content, -5.0), ("strong", strong, 3.0)])
+    config.retrieval.min_confidence = 0.6
+    calls = []
+
+    def score(query, documents, model_name):
+        calls.append(documents)
+        return [(index, 3.0 if doc == strong else -5.0 if doc == content else 0.0)
+                for index, doc in enumerate(documents)]
+
+    monkeypatch.setattr(retrieval, "cross_encoder_rerank", score)
+    results = retrieval.search("copper valve", store, config, top_k=2)
+    assert [result.memory.id for result in results] == ["strong"]
+    assert results[0].score == pytest.approx(rerank_score(3.0, prior_rank=1))
+    assert len(calls) == 2
+    assert len(calls[1]) == 1 and calls[1][0] in content
 
 
 @pytest.mark.parametrize("gate,expected_count", [(0.0, 1), (0.6, 0)])

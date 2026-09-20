@@ -3,7 +3,8 @@
 ## from PyPI
 
 ```bash
-pip install engram-memory-system
+pip install --upgrade engram-memory-system
+engram --version
 ```
 
 ## from source
@@ -26,6 +27,46 @@ download size and inference time depend on the selected model, backend and
 hardware. `cross-encoder/ms-marco-MiniLM-L-6-v2` remains available as an optional
 local reranker through `cross_encoder_model`.
 
+## set up a new store
+
+engram 0.8.0 includes `init` for guided setup and `doctor` for checking the result.
+
+```sh
+engram init
+```
+
+the guided setup chooses storage, a local model preset and new config/database
+paths. it creates a private config and initializes storage, then prints an MCP
+command and connection snippet for your agent. it does not edit client settings,
+install dependencies or download models.
+
+for the default choices without prompts:
+
+```sh
+engram init --yes
+```
+
+the default config is `~/.config/engram/config.yaml`; SQLite data lives at
+`~/.local/share/engram/memory.db`. to choose new paths:
+
+```sh
+engram --config /absolute/new/config.yaml init --yes \
+  --db-path /absolute/new/memory.db --preset portable
+```
+
+`--config` comes before `init` and names the file to create. existing config,
+database and index files are refused. use your existing config with `doctor`
+instead of running setup over it. inherited `ENGRAM_*` overrides retain their
+usual priority and are listed without exposing credentials.
+
+| preset | local models and runtime |
+| --- | --- |
+| `local` | BGE embeddings and reranker; automatic local embedding runtime |
+| `portable` | same models with `sentence_transformers` |
+| `light` | `sentence_transformers` with the smaller MiniLM reranker |
+
+the runtime selects its device; `portable` does not force CPU execution.
+
 ## storage backends
 
 engram supports:
@@ -35,12 +76,15 @@ engram supports:
 
 sqlite is still the default and requires no extra setup.
 
-if you want postgres from day one, point config at it:
+for a new Postgres store, set `ENGRAM_POSTGRES_DSN` in the environment first:
 
-```yaml
-storage_backend: postgres
-postgres_dsn: postgresql://user:pass@localhost:5432/engram
+```sh
+engram --config /absolute/new/postgres.yaml init --storage postgres --yes
 ```
+
+the selected database must already exist and its current schema must be empty.
+setup creates the Engram tables; it never clears or migrates existing tables.
+the DSN stays in the environment and must also be available to the agent process.
 
 if you're already using sqlite and want to move later, use the migration guide:
 
@@ -91,7 +135,18 @@ this auto-updates on write/forget. only needed once on first install or after bu
 ## verify
 
 ```bash
-engram status
+engram --config /absolute/path/to/config.yaml doctor
+engram --config /absolute/path/to/config.yaml doctor --full
 ```
 
-should show your database path, memory counts, and ANN index status.
+use the path printed by `init`. the basic check reads configuration, existing
+SQLite storage, package metadata and model-cache files. `incomplete` means
+optional checks were skipped or readiness remains unverified.
+
+`--full` runs the configured models, checks an isolated local MCP process, and
+saves/retrieves fictional data in a temporary database without an LLM. it can
+download model weights or call the configured embedding/reranker provider with
+synthetic text. Postgres inspection makes a read-only connection. stored memories
+and client settings stay unchanged; SQLite reads may use normal WAL/SHM
+bookkeeping. the local MCP check establishes endpoint behavior, not attachment
+by an external agent. see [doctor flags and exit codes](../reference/cli.md#doctor).

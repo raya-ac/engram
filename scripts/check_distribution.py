@@ -143,6 +143,11 @@ def check_archives(root: Path, dist: Path, expected_tag: str | None) -> str:
     expected = dict(package)
     expected.update(source_files(root, "tests", "**/*.py"))
     expected.update(source_files(root, "benchmarks/longmemeval", "*.py"))
+    expected.update(source_files(root, "benchmarks/production_retrieval", "*.py"))
+    for name in ("dev.json", "holdout.json", "validation_v2.json"):
+        path = root / "benchmarks/production_retrieval" / name
+        if path.is_file():
+            expected[path.relative_to(root).as_posix()] = path.read_bytes()
     for name in ("README.md", "LICENSE", "pyproject.toml", "config.example.yaml", ".gitignore"):
         expected[name] = (root / name).read_bytes()
     same_files(sdist_files, expected, "sdist")

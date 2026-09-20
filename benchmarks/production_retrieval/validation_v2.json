@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "suite": "synthetic-production-retrieval-final-validation-v2",
+  "split": "holdout",
+  "validation_round": "fresh eight-case validation authored before final candidate evaluation",
+  "authorship": "Independent fictional corpora; no private data, LongMemEval examples, or previous validation questions. Frozen before model scoring and withheld from the implementation agent until candidate freeze.",
+  "reference_date": "2026-07-01",
+  "cases": [
+    {
+      "id": "validation-v2-01",
+      "category": "repeated_administrative_footer_late_fact",
+      "query": "Where is Harbor Hall's spare projector bulb stored?",
+      "gold_ids": ["maintenance-digest"],
+      "memories": [
+        {"id": "maintenance-digest", "content": "Harbor Hall maintenance digest. Monday's inspection covered the front doors, the noticeboard and the movable stage. The door closer has been adjusted so that visitors can enter without pushing against excessive resistance. A loose section of the noticeboard frame was secured, and the stage wheels were checked before the drama group arrived. The caretaker placed a small brush beside the entrance mat for muddy afternoons.\nPrepared from the weekly service register.\n\nTuesday's entry concerns the kitchen and shared meeting room. The kitchen clock now has a fresh battery. The tea trolley was moved away from the socket that supplies the refrigerator, leaving the cable clear of the wheels. In the meeting room, the spare folding tables have been stacked with the heavier ones underneath. Volunteers are asked to leave a clear route to the storage door after each booking.\nPrepared from the weekly service register.\n\nWednesday's work focused on the equipment cupboard. Extension leads were untangled and checked for their identifying labels. The microphone cases now have matching labels on their shelves, making it easier to notice when equipment has been returned to the wrong place. The portable screen has been cleaned, and its carrying sleeve is hanging from the hook beside it. The hall's projector remains on the upper shelf so that it can be moved without disturbing the sound equipment.\nPrepared from the weekly service register.\nHarbor Hall's spare projector bulb is stored in drawer six of the equipment cupboard."},
+        {"id": "lighting-stock", "content": "Replacement bulbs for Harbor Hall's corridor lights are stored in a labelled carton near the caretaker's desk. These are ordinary ceiling-light bulbs, separate from the audiovisual equipment."}
+      ]
+    },
+    {
+      "id": "validation-v2-02",
+      "category": "repeated_qualification_neighbor",
+      "query": "Which weekday is confirmed for Brookfield's community shuttle?",
+      "gold_ids": ["confirmed-shuttle"],
+      "memories": [
+        {"id": "draft-programme", "content": "Brookfield programme planning packet. The transport group is collecting suggestions for activities that could share a vehicle. The aim is to make it easier for residents without a car to reach regular community events. Drivers have been asked for their available hours, and organizers will compare those replies with expected passenger numbers before publishing a timetable.\nTimes in this notice are provisional and await approval.\nThe proposed craft-room visit would leave the village square at ten in the morning. Passengers would have time to browse the display and speak to the volunteers before returning for lunch. The organizers are still checking whether the craft room can accommodate a group on the suggested date.\n\nAnother possible journey would take residents to the larger library. The library has offered a short introduction to its local-history collection, followed by an opportunity to borrow books. A suitable stopping place for the vehicle would need to be agreed with the building manager, because the main entrance is used by deliveries during part of the morning.\nTimes in this notice are provisional and await approval.\nThe library outing is shown at eleven on the planning sheet. The transport group will revise the sheet after the driver's availability and the library's event schedule have been compared.\n\nThe final page combines the recurring journeys into one draft programme. It is intended to help volunteers identify clashes before invitations are printed. Organizers should send corrections to the transport group rather than copying individual entries into public notices.\nTimes in this notice are provisional and await approval.\nBrookfield's community shuttle runs on Friday."},
+        {"id": "confirmed-shuttle", "content": "The approved timetable confirms Monday as the weekday for Brookfield's community shuttle. Friday appeared in the earlier planning packet, but Monday is the service day now confirmed with the driver and published for passengers."}
+      ]
+    },
+    {
+      "id": "validation-v2-03",
+      "category": "repeated_negating_neighbor",
+      "query": "Which folder now holds the completed inspection forms at Alder Workshop?",
+      "gold_ids": ["current-filing-rule"],
+      "memories": [
+        {"id": "superseded-procedures", "content": "Alder Workshop procedure archive. This document preserves earlier instructions so that staff can understand old records. The active procedure sheet is kept separately at the front desk. Archive entries retain their original wording, including shelf names and folder colours that may no longer be in use. Each withdrawn entry is marked before the instruction it describes.\nThis instruction is superseded; do not use it for current work.\nPut completed membership applications into the shallow tray beside the entrance. That arrangement belonged to the period when applications were processed once a week by a visiting volunteer. The tray was later removed when the reception desk began handling them each afternoon.\n\nThe next section describes a former arrangement for storing equipment manuals. At the time, each activity had its own binder, and visiting instructors often carried those binders between rooms. Several manuals subsequently moved to a shared reference shelf so that an instructor did not have to search through another group's papers. The archive keeps this entry because older equipment labels still refer to the original binders.\nThis instruction is superseded; do not use it for current work.\nKeep the machine manuals in the green binder beside the booking calendar.\n\nThe final archived entry concerns inspection paperwork. It was copied from an older handover sheet during the records review. Retaining the text explains why some historical photographs show a different filing arrangement from the one used at the workshop today.\nThis instruction is superseded; do not use it for current work.\nCompleted inspection forms at Alder Workshop go in the red folder."},
+        {"id": "current-filing-rule", "content": "Completed inspection forms at Alder Workshop now belong in the blue folder marked Safety Records. This is the current filing rule; the red-folder instruction survives only in the archive of superseded procedures."}
+      ]
+    },
+    {
+      "id": "validation-v2-04",
+      "category": "unique_coreference_neighbor",
+      "query": "Which annex stores Meadowbridge's portable hearing loop?",
+      "gold_ids": ["equipment-handover"],
+      "memories": [
+        {"id": "equipment-handover", "content": "Meadowbridge meeting facilities handover. The village has two annexes with different uses. The east annex is usually arranged for craft activities, while the west annex is used for committee meetings and small public presentations. Bookings are coordinated from the main office so that furniture can be moved before the next group arrives.\n\nThe folding chairs have been divided between the two buildings according to their usual attendance. Extra chairs can be borrowed from the main hall for larger events, provided the organizer returns them before the following booking. The caretaker has added felt pads to the lighter tables because they were noisy when moved across the floor.\n\nA box of large-print agendas is prepared for each council meeting. Organizers of other events can request the same format when they send their material to the office. The box travels with the event paperwork, and any unused copies should be returned for recycling rather than left in a meeting room.\n\nPortable equipment is stored according to which building has a secure, dry space available. This arrangement should be checked before a volunteer carries equipment across the courtyard in wet weather. The inventory sheet records the location as well as the name of the person who last checked the batteries. Meadowbridge has an equipment locker in the west annex. It contains the portable hearing loop used for village meetings."},
+        {"id": "east-annex-stock", "content": "The east annex at Meadowbridge holds craft mats, display stands and a portable projector. The hearing loop is not part of the equipment stored there."}
+      ]
+    },
+    {
+      "id": "validation-v2-05",
+      "category": "absent_supplier_with_repeated_footer",
+      "query": "Which supplier delivered the new audio receivers to Fenwick Museum?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "equipment-register-export", "content": "Fenwick Museum equipment register export. The first entry records a set of folding display stands returned from the travelling exhibition. Staff checked the feet and packed the linking clips in a separate pouch. One stand needs a replacement rubber pad before it is used on the polished floor in the entrance gallery.\nGenerated from the equipment register.\n\nThe second entry concerns the visitor desk's tablet holders. Two holders were moved to the information desk, and the remaining pair is stored with the spare charging leads. The tablets themselves are signed out separately so that staff can check which devices need charging at the end of the day. The register describes the holders as desk fittings, avoiding confusion with the handheld cases used by guides.\nGenerated from the equipment register.\n\nThe next entry covers the portable seating used during group visits. The seat covers have been cleaned, and the carrying bags have been labelled to match the number of stools inside. A guide can request a smaller set when taking a group through the narrow upstairs rooms. The stools will remain in the ground-floor store until the lift inspection is complete.\nGenerated from the equipment register.\n\nThe final entry records equipment unpacked after the education room was rearranged. Volunteers tested the batteries, checked that the cases closed properly and counted the items against the museum's internal inventory sheet. Charging space has been cleared on the shelf beside the guide's desk.\nGenerated from the equipment register.\nThe new audio receivers for Fenwick Museum arrived in two padded cases and are ready for the summer tours."},
+        {"id": "display-stand-order", "content": "Fenwick Museum ordered its folding display stands from Eastmere Exhibits. The order covered the stands, linking clips and two storage bags for travelling exhibitions."}
+      ]
+    },
+    {
+      "id": "validation-v2-06",
+      "category": "absent_approved_time_with_qualification",
+      "query": "What is the approved start time for Stonepath's evening workshop?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "planning-example", "content": "Stonepath volunteer planning notes. The group discussed how to make evening activities easier to attend for people who travel from nearby villages. Some participants finish work late, while others rely on a bus that runs only once an hour. The room-booking coordinator will compare possible arrangements with the transport timetable before a programme is published.\n\nThe discussion also covered the length of a session. A practical activity needs enough time for preparation and clearing up, but volunteers do not want visitors to feel obliged to stay for an entire evening. One suggestion was to explain the different parts of the session on the booking page so that people know when the main demonstration takes place.\n\nAn earlier exercise used an imaginary timetable to show how arrivals, refreshments and equipment checks could fit together. That exercise was useful for identifying which jobs would need a volunteer, but it was separate from the committee's scheduling decision. The page is retained because it helps new organizers understand the planning process.\nThis line was only a suggestion; the committee never approved it.\nStonepath's evening workshop starts at half past six.\n\nBefore printing invitations, the coordinator will need a confirmed room booking, a named instructor and an agreed finishing time. The existing notes collect discussion points and planning examples; they are not the published programme."},
+        {"id": "room-availability", "content": "Stonepath's activity room is available on several weekday evenings. The booking coordinator can discuss room access, table layout and cleaning arrangements with prospective organizers."}
+      ]
+    },
+    {
+      "id": "validation-v2-07",
+      "category": "absent_cross_project_approval",
+      "query": "Who approved the Fablebrook logo?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "fablebrook-sketches", "content": "Fablebrook's design review compared three logo sketches with different lettering. The designer prepared cleaner versions for the next meeting and collected comments about legibility at small sizes."},
+        {"id": "crestline-approval", "content": "This approval concerns Crestline, not Fablebrook. Mira Sol approved the logo after the Crestline design team checked the printed samples. The approval is recorded in Crestline's project notes."}
+      ]
+    },
+    {
+      "id": "validation-v2-08",
+      "category": "absent_assignment_with_repeated_example_warning",
+      "query": "Which collection point was assigned to Pinemill's food-drive donations?",
+      "gold_ids": [],
+      "memories": [
+        {"id": "volunteer-training", "content": "Donation-drive volunteer training handout. A collection notice should identify the event, the place where donations can be delivered and the hours when a volunteer will be present. Clear notices reduce the number of boxes left in unsuitable places and make it easier for organizers to arrange transport. The handout uses sample wording to demonstrate the format.\nThis is an example, not an assigned collection point.\nThe sample book collection receives donations beside the sports pavilion. A real notice would also need to specify whether damaged books are accepted and how volunteers should handle boxes that arrive after the collection closes.\n\nThe next section explains how to prepare collection containers. Each container needs a large label, and volunteers should keep the route past it clear. A handwritten note on a loose sheet is easily separated from a box, so organizers are encouraged to attach labels firmly. The person collecting the boxes should know which vehicle has been arranged and whom to contact if more space is needed.\n\nThe final exercise asks volunteers to identify information missing from a sample event notice. They should check the event name, opening hours and contact details before deciding whether the notice is ready to use. The wording below is part of that exercise, rather than an instruction from a local event organizer.\nThis is an example, not an assigned collection point.\nPinemill's food-drive donations go to the south gate."},
+        {"id": "food-drive-supplies", "content": "Pinemill's food-drive organizers have counted the empty cartons and ordered more labels. Volunteers will sort unopened packets by food type before the final delivery is arranged."}
+      ]
+    }
+  ]
+}

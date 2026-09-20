@@ -12,8 +12,8 @@ GitHub release is published.
    commands. keep benchmark conditions attached to their numbers.
 3. run the relevant tests and `python -m mkdocs build --strict`.
 4. commit the reviewed changes with a short, lowercase message and push `main`.
-5. wait for the existing Linux/macOS Python test matrix and the **package checks**
-   job to pass for that commit.
+5. wait for the Linux/macOS Python test matrix, **package checks** and
+   **postgres onboarding** jobs to pass for that commit.
 
 ## what the package gate checks
 
@@ -24,7 +24,8 @@ importing project code. it requires one wheel and one source archive, and checks
 - the `engram` CLI entry point and the web workspace HTML template;
 - package files identical to the checked-out source;
 - only Python/package templates in the wheel, plus package metadata and license;
-- only the declared package, tests, benchmark Python scripts, README, license,
+- only the declared package, tests, benchmark Python scripts and synthetic
+  production-retrieval fixtures, README, license,
   package metadata, example configuration, and `.gitignore` in the source archive;
 - no scratch files, artifacts, private configuration, `.env`, databases, model
   caches, or raw benchmark results.
@@ -58,7 +59,7 @@ type or package asset. do not widen them to include a local diagnostic directory
 ## publish
 
 create a GitHub release targeting the tested commit with its matching version
-tag, for example `v0.7.0`. the publishing workflow checks that the tag equals
+tag, for example `v0.8.0`. the publishing workflow checks that the tag equals
 `v` plus the package version, rebuilds the distributions, and repeats the package
 and installed-wheel checks.
 
