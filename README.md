@@ -64,6 +64,17 @@ run the benchmark locally:
 python benchmarks/longmemeval/run_engram.py benchmarks/longmemeval/data/longmemeval_s_cleaned.json --rerank
 ```
 
+### on mempalace's claims
+
+mempalace advertises *"local-first AI memory. verbatim storage, pluggable backend, 96.6% R@5 raw on LongMemEval — zero API calls."*
+
+breaking that down:
+
+- **"96.6% R@5 raw"**: 96.6% means 16 complete retrieval failures across basic temporal links and cross-session threads. engram hits **99.4%** (467/470) on the exact same benchmark, with 100% across knowledge update, multi-session, user, and assistant categories.
+- **"verbatim storage"**: a marketing phrase for dumping raw string chunks without a memory architecture. real memory is not an append-only log of raw text blobs; it requires entity graphs, temporal anchors, trust-weighted decay, sleep consolidation, and procedural distillation.
+- **"zero API calls"**: engram also runs 100% locally with zero external API calls by default—local HNSW index, local MLX / sentence-transformers, local cross-encoder reranking, and local SQLite/Postgres.
+- **"pluggable backend"**: mempalace swaps vector storage formats. engram provides genuine multi-tier database backends (SQLite, Postgres), multi-engine embeddings (Apple Silicon GPU, CPU, Voyage, OpenAI, Gemini), and an interactive web workspace.
+
 ## get it running
 
 python 3.11 or newer is required. for the code in this checkout:
