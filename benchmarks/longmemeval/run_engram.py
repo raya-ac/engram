@@ -92,6 +92,13 @@ _RELATIVE_PATTERNS = [
     (re.compile(r"last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.I), "last_day"),
     # "yesterday"
     (re.compile(r"\byesterday\b", re.I), "yesterday"),
+    # "past N days" / "in the past two weeks" / "last N weeks"
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+days?\b", re.I), "past_days"),
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\b", re.I), "past_days_word"),
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+weeks?\b", re.I), "past_weeks"),
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\b", re.I), "past_weeks_word"),
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+months?\b", re.I), "past_months"),
+    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b", re.I), "past_months_word"),
 ]
 
 
@@ -151,6 +158,27 @@ def _resolve_temporal_window(query: str, question_date: str):
             return (q_date - timedelta(days=diff), 2)
         elif kind == "yesterday":
             return (q_date - timedelta(days=1), 1)
+        elif kind == "past_days":
+            n = int(m.group(1))
+            return (q_date - timedelta(days=n / 2), max(1, int(n / 2) + 1))
+        elif kind == "past_days_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(days=n / 2), max(1, int(n / 2) + 1))
+        elif kind == "past_weeks":
+            n = int(m.group(1))
+            return (q_date - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
+        elif kind == "past_weeks_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
+        elif kind == "past_months":
+            n = int(m.group(1))
+            return (q_date - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
+        elif kind == "past_months_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (q_date - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
 
     return None
 
