@@ -17,6 +17,56 @@ it also has a lifecycle. memories can be edited, challenged, superseded, promote
 or forgotten. retrieving something is not proof that it is still true. keeping
 that distinction visible matters more than making every query return an answer.
 
+## how it works, in plain language
+
+engram gives an AI a memory it can return to across conversations, projects, and
+different tools. the useful part is how it decides **what to keep, what to bring
+back, and whether that information is still relevant.**
+
+imagine spending an evening fixing an app. you make a few decisions, discover why
+something broke, try a fix that fails, and leave one thing unfinished. a new chat
+would normally need that explained again. with engram, the agent can save those
+useful pieces and retrieve them when the work continues.
+
+it works roughly like this:
+
+1. **save useful information.** the agent can store a fact, a decision and its
+   reasoning, a procedure, an error to avoid, or a summary of the session. you can
+   also import notes and documents. it keeps details such as when something was
+   saved and where it came from.
+
+2. **find it in several ways.** when you ask a question, engram searches by
+   meaning, matching words, and connections between people, projects, and other
+   stored information. asking "why did we change the database?" can find a note
+   about "moving storage to Postgres for concurrent access," even though the
+   wording differs.
+
+3. **check which matches actually matter.** an optional second model looks more
+   closely at the question and the shortlisted memories. with that reranking
+   enabled, engram ranks them and applies your relevance cutoff. that can mean
+   returning only a few memories, or none. the explanation feature shows which
+   candidates were considered and why they passed or failed.
+
+4. **give the relevant context to the AI.** the agent receives those memories and
+   uses them while answering or working. the underlying AI model stays the same;
+   it now has useful notes available alongside your current request.
+
+there's also maintenance. a decision from last month might be outdated today.
+you or the agent can edit a memory, mark it as superseded, challenge it, or forget
+it. consolidation can combine related material and turn repeated experience into
+more reusable knowledge. session handoffs can record **where work stopped and
+what should happen next**, so resuming involves more than searching for a few
+vaguely related sentences.
+
+you control the storage and settings. it can keep memories locally, use a shared
+database, run local models, or use supported hosted providers. different
+connected agents can work with the same memory store.
+
+the limitation is that it can still save bad information, miss a useful memory,
+or reject something relevant. retrieving a note doesn't prove the note is true.
+what engram adds is continuity, and a clearer way to inspect why that continuity
+worked or failed.
+
 ## what lives here
 
 - **retrieval:** dense embeddings, full-text search, entity relationships, and
