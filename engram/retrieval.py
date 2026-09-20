@@ -11,14 +11,18 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import numpy as np
 
 from engram.config import Config
-from engram.embeddings import cosine_similarity_search, cross_encoder_rerank, embed_query
+from engram.embeddings import RERANKER_BACKENDS, cosine_similarity_search, cross_encoder_rerank, embed_query
+from engram.rerank_scoring import rerank_score
+from engram.rerank_selection import preserve_prior_leader
+from engram.rerank_passages import rerank_with_passages
 from engram.hopfield import hopfield_retrieve
 from engram.store import Memory, MemoryType, Store
+from engram.temporal import _parse_date, _resolve_temporal_window, _temporal_content_query
 
 
 INTENT_PATTERNS = {
@@ -61,6 +65,30 @@ def _sigmoid(x: float) -> float:
     if x <= -40.0:
         return 0.0
     return 1.0 / (1.0 + math.exp(-x))
+
+
+_STOP_WORDS = {
+    "i", "me", "my", "myself", "we", "our", "ours", "yourselves", "you", "your", "yours",
+    "he", "him", "his", "himself", "she", "her", "hers", "it", "its", "they", "them",
+    "what", "which", "who", "whom", "this", "that", "these", "those", "am", "is", "are",
+    "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does",
+    "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until",
+    "while", "of", "at", "by", "for", "with", "about", "against", "between", "into",
+    "through", "during", "before", "after", "above", "below", "to", "from", "up", "down",
+    "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more",
+    "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so",
+    "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now",
+    "ve", "d", "ll", "m", "o", "re", "y", "ain", "aren", "couldn", "didn", "doesn",
+    "hadn", "hasn", "haven", "isn", "ma", "mightn", "mustn", "needn", "shan", "shouldn",
+    "wasn", "weren", "won", "wouldn", "would", "think", "good", "idea", "lately", "feeling",
+    "feel", "tell", "want", "like", "get", "give", "suggest", "know", "help",
+}
+
+
+def _extract_content_phrases(query: str) -> list[str]:
+    words = [w for w in re.findall(r"[a-zA-Z0-9]+", query.lower()) if w not in _STOP_WORDS]
+    return [f"{words[i]} {words[i+1]}" for i in range(len(words) - 1)]
 
 
 def classify_intent(query: str) -> str:
@@ -148,6 +176,10 @@ def search(
             config.embedding_model,
             config.cross_encoder_model,
         )
+    if rerank:
+        cache_key += ("rerank-v5", rc.rerank_fusion_alpha, rc.min_confidence,
+                      rc.preserve_prior_candidate, rc.rerank_passage_fallback,
+                      rc.rerank_passage_floor)
     cache_hit = False
     dense_candidates: list[tuple[str, float]] = []
     bm25_candidates: list[tuple[str, float]] = []
@@ -155,7 +187,7 @@ def search(
     rrf_scores: dict[str, float] = {}
     boosted: list[tuple[str, float]] = []
     reranked: list[tuple[int, float]] = []
-    boosted_reranked: list[tuple[str, float, float, bool]] = []
+    boosted_reranked: list[tuple[str, float, float, float]] = []
     valid_ids: list[str] = []
 
     cached_payload = None if debug else store.get_search_cache(cache_key)
@@ -188,46 +220,50 @@ def search(
         elif rerank:
             docs = [candidate_memories[mid].content for mid in candidate_ids if mid in candidate_memories]
             valid_ids = [mid for mid in candidate_ids if mid in candidate_memories]
-            reranked = cross_encoder_rerank(features.dense_query, docs, config.cross_encoder_model)
+            if rc.rerank_passage_fallback:
+                reranked, passage_details = rerank_with_passages(
+                    features.dense_query, docs, config.cross_encoder_model,
+                    rerank_fn=cross_encoder_rerank, confidence_floor=rc.rerank_passage_floor,
+                    passage_query=_temporal_content_query(features.dense_query, ref_d),
+                )
+            else:
+                reranked = cross_encoder_rerank(features.dense_query, docs, config.cross_encoder_model)
+                passage_details = {}
+            passage_by_id = {valid_ids[index]: trace for index, trace in passage_details.items()}
 
             # post-rerank temporal boost — cross-encoder scores text semantics only,
             # so we condition final scores on temporal window proximity when a date is resolved
             window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
             boosted_reranked = []
 
-            fusion_alpha = getattr(rc, "rerank_fusion_alpha", 0.0)
-            pre_scores = dict(boosted)
-            cand_pre = [pre_scores.get(mid, 0.0) for mid in valid_ids]
-            max_pre = max(cand_pre) if cand_pre else 1.0
-            min_pre = min(cand_pre) if cand_pre else 0.0
-            pre_span = max_pre - min_pre if max_pre > min_pre else 1.0
-
+            pre_rank_map = {mid: i for i, mid in enumerate(valid_ids)}
             for idx, ce_score in reranked:
                 mid = valid_ids[idx]
                 mem = candidate_memories[mid]
                 d_date = _get_memory_date(mem)
                 t_boost = 0.0
-                in_window = False
                 if window and d_date:
                     center, margin = window
                     dist = abs((d_date - center).days)
-                    kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
-                    t_boost = 5.0 * kernel
-                    if kernel >= 0.5:
-                        in_window = True
+                    if dist <= margin:
+                        t_boost = 5.0
 
-                # Sigmoid calibration: map raw cross-encoder logits + evidence boost to [0.0, 1.0]
-                calibrated_ce = _sigmoid(ce_score + t_boost)
-
-                if fusion_alpha > 0.0:
-                    pre_norm = (pre_scores.get(mid, 0.0) - min_pre) / pre_span
-                    final_score = (1.0 - fusion_alpha) * calibrated_ce + fusion_alpha * pre_norm
-                else:
-                    final_score = calibrated_ce
+                final_score = rerank_score(ce_score, prior_rank=pre_rank_map[mid],
+                                           fusion_alpha=rc.rerank_fusion_alpha,
+                                           temporal_boost=t_boost,
+                                           normalized=config.cross_encoder_model in RERANKER_BACKENDS)
 
                 boosted_reranked.append((mid, final_score, ce_score, t_boost))
 
             boosted_reranked.sort(key=lambda x: x[1], reverse=True)
+            # Confidence is a separate eligibility gate. Reserve only a
+            # candidate that would otherwise be allowed in the result set.
+            if rc.min_confidence > 0:
+                boosted_reranked = [row for row in boosted_reranked if row[1] >= rc.min_confidence]
+            if rc.preserve_prior_candidate:
+                by_id = {row[0]: row for row in boosted_reranked}
+                order = preserve_prior_leader(list(by_id), valid_ids, result_limit=k)
+                boosted_reranked = [by_id[mid] for mid in order]
 
             results = []
             for mid, final_score, ce_score, t_boost in boosted_reranked[:k]:
@@ -237,6 +273,7 @@ def search(
                         memory=mem,
                         score=final_score,
                         sources={
+                            **passage_by_id.get(mid, {}),
                             "dense": dict(dense_candidates).get(mid, 0),
                             "bm25": dict(bm25_candidates).get(mid, 0),
                             "graph": dict(graph_candidates).get(mid, 0),
@@ -244,7 +281,9 @@ def search(
                             "boosted": dict(boosted).get(mid, 0),
                             "exact_match": _exact_match_signal(features, mem),
                             "cross_encoder": ce_score,
-                            "cross_encoder_calibrated": _sigmoid(ce_score),
+                            "cross_encoder_calibrated": rerank_score(
+                                ce_score, prior_rank=pre_rank_map[mid],
+                                normalized=config.cross_encoder_model in RERANKER_BACKENDS),
                             "temporal_boost": t_boost,
                         },
                     )
@@ -296,13 +335,10 @@ def search(
                 new_results.append(r)
             results = new_results
 
-        if results and RETRIEVAL_NOISE_SCALE > 0:
+        if results and not rerank and RETRIEVAL_NOISE_SCALE > 0:
             for r in results:
                 noise = random.gauss(0, RETRIEVAL_NOISE_SCALE)
-                if rerank:
-                    r.score = max(0.0, min(1.0, r.score + noise))
-                else:
-                    r.score = max(0.0, r.score + noise)
+                r.score = max(0.0, r.score + noise)
             results.sort(key=lambda r: r.score, reverse=True)
 
         if rerank and results:
@@ -479,9 +515,9 @@ def _apply_boosts(
             if window:
                 center, margin = window
                 dist = abs((mem_d - center).days)
-                kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
-                score *= (1.0 + 1.5 * kernel)
-                if diff_days < 0:
+                if dist <= margin:
+                    score *= 2.5
+                elif diff_days < 0:
                     score *= 0.90
             else:
                 if diff_days < 0:
@@ -566,144 +602,6 @@ def _month_num(name: str) -> str:
         "december": "12",
     }
     return months.get(name.lower(), "01")
-
-
-_DATE_RE = re.compile(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})")
-
-_WORD_TO_NUM = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12,
-}
-
-_DAY_NAMES = {
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-    "friday": 4, "saturday": 5, "sunday": 6,
-}
-
-_RELATIVE_PATTERNS = [
-    # "N days ago" / "ten days ago"
-    (re.compile(r"(\d+)\s+days?\s+ago", re.I), "days"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago", re.I), "days_word"),
-    # "N weeks ago" / "four weeks ago"
-    (re.compile(r"(\d+)\s+weeks?\s+ago", re.I), "weeks"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\s+ago", re.I), "weeks_word"),
-    # "a week ago"
-    (re.compile(r"\ba\s+week\s+ago\b", re.I), "a_week"),
-    # "N months ago"
-    (re.compile(r"(\d+)\s+months?\s+ago", re.I), "months"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\s+ago", re.I), "months_word"),
-    # "a month ago"
-    (re.compile(r"\ba\s+month\s+ago\b", re.I), "a_month"),
-    # "last Saturday" / "last Monday"
-    (re.compile(r"last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.I), "last_day"),
-    # "yesterday"
-    (re.compile(r"\byesterday\b", re.I), "yesterday"),
-    # "past N days" / "in the past two weeks" / "last N weeks"
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+days?\b", re.I), "past_days"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\b", re.I), "past_days_word"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+weeks?\b", re.I), "past_weeks"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\b", re.I), "past_weeks_word"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+months?\b", re.I), "past_months"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b", re.I), "past_months_word"),
-]
-
-
-def _parse_date(date_val: str | datetime | date | float | int | None) -> date | None:
-    if date_val is None:
-        return None
-    if isinstance(date_val, datetime):
-        return date_val.date()
-    if isinstance(date_val, date):
-        return date_val
-    if isinstance(date_val, (int, float)):
-        try:
-            return datetime.fromtimestamp(date_val).date()
-        except Exception:
-            return None
-    if isinstance(date_val, str):
-        s = date_val.strip()
-        m = _DATE_RE.search(s)
-        if m:
-            try:
-                return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            except ValueError:
-                pass
-        try:
-            return datetime.fromisoformat(s).date()
-        except Exception:
-            pass
-    return None
-
-
-def _resolve_temporal_window(query: str, reference_date: str | datetime | date | float | int | None = None) -> tuple[date, int] | None:
-    """Parse relative time expressions and return (center_date, margin_days) or None."""
-    ref_d = _parse_date(reference_date) if reference_date is not None else datetime.now().date()
-    if not ref_d:
-        return None
-
-    for pattern, kind in _RELATIVE_PATTERNS:
-        m = pattern.search(query)
-        if not m:
-            continue
-
-        if kind == "days":
-            n = int(m.group(1))
-            return (ref_d - timedelta(days=n), 2)
-        elif kind == "days_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(days=n), 2)
-        elif kind == "weeks":
-            n = int(m.group(1))
-            return (ref_d - timedelta(weeks=n), 4)
-        elif kind == "weeks_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(weeks=n), 4)
-        elif kind == "a_week":
-            return (ref_d - timedelta(weeks=1), 4)
-        elif kind == "months":
-            n = int(m.group(1))
-            return (ref_d - timedelta(days=n * 30), 7)
-        elif kind == "months_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(days=n * 30), 7)
-        elif kind == "a_month":
-            return (ref_d - timedelta(days=30), 7)
-        elif kind == "last_day":
-            day_name = m.group(1).lower()
-            target_dow = _DAY_NAMES[day_name]
-            diff = (ref_d.weekday() - target_dow) % 7
-            if diff == 0:
-                diff = 7
-            return (ref_d - timedelta(days=diff), 2)
-        elif kind == "yesterday":
-            return (ref_d - timedelta(days=1), 1)
-        elif kind == "past_days":
-            n = int(m.group(1))
-            return (ref_d - timedelta(days=n / 2), max(1, int(n / 2) + 1))
-        elif kind == "past_days_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(days=n / 2), max(1, int(n / 2) + 1))
-        elif kind == "past_weeks":
-            n = int(m.group(1))
-            return (ref_d - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
-        elif kind == "past_weeks_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
-        elif kind == "past_months":
-            n = int(m.group(1))
-            return (ref_d - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
-        elif kind == "past_months_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (ref_d - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
-
-    return None
 
 
 def _get_memory_date(mem: Memory) -> date | None:

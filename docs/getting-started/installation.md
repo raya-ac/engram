@@ -16,10 +16,15 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-requires python 3.11+. first run downloads two small models (~100MB total):
+requires python 3.11+. local models download on first use and reuse cached
+weights on later runs. the defaults are:
 
-- `BAAI/bge-small-en-v1.5` (33MB) — embeddings
-- `cross-encoder/ms-marco-MiniLM-L-6-v2` (22MB) — reranking
+- `BAAI/bge-small-en-v1.5` — embeddings
+- `BAAI/bge-reranker-base` — reranking
+
+download size and inference time depend on the selected model, backend and
+hardware. `cross-encoder/ms-marco-MiniLM-L-6-v2` remains available as an optional
+local reranker through `cross_encoder_model`.
 
 ## storage backends
 

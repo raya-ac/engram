@@ -21,8 +21,15 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from engram.config import Config
-from engram.embeddings import embed_query, embed_documents
+from engram.embeddings import RERANKER_BACKENDS, embed_query, embed_documents
+from engram.rerank_scoring import rerank_score
+from engram.rerank_selection import preserve_prior_leader
+from engram.rerank_passages import rerank_with_passages
 from engram.ann_index import ANNIndex
+from benchmarks.longmemeval.evaluation import (
+    compute_metrics, build_run_metadata, load_resume_rows, write_run_metadata,
+)
+from engram.temporal import _parse_date, _resolve_temporal_window, _temporal_content_query
 
 
 # ── BM25 ─────────────────────────────────────────────────────────
@@ -60,134 +67,34 @@ def _simple_bm25(query: str, corpus: list[dict], top_k: int = 50) -> list[tuple[
     return scores[:top_k]
 
 
+_STOP_WORDS = {
+    "i", "me", "my", "myself", "we", "our", "ours", "yourselves", "you", "your", "yours",
+    "he", "him", "his", "himself", "she", "her", "hers", "it", "its", "they", "them",
+    "what", "which", "who", "whom", "this", "that", "these", "those", "am", "is", "are",
+    "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does",
+    "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until",
+    "while", "of", "at", "by", "for", "with", "about", "against", "between", "into",
+    "through", "during", "before", "after", "above", "below", "to", "from", "up", "down",
+    "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more",
+    "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so",
+    "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now",
+    "ve", "d", "ll", "m", "o", "re", "y", "ain", "aren", "couldn", "didn", "doesn",
+    "hadn", "hasn", "haven", "isn", "ma", "mightn", "mustn", "needn", "shan", "shouldn",
+    "wasn", "weren", "won", "wouldn", "would", "think", "good", "idea", "lately", "feeling",
+    "feel", "tell", "want", "like", "get", "give", "suggest", "know", "help",
+}
+
+
+def _extract_phrases(q: str) -> list[str]:
+    words = [w for w in re.findall(r"[a-zA-Z0-9]+", q.lower()) if w not in _STOP_WORDS]
+    return [f"{words[i]} {words[i+1]}" for i in range(len(words) - 1)]
+
+
 # ── temporal boost ───────────────────────────────────────────────
-
-_DATE_RE = re.compile(r"(\d{4})/(\d{2})/(\d{2})")
-
-_WORD_TO_NUM = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12,
-}
-
-_DAY_NAMES = {
-    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-    "friday": 4, "saturday": 5, "sunday": 6,
-}
-
-_RELATIVE_PATTERNS = [
-    # "N days ago" / "ten days ago"
-    (re.compile(r"(\d+)\s+days?\s+ago", re.I), "days"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago", re.I), "days_word"),
-    # "N weeks ago" / "four weeks ago"
-    (re.compile(r"(\d+)\s+weeks?\s+ago", re.I), "weeks"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\s+ago", re.I), "weeks_word"),
-    # "a week ago"
-    (re.compile(r"\ba\s+week\s+ago\b", re.I), "a_week"),
-    # "N months ago"
-    (re.compile(r"(\d+)\s+months?\s+ago", re.I), "months"),
-    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\s+ago", re.I), "months_word"),
-    # "a month ago"
-    (re.compile(r"\ba\s+month\s+ago\b", re.I), "a_month"),
-    # "last Saturday" / "last Monday"
-    (re.compile(r"last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.I), "last_day"),
-    # "yesterday"
-    (re.compile(r"\byesterday\b", re.I), "yesterday"),
-    # "past N days" / "in the past two weeks" / "last N weeks"
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+days?\b", re.I), "past_days"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\b", re.I), "past_days_word"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+weeks?\b", re.I), "past_weeks"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\b", re.I), "past_weeks_word"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(\d+)\s+months?\b", re.I), "past_months"),
-    (re.compile(r"\b(?:in\s+the\s+)?(?:past|last)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b", re.I), "past_months_word"),
-]
-
-
-def _parse_date(date_str: str):
-    """Parse 'YYYY/MM/DD ...' into a datetime.date."""
-    from datetime import date
-    m = _DATE_RE.match(date_str)
-    if not m:
-        return None
-    return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-
-
-def _resolve_temporal_window(query: str, question_date: str):
-    """Parse relative time expressions and return (center_date, margin_days) or None."""
-    from datetime import date, timedelta
-
-    q_date = _parse_date(question_date)
-    if not q_date:
-        return None
-
-    for pattern, kind in _RELATIVE_PATTERNS:
-        m = pattern.search(query)
-        if not m:
-            continue
-
-        if kind == "days":
-            n = int(m.group(1))
-            return (q_date - timedelta(days=n), 2)
-        elif kind == "days_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(days=n), 2)
-        elif kind == "weeks":
-            n = int(m.group(1))
-            return (q_date - timedelta(weeks=n), 4)
-        elif kind == "weeks_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(weeks=n), 4)
-        elif kind == "a_week":
-            return (q_date - timedelta(weeks=1), 4)
-        elif kind == "months":
-            n = int(m.group(1))
-            return (q_date - timedelta(days=n * 30), 7)
-        elif kind == "months_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(days=n * 30), 7)
-        elif kind == "a_month":
-            return (q_date - timedelta(days=30), 7)
-        elif kind == "last_day":
-            day_name = m.group(1).lower()
-            target_dow = _DAY_NAMES[day_name]
-            diff = (q_date.weekday() - target_dow) % 7
-            if diff == 0:
-                diff = 7  # "last Saturday" when today is Saturday means 7 days ago
-            return (q_date - timedelta(days=diff), 2)
-        elif kind == "yesterday":
-            return (q_date - timedelta(days=1), 1)
-        elif kind == "past_days":
-            n = int(m.group(1))
-            return (q_date - timedelta(days=n / 2), max(1, int(n / 2) + 1))
-        elif kind == "past_days_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(days=n / 2), max(1, int(n / 2) + 1))
-        elif kind == "past_weeks":
-            n = int(m.group(1))
-            return (q_date - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
-        elif kind == "past_weeks_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(days=n * 7 / 2), max(2, int(n * 7 / 2) + 2))
-        elif kind == "past_months":
-            n = int(m.group(1))
-            return (q_date - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
-        elif kind == "past_months_word":
-            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
-            if n:
-                return (q_date - timedelta(days=n * 30 / 2), max(4, int(n * 30 / 2) + 4))
-
-    return None
-
 
 def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
                           query: str = ""):
-    from datetime import timedelta
-
     q_date = _parse_date(question_date)
     if not q_date:
         return
@@ -195,7 +102,11 @@ def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
     # try to resolve a specific temporal window from the query
     window = _resolve_temporal_window(query, question_date) if query else None
 
+    seen = set()
     for doc in corpus:
+        if doc["id"] in seen:
+            continue
+        seen.add(doc["id"])
         d_date = _parse_date(doc.get("timestamp", ""))
         if not d_date or doc["id"] not in scores:
             continue
@@ -205,9 +116,9 @@ def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
         if window:
             center, margin = window
             dist = abs((d_date - center).days)
-            kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
-            scores[doc["id"]] *= (1.0 + 1.5 * kernel)
-            if diff_days < 0:
+            if dist <= margin:
+                scores[doc["id"]] *= 2.5
+            elif diff_days < 0:
                 scores[doc["id"]] *= 0.90
         else:
             # generic proximity boost (no temporal expression detected)
@@ -222,7 +133,8 @@ def _apply_temporal_boost(scores: dict, corpus: list[dict], question_date: str,
 # ── retrieval ────────────────────────────────────────────────────
 
 def engram_retrieve(query: str, entry: dict, config: Config,
-                    top_k: int = 50, use_rerank: bool = False) -> list[dict]:
+                    top_k: int = 50, use_rerank: bool = False,
+                    result_k: int = 5) -> list[dict]:
     sessions = entry["haystack_sessions"]
     sids = entry["haystack_session_ids"]
     dates = entry["haystack_dates"]
@@ -275,6 +187,7 @@ def engram_retrieve(query: str, entry: dict, config: Config,
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
+    score_details = {}
     # cross-encoder rerank
     if use_rerank and ranked:
         from engram.embeddings import cross_encoder_rerank
@@ -283,7 +196,17 @@ def engram_retrieve(query: str, entry: dict, config: Config,
         id_to_asst = {doc["id"]: doc["text"] for doc in asst_corpus}
         rerank_texts = [(id_to_user.get(did, "") + " " + id_to_asst.get(did, "")).strip()
                         for did in rerank_ids]
-        reranked = cross_encoder_rerank(query, rerank_texts, config.cross_encoder_model)
+        if config.retrieval.rerank_passage_fallback:
+            reranked, passage_details = rerank_with_passages(
+                query, rerank_texts, config.cross_encoder_model,
+                rerank_fn=cross_encoder_rerank,
+                confidence_floor=config.retrieval.rerank_passage_floor,
+                passage_query=_temporal_content_query(query, question_date),
+            )
+        else:
+            reranked = cross_encoder_rerank(query, rerank_texts, config.cross_encoder_model)
+            passage_details = {}
+        passage_by_id = {rerank_ids[index]: trace for index, trace in passage_details.items()}
         new_ranked = [(rerank_ids[idx], score) for idx, score in reranked]
 
         # post-rerank temporal boost — cross-encoder wipes pre-rerank scores,
@@ -300,27 +223,28 @@ def engram_retrieve(query: str, entry: dict, config: Config,
         fusion_alpha = getattr(config.retrieval, "rerank_fusion_alpha", 0.0)
         pre_rank_map = {did: i for i, (did, _) in enumerate(ranked[:len(rerank_ids)])}
 
-        def _sig(x: float) -> float:
-            return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, x))))
-
         boosted = []
         for did, score in new_ranked:
             d_date = id_to_date.get(did)
             t_boost = 0.0
             if window and d_date:
                 dist = abs((d_date - center).days)
-                kernel = math.exp(-0.5 * (dist / max(1.0, float(margin))) ** 2)
-                t_boost = 5.0 * kernel
+                if dist <= margin:
+                    t_boost = 5.0
 
-            calibrated_ce = _sig(score + t_boost)
-            if fusion_alpha > 0.0 and did in pre_rank_map:
-                pre_norm = 1.0 - (pre_rank_map[did] / len(rerank_ids))
-                final_score = (1.0 - fusion_alpha) * calibrated_ce + fusion_alpha * pre_norm
-            else:
-                final_score = calibrated_ce
+            final_score = rerank_score(score, prior_rank=pre_rank_map[did],
+                                       fusion_alpha=fusion_alpha, temporal_boost=t_boost,
+                                       normalized=config.cross_encoder_model in RERANKER_BACKENDS)
             boosted.append((did, final_score))
+            score_details[did] = {**passage_by_id.get(did, {}), "cross_encoder": score,
+                                  "prior_rank": pre_rank_map[did] + 1,
+                                  "temporal_boost": t_boost}
 
         new_ranked = sorted(boosted, key=lambda x: x[1], reverse=True)
+        if config.retrieval.preserve_prior_candidate:
+            by_id = dict(new_ranked)
+            order = preserve_prior_leader(list(by_id), rerank_ids, result_limit=result_k)
+            new_ranked = [(did, by_id[did]) for did in order]
 
         reranked_set = set(rerank_ids)
         for did, score in ranked:
@@ -334,37 +258,10 @@ def engram_retrieve(query: str, entry: dict, config: Config,
         if doc["id"] not in id_to_doc:
             id_to_doc[doc["id"]] = doc
 
-    return [{"corpus_id": did, "text": id_to_doc[did]["text"], "timestamp": id_to_doc[did]["timestamp"]}
-            for did, _ in ranked if did in id_to_doc]
-
-
-# ── metrics ──────────────────────────────────────────────────────
-
-def compute_metrics(ranked_ids: list[str], correct_ids: set[str],
-                    ks: list[int] = [1, 3, 5, 10, 30, 50]) -> dict:
-    metrics = {}
-    for k in ks:
-        top_k_ids = set(ranked_ids[:k])
-        recall_any = float(any(cid in top_k_ids for cid in correct_ids))
-        recall_all = float(all(cid in top_k_ids for cid in correct_ids))
-
-        relevances = [1.0 if rid in correct_ids else 0.0 for rid in ranked_ids[:k]]
-        ideal = sorted([1.0 if rid in correct_ids else 0.0 for rid in ranked_ids], reverse=True)[:k]
-
-        def dcg(rels):
-            if not rels:
-                return 0.0
-            val = rels[0]
-            for i, r in enumerate(rels[1:], 2):
-                val += r / np.log2(i)
-            return val
-
-        idcg = dcg(ideal)
-        ndcg_val = dcg(relevances) / idcg if idcg > 0 else 0.0
-        metrics[f"recall_any@{k}"] = recall_any
-        metrics[f"recall_all@{k}"] = recall_all
-        metrics[f"ndcg_any@{k}"] = ndcg_val
-    return metrics
+    return [{"corpus_id": did, "text": id_to_doc[did]["text"],
+             "timestamp": id_to_doc[did]["timestamp"], "score": score,
+             "sources": score_details.get(did, {})}
+            for did, score in ranked if did in id_to_doc]
 
 
 # ── main ─────────────────────────────────────────────────────────
@@ -374,24 +271,48 @@ def main():
     parser.add_argument("dataset", help="Path to longmemeval JSON")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--rerank", action="store_true", help="Cross-encoder rerank top-35")
-    parser.add_argument("--fusion-alpha", type=float, default=0.0, help="Late fusion weight for pre-rerank RRF (0.0=pure cross-encoder)")
+    parser.add_argument("--fusion-alpha", type=float, default=None, help="Optional prior rank blend (default: configured value)")
     parser.add_argument("--output", help="Output JSONL path")
     parser.add_argument("--resume", action="store_true", help="Resume from existing output JSONL")
+    parser.add_argument("--config", help="Explicit config file; otherwise use package defaults")
+    parser.add_argument("--reranker-model", help="Explicit reranker model")
+    parser.add_argument("--embedding-backend", default="sentence_transformers", choices=["sentence_transformers", "mlx"])
+    parser.add_argument("--question-id", action="append", default=[], help="Run only selected question IDs")
+    parser.add_argument("--result-k", type=int, default=5, help="Requested result window for hybrid coverage (default: 5)")
+    parser.add_argument("--no-preserve-prior", action="store_true", help="Disable hybrid candidate coverage for comparison")
+    parser.add_argument("--no-passage-fallback", action="store_true", help="Disable focused excerpts on low-scoring long documents")
+    parser.add_argument("--passage-floor", type=float, default=None, help="Override the local excerpt activation floor (0 to 1)")
     args = parser.parse_args()
+    if args.fusion_alpha is not None and not 0.0 <= args.fusion_alpha <= 1.0:
+        parser.error("--fusion-alpha must be between 0 and 1")
+    if args.passage_floor is not None and not 0.0 <= args.passage_floor <= 1.0:
+        parser.error("--passage-floor must be between 0 and 1")
+    if args.result_k < 1:
+        parser.error("--result-k must be positive")
 
-    config = Config.load()
-    if args.fusion_alpha > 0.0:
+    config = Config.load(args.config) if args.config else Config()
+    if args.reranker_model:
+        config.cross_encoder_model = args.reranker_model
+    if args.no_preserve_prior:
+        config.retrieval.preserve_prior_candidate = False
+    if args.no_passage_fallback:
+        config.retrieval.rerank_passage_fallback = False
+    from engram.embeddings import set_backend
+    set_backend(args.embedding_backend)
+    if args.fusion_alpha is not None:
         config.retrieval.rerank_fusion_alpha = args.fusion_alpha
-
-    print("warming up...")
-    embed_query("warmup", config.embedding_model)
-    if args.rerank:
-        from engram.embeddings import cross_encoder_rerank
-        cross_encoder_rerank("warmup", ["warmup"], config.cross_encoder_model)
+    if args.passage_floor is not None:
+        config.retrieval.rerank_passage_floor = args.passage_floor
 
     print(f"loading dataset: {args.dataset}")
     data = json.load(open(args.dataset))
 
+    if args.question_id:
+        selected = set(args.question_id)
+        missing = selected - {row["question_id"] for row in data}
+        if missing:
+            parser.error(f"Unknown question IDs: {sorted(missing)}")
+        data = [row for row in data if row["question_id"] in selected]
     if args.limit > 0:
         data = data[:args.limit]
 
@@ -403,38 +324,52 @@ def main():
     if args.rerank:
         mode += "rerank_"
     output_path = args.output or f"engram_retrieval_{mode}results.jsonl"
+    if not args.resume and (Path(output_path).exists() or Path(str(output_path) + ".metadata.json").exists()):
+        parser.error("Output or metadata already exists; use --resume or a new output filename")
 
     all_metrics = {f"{m}@{k}": [] for m in ["recall_any", "recall_all", "ndcg_any"] for k in [1, 3, 5, 10, 30, 50]}
     per_type_metrics = {}
     times = []
 
+    root = Path(__file__).resolve().parents[2]
+    sources = ["benchmarks/longmemeval/run_engram.py", "benchmarks/longmemeval/evaluation.py",
+               "engram/embeddings.py", "engram/ann_index.py", "engram/config.py",
+               "engram/temporal.py", "engram/rerank_scoring.py", "engram/rerank_selection.py",
+               "engram/rerank_passages.py"]
+    metadata = build_run_metadata(args.dataset, source_paths={p: root / p for p in sources},
+        embedding_model=config.embedding_model, cross_encoder_model=config.cross_encoder_model,
+        config={"embedding_backend": args.embedding_backend, "embedding_dim": config.embedding_dim,
+                "rerank": args.rerank, "fusion_alpha": config.retrieval.rerank_fusion_alpha,
+                "top_k": 50, "rerank_candidates": 35, "limit": args.limit,
+                "result_k": args.result_k, "preserve_prior_candidate": config.retrieval.preserve_prior_candidate,
+                "rerank_passage_fallback": config.retrieval.rerank_passage_fallback,
+                "passage_confidence_floor": config.retrieval.rerank_passage_floor,
+                "confidence_filter": False,
+                "question_ids": sorted(args.question_id)})
+    resuming_existing = args.resume and Path(output_path).is_file()
+    resumed = load_resume_rows(output_path, metadata) if args.resume else []
     processed_ids = set()
-    if args.resume and os.path.exists(output_path):
-        with open(output_path) as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                    qid = row["question_id"]
-                    processed_ids.add(qid)
-                    rm = row.get("retrieval_results", {}).get("metrics", {}).get("session", {})
-                    for k, v in rm.items():
-                        if k in all_metrics:
-                            all_metrics[k].append(v)
-                    qtype = row.get("question_type")
-                    if qtype:
-                        if qtype not in per_type_metrics:
-                            per_type_metrics[qtype] = {k: [] for k in all_metrics}
-                        for k, v in rm.items():
-                            if k in per_type_metrics[qtype]:
-                                per_type_metrics[qtype][k].append(v)
-                except Exception:
-                    pass
-        print(f"resuming from {len(processed_ids)} already processed questions")
-
-    out_mode = "a" if (args.resume and os.path.exists(output_path)) else "w"
+    for row in resumed:
+        processed_ids.add(row["question_id"])
+        rm = row["retrieval_results"]["metrics"]["session"]
+        qtype = row["question_type"]
+        per_type_metrics.setdefault(qtype, {key: [] for key in all_metrics})
+        for key in all_metrics:
+            all_metrics[key].append(rm[key])
+            per_type_metrics[qtype][key].append(rm[key])
+    if resumed:
+        print(f"resuming from {len(processed_ids)} verified questions")
+    print(f"models: {config.embedding_model} / {config.cross_encoder_model}")
+    print(f"run fingerprint: {metadata['fingerprint']}")
+    print("warming up...", flush=True)
+    embed_query("warmup", config.embedding_model)
+    if args.rerank:
+        from engram.embeddings import cross_encoder_rerank
+        cross_encoder_rerank("warmup", ["warmup"], config.cross_encoder_model)
+    out_mode = "a" if resuming_existing else "x"
     with open(output_path, out_mode) as out:
+        if out_mode == "x":
+            write_run_metadata(output_path, metadata)
         for i, entry in enumerate(eval_data):
             if entry["question_id"] in processed_ids:
                 continue
@@ -445,7 +380,7 @@ def main():
                 continue
 
             results = engram_retrieve(entry["question"], entry, config,
-                                      top_k=50, use_rerank=args.rerank)
+                                      top_k=50, use_rerank=args.rerank, result_k=args.result_k)
 
             elapsed = time.time() - t0
             times.append(elapsed)
@@ -474,6 +409,7 @@ def main():
                 },
             }
             out.write(json.dumps(log_entry) + "\n")
+            out.flush()
 
             r5 = metrics["recall_any@5"]
             running_r5 = np.mean(all_metrics["recall_any@5"])
@@ -502,7 +438,7 @@ def main():
         print(f"  {qtype:<30} n={n:<4} R@5={r5:>5.1f}%  R@10={r10:>5.1f}%")
 
     print()
-    avg_s = np.mean(times)
+    avg_s = np.mean(times) if times else 0.0
     total_s = sum(times)
     print(f"timing: avg={avg_s:.2f}s/question, total={total_s:.0f}s ({total_s/60:.1f}min)")
     print(f"output: {output_path}")

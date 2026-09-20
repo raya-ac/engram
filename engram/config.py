@@ -21,6 +21,9 @@ class RetrievalConfig:
     exact_match_boost: float = 1.22
     search_cache_size: int = 128
     rerank_fusion_alpha: float = 0.0
+    preserve_prior_candidate: bool = True
+    rerank_passage_fallback: bool = True
+    rerank_passage_floor: float = 0.001
 
 
 @dataclass

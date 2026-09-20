@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from inspect import signature
 
 import numpy as np
 
@@ -346,11 +347,12 @@ RERANKER_BACKENDS = {
 
 
 def cross_encoder_rerank(query: str, documents: list[str],
-                          model_name: str = "BAAI/bge-reranker-base") -> list[tuple[int, float]]:
+                         model_name: str = "BAAI/bge-reranker-base") -> list[tuple[int, float]]:
     """Rerank documents by relevance to query.
 
-    Supports local cross-encoders (ms-marco-MiniLM) and cloud rerankers
-    (Voyage rerank-2.5). Auto-detects backend from model name.
+    Local cross-encoders return raw logits, independent of their configured
+    activation. Voyage rerankers retain their API relevance scores. Callers
+    that calibrate or combine scores must account for this backend difference.
     """
     if not documents:
         return []
@@ -359,18 +361,22 @@ def cross_encoder_rerank(query: str, documents: list[str],
         return _rerank_voyage(query, documents, model_name)
 
     # local cross-encoder
+    import torch
+
     model = _get_cross_encoder(model_name)
     pairs = [(query, doc) for doc in documents]
+    # Older sentence-transformers releases call this argument activation_fct.
+    activation_key = "activation_fn" if "activation_fn" in signature(model.predict).parameters else "activation_fct"
+    prediction_options = {activation_key: torch.nn.Identity(), "show_progress_bar": False}
     try:
-        scores = model.predict(pairs, batch_size=16, show_progress_bar=False)
+        scores = model.predict(pairs, batch_size=16, **prediction_options)
     except Exception as e:
         if "out of memory" in str(e).lower() or "mps" in str(e).lower():
-            import torch
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
             if hasattr(model, "model") and hasattr(model.model, "to"):
                 model.model.to("cpu")
-            scores = model.predict(pairs, batch_size=8, show_progress_bar=False)
+            scores = model.predict(pairs, batch_size=8, **prediction_options)
         else:
             raise
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)

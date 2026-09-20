@@ -59,7 +59,8 @@ content → canonicalize → enrich (keywords+tags+summary) → embed
 ```
 query → intent classification → 4 parallel channels
     → RRF fusion → temporal boost → cross-encoder rerank
-    → deep MLP rerank → noise + threshold gate
+    → confidence gate + prior coverage → optional deep MLP rerank
+    → noise only when cross-encoder reranking is off
     → record access → return results
 ```
 

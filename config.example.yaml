@@ -12,8 +12,8 @@ postgres_dsn: ""                 # e.g. postgresql://user:pass@localhost:5432/en
 # gemini: gemini-embedding-001 (768d, free tier)
 embedding_model: BAAI/bge-small-en-v1.5
 # reranker — local or API
-# local:  BAAI/bge-reranker-base (recommended, high accuracy)
-#         cross-encoder/ms-marco-MiniLM-L-6-v2 (lighter, legacy)
+# local:  BAAI/bge-reranker-base (default)
+#         cross-encoder/ms-marco-MiniLM-L-6-v2 (smaller alternative)
 # voyage: rerank-2.5 (best quality), rerank-2.5-lite (faster/cheaper)
 cross_encoder_model: BAAI/bge-reranker-base
 hf_token: ""                        # Hugging Face token for authenticated downloads / rate limits
@@ -28,8 +28,12 @@ embedding_dim: 384
 retrieval:
   top_k: 10
   rrf_k: 60
-  min_confidence: 0.60
+  min_confidence: 0.60        # final result gate, independent of excerpt activation
   rerank_candidates: 20
+  rerank_fusion_alpha: 0.0    # optional blend with pre-rerank rank (0 disables score blending)
+  preserve_prior_candidate: true  # keep the best eligible hybrid match in the result window
+  rerank_passage_fallback: true  # retry one focused excerpt when all local base scores are very low
+  rerank_passage_floor: 0.001    # activation floor; 0 disables retries, not the final result gate
   dense_multiplier: 3          # candidates = top_k * multiplier
   bm25_multiplier: 3
 

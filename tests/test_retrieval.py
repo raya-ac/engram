@@ -202,13 +202,14 @@ class TestCalibrationAndFusion:
     def test_rerank_threshold_gating_calibrated(self, store_with_memories, config, monkeypatch):
         # logit 2.0 -> sigmoid ~0.88; logit -2.0 -> sigmoid ~0.12
         def mock_ce(query, docs, model):
-            return [(0, 2.0), (1, -2.0)] if len(docs) >= 2 else [(0, 2.0)]
+            return [(index, 2.0 if index == 0 else -2.0) for index in range(len(docs))]
 
         monkeypatch.setattr("engram.retrieval.cross_encoder_rerank", mock_ce)
         config.retrieval.min_confidence = 0.60
 
         results = search("test", store_with_memories, config, top_k=5, rerank=True)
         # only the candidate with calibrated score >= 0.60 should pass
+        assert len(results) == 1
         for r in results:
             assert r.score >= 0.60
 
@@ -255,4 +256,3 @@ class TestCalibrationAndFusion:
         assert boosted["m_center"] > boosted["m_margin"] > boosted["m_far"]
         # decay is smooth and strictly positive
         assert boosted["m_far"] > 0
-

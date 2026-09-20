@@ -1,5 +1,24 @@
 # Changelog
 
+## unreleased
+
+- independently confirm 470/470 session recall-any@5 in a fresh full LongMemEval development run without saved-score reuse; publish text-free question rankings and provenance, with abstention, confidence and native API limitations
+- correct the comparison table: label external answer-accuracy and retrieval metrics separately, link primary reports and remove unsupported misses-out-of-470 claims
+- use `BAAI/bge-reranker-base` as the default local reranker; keep MiniLM available through config
+- return raw local reranker logits and apply a sigmoid once; preserve hosted normalized scores
+- retry at most one focused source excerpt per eligible long document when every full-document local sigmoid score is below `rerank_passage_floor` (default 0.001); keep the 0.6 production confidence gate independent and retain max full/excerpt aggregation
+- match conservative regular English singular/plural forms during excerpt selection, counting each original query term once per sentence
+- retain full/excerpt raw scores and source offsets; keep the semantic query unchanged and exclude resolved relative-time text only from lexical selection
+- remove extra lexical/prior bonuses and random noise from cross-encoder results; honor the optional bounded `rerank_fusion_alpha` blend
+- keep the best confidence-eligible hybrid candidate in requests for at least two results, without changing scores or replacing the rerank winner; expose `preserve_prior_candidate` to disable coverage
+- separate cached rerank results when the fusion weight, confidence gate, coverage setting, passage fallback flag or activation floor changes
+- preserve query spelling instead of applying a single-word substitution
+- share date parsing and relative windows with the benchmark, and apply its temporal boost once per session
+- correct NDCG rank discounts and include unretrieved answers in the ideal ranking
+- record benchmark dataset/source hashes, model names, result window, passage fallback flag/floor and settings; support `--no-passage-fallback` and `--passage-floor`, and reject incompatible or duplicate resume records
+- preserve configured fusion and passage activation values unless the corresponding CLI option overrides them; document the activation floor as a benchmark development choice, not a calibrated probability or held-out accuracy claim
+- refuse existing output paths for fresh benchmark runs and claim the result file before writing new provenance
+
 ## 0.6.2 (September 19, 2026)
 
 - add `hf_token` config and env fallback so model downloads authenticate without manual huggingface-cli logins

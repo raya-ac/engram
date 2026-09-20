@@ -57,15 +57,26 @@ the cross-encoder reranker also supports cloud backends:
 
 | model | provider | notes |
 |-------|----------|-------|
-| `cross-encoder/ms-marco-MiniLM-L-6-v2` | local | default, ~300ms for 20 docs |
-| `rerank-2.5` | Voyage AI | best quality, 32k context |
-| `rerank-2.5-lite` | Voyage AI | faster/cheaper |
+| `BAAI/bge-reranker-base` | local | default |
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | local | optional alternative |
+| `rerank-2.5` | Voyage AI | hosted reranker |
+| `rerank-2.5-lite` | Voyage AI | hosted reranker |
 
 set in config.yaml:
 
 ```yaml
 cross_encoder_model: rerank-2.5
 ```
+
+local rerankers return raw logits even when the model's own default activation
+is a sigmoid. ordinary retrieval applies that sigmoid once. hosted scores keep
+their normalized scale. optional temporal and prior rank adjustments are
+described in [retrieval internals](../architecture/retrieval.md#cross-encoder).
+local models also support the default `rerank_passage_fallback` excerpt retry
+when every full-document sigmoid score is below `rerank_passage_floor`
+(default 0.001). the independent `min_confidence` gate defaults to 0.6. retries can add
+one extra pair per eligible long document; hosted rerankers skip this step.
+set `retrieval.rerank_passage_fallback: false` to disable it.
 
 ## local backends
 

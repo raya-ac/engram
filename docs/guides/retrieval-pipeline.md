@@ -22,13 +22,16 @@ query
      temporal + importance boosting
            │
            ▼
-     cross-encoder reranking (ms-marco-MiniLM or Voyage rerank-2.5)
+     optional cross-encoder reranking (BGE by default; MiniLM or Voyage optional)
+           │
+           ▼
+     confidence gate + prior coverage when cross-encoder reranking is on
            │
            ▼
      deep MLP reranker (optional, trained on access patterns)
            │
            ▼
-     gaussian noise (ACT-R, σ=0.02) + threshold gate
+     noise only when cross-encoder reranking is off
            │
            ▼
      final top-k results
@@ -83,21 +86,66 @@ the k=60 constant comes from [Cormack et al. 2009](https://cormack.uwaterloo.ca/
 - recency decay (Ebbinghaus): `exp(-0.693 * age_days / half_life)` for episodic memories
 - access frequency boost: `1.0 + 0.1 * log(1 + access_count)`
 
+production search and the benchmark share date parsing and relative windows in
+`engram/temporal.py`, including slash-separated dates, hyphenated dates and ISO
+timestamps.
+
 ## stage 4: cross-encoder reranking
 
-top-20 candidates are jointly scored by a cross-encoder (query + document → relevance score). more accurate than bi-encoder similarity but O(n*q) so only applied to the shortlist.
+the configured shortlist, 20 candidates by default, is scored by a cross-encoder
+using each query/document pair. the default local model is
+`BAAI/bge-reranker-base`; MiniLM and supported Voyage models are optional.
 
-supports local (`cross-encoder/ms-marco-MiniLM-L-6-v2`) and cloud (`rerank-2.5` via Voyage API).
+with `rerank_passage_fallback: true` (the default), a local reranker can retry
+one excerpt per long document when every full-document sigmoid score is below
+`rerank_passage_floor` (default 0.001). each excerpt contains a matching sentence and nearby context,
+is copied directly from the source, and is capped at 160 words. shorter
+documents and documents without matching query terms keep their original
+scores. the same semantic query scores both versions; the larger raw score
+survives. matching supports conservative regular English singular/plural forms
+and counts each original query term once per sentence. hosted rerankers skip
+the retry.
 
-## stage 5: deep MLP reranker
+this adds inference work and may omit useful context. set
+`rerank_passage_fallback: false` to disable it. [retrieval internals](../architecture/retrieval.md#focused-excerpt-retry)
+describe date handling and the raw-score/source-offset traces. the final
+`min_confidence` gate independently controls returned results, with a default
+of 0.6, even when the excerpt improves a result's rank. the activation floor was
+chosen during development on LongMemEval; evaluation on that dataset is not
+held-out accuracy, and neither threshold is a calibrated probability.
 
-optional learned reranker trained on access patterns. 2-layer MLP taking 10 features (cosine similarity, importance, access count, age, layer, retention score) → relevance prediction. <1ms per query.
+local logits pass through one sigmoid. hosted relevance scores keep their
+normalized scale. temporal evidence applies in logit space before an optional
+blend with reciprocal pre-rerank position. set `rerank_fusion_alpha` between 0
+and 1 to enable that blend; 0 is the default. final scores stay between 0 and 1,
+without separate lexical bonuses. these scores are not measured probabilities
+that a memory is correct.
 
-train with `train_reranker` after accumulating usage data.
+## stage 5: confidence gate and prior coverage
 
-## stage 6: noise + threshold
+cross-encoder results receive no random ranking noise. `min_confidence` filters
+their final scores before coverage. with `preserve_prior_candidate: true`, a
+request for at least two results retains the best eligible hybrid candidate.
+if missing, that candidate moves to the last requested position while the
+rerank winner stays first. coverage cannot admit a candidate rejected by the
+confidence gate.
 
-small gaussian noise (σ=0.02, [ACT-R](https://dl.acm.org/doi/10.1145/3765766.3765803) inspired) for beneficial retrieval variation. minimum score threshold gates out low-quality results.
+scores stay unchanged, so preserve the returned order instead of sorting again
+by score. fusion weight 0 disables score blending; candidate coverage can still
+adjust order. set `preserve_prior_candidate: false` to disable that step.
+
+## stage 6: deep MLP reranker
+
+an optional learned reranker uses access patterns after candidate selection.
+its two-layer MLP combines features including cosine similarity, importance,
+access count, age, layer and retention score. train with `train_reranker` after
+accumulating usage data.
+
+## stage 7: noise and cache
+
+searches with reranking off retain the gaussian noise term (σ=0.02). the rerank
+cache includes fusion, confidence, coverage, passage fallback and its separate
+activation floor, so policy changes take effect on the next search.
 
 ## retrieval profiles
 
@@ -123,6 +171,10 @@ retrieval:
   rrf_k: 60              # RRF constant
   min_confidence: 0.60   # threshold gate
   rerank_candidates: 20  # cross-encoder shortlist
+  rerank_fusion_alpha: 0.0 # optional prior rank blend, from 0 to 1
+  preserve_prior_candidate: true # keep the best eligible hybrid candidate
+  rerank_passage_fallback: true # retry one focused excerpt when all local scores are low
+  rerank_passage_floor: 0.001 # activation floor, independent of min_confidence
   dense_multiplier: 3    # dense candidates = top_k * 3
   bm25_multiplier: 3     # BM25 candidates = top_k * 3
 ```

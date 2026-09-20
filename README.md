@@ -36,44 +36,64 @@ API embedding or LLM backend sends the relevant inputs to that provider.
 
 ## benchmarks
 
-evaluated across the 470 retrieval questions in **LongMemEval** (ICLR 2025, `longmemeval_s_cleaned.json`):
+**100.0% session recall-any@5 (470/470)** on LongMemEval-S cleaned,
+confirmed by a fresh full run on September 20, 2026. every embedding and
+reranker score was recomputed; no saved inference scores were reused.
+the run had **0 top-five misses**. rank-one recall was
+439/470 (93.4%).
 
-| system | R@5 (any) | misses (out of 470) | stack |
-| --- | ---: | ---: | --- |
-| **Engram 0.6.2** | **99.4%** | **3** | local HNSW + BM25 + relative temporal resolver + cross-encoder |
-| MemPalace | 96.6% | 16 | spatial mind palaces |
-| Emergence AI | 86.0% | ~66 | recursive summarization + vector store |
-| Mem0 | ~79.5% | ~96 | graph memory + dense embeddings |
-| dense RAG (OpenAI) | ~68.4% | ~148 | cosine similarity on `text-embedding-3-small` |
-| BM25 baseline | ~58.2% | ~196 | lexical keyword matching |
+this is a development-set measurement: the dataset was also used for tuning.
+the evaluation skips 30 abstention questions and disables the production
+confidence cutoff. it measures whether at least one labelled answer session
+appears in the first five results. generated-answer accuracy is not measured.
+the code is an unreleased development candidate.
 
-### by question type
+[method and limitations](docs/architecture/benchmarks.md) ·
+[verified result and provenance](docs/assets/benchmarks/2026-09-20-fresh.json) ·
+[question-level session rankings](docs/assets/benchmarks/2026-09-20-session-rankings.json)
 
-| question type | evaluated | R@5 | R@10 |
-| --- | ---: | ---: | ---: |
-| knowledge update | 72 | 100.0% | 100.0% |
-| multi-session | 121 | 100.0% | 100.0% |
-| single-session assistant | 56 | 100.0% | 100.0% |
-| single-session user | 64 | 100.0% | 100.0% |
-| temporal reasoning | 127 | 99.2% | 99.2% |
-| single-session preference | 30 | 93.3% | 96.7% |
+### engram and other systems
 
-run the benchmark locally:
+these are reported figures with their actual metrics. external systems were
+not rerun here, and their metrics, question sets and evaluation setups differ.
+the table is a reference comparison, not a shared ranking.
+
+| system | reported result | metric and evaluation scope |
+| --- | ---: | --- |
+| **Engram — current development candidate** | **100.0% (470/470)** | **session recall-any@5; fresh local run, 470 answerable questions** |
+| Engram 0.6.2 — historical | 99.4% (467/470) | previously published session recall-any@5; not rerun here |
+| [MemPalace — raw](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 96.6% | reported retrieval R@5; 500 evaluated questions in its report |
+| [MemPalace — hybrid v4 + Haiku](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 100% | reported retrieval R@5 on 500 questions; explicitly tuned using failure cases |
+| [EmergenceMem Internal](https://www.emergence.ai/blog/sota-on-longmemeval-with-rag) | 86.0% | reported answer accuracy on 500 LongMemEval-S questions |
+| [Mem0 — new algorithm](https://mem0.ai/blog/mem0-the-token-efficient-memory-algorithm) | 94.4% | reported LongMemEval answer accuracy; evaluation count not stated in that report |
+| dense RAG — OpenAI embeddings | — | no verified source for the earlier 68.4% figure; not measured in this run |
+| BM25 baseline | — | no verified source for the earlier 58.2% figure; not measured in this run |
+
+the previous table incorrectly put answer accuracy under an R@5 heading and
+converted other systems' percentages into misses out of 470. those comparisons
+have been removed. [LongMemEval's retrieval methodology](https://github.com/xiaowu0162/LongMemEval#memory-retrieval)
+excludes the 30 abstention questions; QA evaluation measures a different task.
+
+### by question type — fresh run
+
+| question type | evaluated | hits in top 5 | R@5 | R@10 |
+| --- | ---: | ---: | ---: | ---: |
+| knowledge-update | 72 | 72 | 100.0% | 100.0% |
+| multi-session | 121 | 121 | 100.0% | 100.0% |
+| single-session-assistant | 56 | 56 | 100.0% | 100.0% |
+| single-session-preference | 30 | 30 | 100.0% | 100.0% |
+| single-session-user | 64 | 64 | 100.0% | 100.0% |
+| temporal-reasoning | 127 | 127 | 100.0% | 100.0% |
+
+run the same configuration locally on Apple Silicon:
 
 ```sh
-python benchmarks/longmemeval/run_engram.py benchmarks/longmemeval/data/longmemeval_s_cleaned.json --rerank
+python benchmarks/longmemeval/run_engram.py data/longmemeval_s_cleaned.json \
+  --rerank --embedding-backend mlx --output fresh-results.jsonl
 ```
 
-### on mempalace's claims
-
-mempalace advertises *"local-first AI memory. verbatim storage, pluggable backend, 96.6% R@5 raw on LongMemEval — zero API calls."*
-
-breaking that down:
-
-- **"96.6% R@5 raw"**: 96.6% means 16 complete retrieval failures across basic temporal links and cross-session threads. engram hits **99.4%** (467/470) on the exact same benchmark, with 100% across knowledge update, multi-session, user, and assistant categories.
-- **"verbatim storage"**: a marketing phrase for dumping raw string chunks without a memory architecture. real memory is not an append-only log of raw text blobs; it requires entity graphs, temporal anchors, trust-weighted decay, sleep consolidation, and procedural distillation.
-- **"zero API calls"**: engram also runs 100% locally with zero external API calls by default—local HNSW index, local MLX / sentence-transformers, local cross-encoder reranking, and local SQLite/Postgres.
-- **"pluggable backend"**: mempalace swaps vector storage formats. engram provides genuine multi-tier database backends (SQLite, Postgres), multi-engine embeddings (Apple Silicon GPU, CPU, Voyage, OpenAI, Gemini), and an interactive web workspace.
+use a new output path for each run. the published evidence records dataset and
+source hashes, model revisions, package versions, settings and all question IDs.
 
 ## get it running
 
@@ -88,7 +108,8 @@ pip install -e ".[dev]"
 cp config.example.yaml config.yaml
 ```
 
-the default embedding model is `BAAI/bge-small-en-v1.5`. local models need to be
+the default embedding model is `BAAI/bge-small-en-v1.5`; the default reranker is
+`BAAI/bge-reranker-base`. local models need to be
 available on first use; subsequent runs can use their cached weights. the default
 backend selects an available local implementation. set
 `embedding_backend: sentence_transformers` for an explicit CPU setup.
@@ -121,6 +142,7 @@ db_path: ~/.local/share/engram/memory.db
 embedding_backend: sentence_transformers
 embedding_model: BAAI/bge-small-en-v1.5
 embedding_dim: 384
+cross_encoder_model: BAAI/bge-reranker-base
 ```
 
 for postgres, set `storage_backend: postgres` and provide `ENGRAM_POSTGRES_DSN`
@@ -129,6 +151,10 @@ or a private `postgres_dsn` config value. keep credentials out of commits.
 back up the source first and check its verification output before switching.
 
 local embeddings and cross-encoder reranking are included in the base install.
+`cross-encoder/ms-marco-MiniLM-L-6-v2` remains an optional local reranker. existing
+config files keep their selected model; changing the package default does not
+rewrite them.
+
 optional extras provide the API clients:
 
 ```sh
@@ -222,8 +248,9 @@ query → intent and query features
       → dense + full-text + entity graph + associative candidates
       → reciprocal rank fusion
       → date, importance, recency and access boosts
-      → optional cross-encoder and trained deep reranker
-      → noise and threshold gate → ordinary results
+      → optional cross-encoder with confidence gate and prior coverage
+      → optional trained deep reranker
+      → noise only when cross-encoder is off → ordinary results
 
 original query → optional independent dormant search → separate shadow log
 ```
@@ -233,9 +260,46 @@ path remains available. the CLI makes cross-encoder reranking opt-in with
 `--rerank`; MCP recall uses it. the deep reranker runs when a trained model is
 available. debug output explains the ordinary ranking stages.
 
+`retrieval.rerank_passage_fallback` is enabled by default for local rerankers.
+when every full-document score, after sigmoid, is below `rerank_passage_floor`
+(default 0.001), it can retry one excerpt of up to 160 words from each long
+document with matching query terms. it keeps the larger full-document or
+excerpt logit and uses the same semantic query for both calls. short documents,
+documents without a lexical match, and hosted rerankers keep their original
+scores. set `rerank_passage_fallback: false` to disable the retry.
+
+excerpt matching includes conservative regular English singular/plural forms;
+each distinct original query term counts once per sentence. the activation
+floor was selected during development on LongMemEval. results on that dataset
+are development measurements, not held-out accuracy, and the floor is not a
+calibrated probability.
+
+the retry adds model work and can leave useful context outside the excerpt.
+the independent `min_confidence` gate (default 0.6) applies after scoring adjustments and
+can reject a result whose benchmark rank improved. [retrieval internals](docs/architecture/retrieval.md#focused-excerpt-retry)
+describe selection, date handling and score traces.
+
 ranking scores depend on the stage and model. a cosine score, a cross-encoder
 score, and a fused ranking score are not interchangeable confidence estimates.
-small random ranking noise also means uncached scores can vary between runs.
+local cross-encoder logits pass through a sigmoid once; hosted rerankers keep
+their normalized score scale. resolved temporal evidence is applied in logit
+space. `retrieval.rerank_fusion_alpha` optionally blends the resulting score with
+the pre-rerank reciprocal rank, with a value between 0 and 1; its default is 0.
+reranked scores stay between 0 and 1, without additional lexical bonuses or
+random noise. searches with reranking off retain the small random noise term.
+
+`retrieval.preserve_prior_candidate` is enabled by default. after the confidence
+gate, a request for at least two results keeps the best eligible hybrid
+candidate in the requested result count. if it is missing, the coverage step
+moves it into the last requested position while retaining the rerank winner.
+this changes selection order without changing score values, including when
+`rerank_fusion_alpha` is 0. consumers should keep the returned order rather than
+sort it again by score. set `preserve_prior_candidate: false` to disable coverage.
+
+changing the fusion weight, minimum confidence, coverage setting, passage
+fallback flag or activation floor uses a separate rerank cache entry. the production search and
+benchmark share date parsing and relative time helpers. search preserves the user's spelling;
+configured query expansion still applies.
 
 ## dormant recall
 

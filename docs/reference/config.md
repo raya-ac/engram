@@ -17,9 +17,9 @@ postgres_dsn: ""
 embedding_model: BAAI/bge-small-en-v1.5
 
 # reranker — local or API
-# local:  cross-encoder/ms-marco-MiniLM-L-6-v2
+# local:  BAAI/bge-reranker-base (default), cross-encoder/ms-marco-MiniLM-L-6-v2
 # voyage: rerank-2.5, rerank-2.5-lite
-cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+cross_encoder_model: BAAI/bge-reranker-base
 
 # optional Hugging Face token for downloads / rate limits
 hf_token: ""
@@ -35,6 +35,10 @@ retrieval:
   rrf_k: 60                # RRF fusion constant
   min_confidence: 0.60     # threshold gate (cross-encoder scores only)
   rerank_candidates: 20    # candidates sent to cross-encoder
+  rerank_fusion_alpha: 0.0 # optional prior rank blend, from 0 to 1
+  preserve_prior_candidate: true # keep one eligible hybrid leader in the requested results
+  rerank_passage_fallback: true # bounded local excerpt retry when all base scores are low
+  rerank_passage_floor: 0.001 # activation floor, independent of the final result gate
   dense_multiplier: 3      # dense candidates = top_k * multiplier
   bm25_multiplier: 3       # BM25 candidates = top_k * multiplier
 
@@ -70,6 +74,56 @@ ann:
   max_elements: 500000      # pre-allocated capacity
   index_path: ~/.local/share/engram/hnsw.index
 ```
+
+## rerank scores
+
+`BAAI/bge-reranker-base` is the default local reranker. an existing config file
+can continue selecting `cross-encoder/ms-marco-MiniLM-L-6-v2` or a supported
+hosted model.
+
+`rerank_passage_fallback: true` enables one local excerpt retry when all
+full-document sigmoid scores are below `rerank_passage_floor`, before temporal
+or prior adjustments. the default activation floor is 0.001; `min_confidence`
+independently controls returned results and defaults to 0.6. each eligible document longer
+than 160 words contributes at most one source-contiguous excerpt, capped at
+160 words, selected from a matching sentence and its neighbors. short documents
+and documents without a lexical match keep their full-document scores. hosted
+rerankers are unaffected. lexical selection recognizes conservative regular
+English singular/plural forms and counts each original query term once per
+sentence, across repetitions and surface variants.
+
+both model calls keep the same semantic query, and the larger full/excerpt raw
+score survives. with an explicit reference date, a resolved relative-time span
+is removed only from lexical excerpt selection. the later confidence filter
+can still reject the result. retries add model work and can lose context; set
+`rerank_passage_fallback: false` or `rerank_passage_floor: 0` to disable retries.
+changing `min_confidence` does not change the activation floor.
+
+the activation floor was chosen during development on LongMemEval. evaluation
+on that same dataset is a development result, not held-out accuracy. these
+thresholds are not calibrated probabilities.
+
+local cross-encoders return logits, which ordinary retrieval maps into the 0–1
+range with one sigmoid. hosted rerankers already return normalized relevance
+scores. when temporal evidence applies, it shifts log-odds before the final
+score. these are relevance scores, not measured probabilities of correctness.
+
+`rerank_fusion_alpha: 0.0` leaves the model score unchanged apart from temporal
+evidence. a value from 0 to 1 blends it with `1 / (prior_rank + 1)`, where
+`prior_rank` starts at zero. `min_confidence` filters the resulting score.
+
+`preserve_prior_candidate: true` then keeps the best confidence-eligible hybrid
+candidate within a requested result count of at least two. if needed, it moves
+that candidate into the last requested position and retains the rerank winner.
+a request for one result keeps the winner. rejected candidates remain excluded;
+coverage never bypasses `min_confidence`.
+
+coverage changes order without changing scores, even with fusion weight 0.
+keep the returned order when displaying or consuming results. set
+`preserve_prior_candidate: false` for model ordering without this coverage step.
+changing fusion, confidence, coverage, passage fallback or its activation floor
+prevents reuse of results cached under the old policy. random ranking noise applies only
+to searches with cross-encoder reranking off.
 
 ## storage
 

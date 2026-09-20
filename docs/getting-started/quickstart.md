@@ -17,7 +17,9 @@ engram search "melee garden architecture" --debug
 engram search "apple sandbox bypass" --rerank
 ```
 
-`--debug` shows the retrieval stage breakdown (dense, BM25, graph, RRF scores). `--rerank` enables the cross-encoder for better precision (~300ms slower).
+`--debug` shows the retrieval stage breakdown (dense, BM25, graph, RRF scores).
+`--rerank` enables the configured cross-encoder, `BAAI/bge-reranker-base` by
+default. its additional inference time depends on the model and hardware.
 
 ## remember something
 
