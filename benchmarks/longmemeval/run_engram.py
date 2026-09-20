@@ -375,6 +375,7 @@ def main():
     parser.add_argument("--rerank", action="store_true", help="Cross-encoder rerank top-35")
     parser.add_argument("--fusion-alpha", type=float, default=0.0, help="Late fusion weight for pre-rerank RRF (0.0=pure cross-encoder)")
     parser.add_argument("--output", help="Output JSONL path")
+    parser.add_argument("--resume", action="store_true", help="Resume from existing output JSONL")
     args = parser.parse_args()
 
     config = Config.load()
@@ -406,8 +407,36 @@ def main():
     per_type_metrics = {}
     times = []
 
-    with open(output_path, "w") as out:
+    processed_ids = set()
+    if args.resume and os.path.exists(output_path):
+        with open(output_path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                    qid = row["question_id"]
+                    processed_ids.add(qid)
+                    rm = row.get("retrieval_results", {}).get("metrics", {}).get("session", {})
+                    for k, v in rm.items():
+                        if k in all_metrics:
+                            all_metrics[k].append(v)
+                    qtype = row.get("question_type")
+                    if qtype:
+                        if qtype not in per_type_metrics:
+                            per_type_metrics[qtype] = {k: [] for k in all_metrics}
+                        for k, v in rm.items():
+                            if k in per_type_metrics[qtype]:
+                                per_type_metrics[qtype][k].append(v)
+                except Exception:
+                    pass
+        print(f"resuming from {len(processed_ids)} already processed questions")
+
+    out_mode = "a" if (args.resume and os.path.exists(output_path)) else "w"
+    with open(output_path, out_mode) as out:
         for i, entry in enumerate(eval_data):
+            if entry["question_id"] in processed_ids:
+                continue
             t0 = time.time()
 
             correct_ids = set(entry.get("answer_session_ids", []))
@@ -447,8 +476,8 @@ def main():
 
             r5 = metrics["recall_any@5"]
             running_r5 = np.mean(all_metrics["recall_any@5"])
-            if (i + 1) % 50 == 0 or i == 0:
-                print(f"  [{i+1}/{len(eval_data)}] {elapsed:.1f}s | R@5={r5:.0f} running={running_r5:.3f} | {entry['question'][:55]}")
+            if (i + 1) % 10 == 0 or i == 0 or r5 < 1.0:
+                print(f"  [{i+1}/{len(eval_data)}] {elapsed:.1f}s | R@5={r5:.0f} running={running_r5:.3f} | {entry['question'][:55]}", flush=True)
 
     print()
     print("=" * 70)
