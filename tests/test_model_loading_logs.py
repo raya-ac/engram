@@ -1,5 +1,6 @@
 """Only the known non-persistent BGE buffer report should disappear."""
 import logging
+from inspect import signature
 
 import pytest
 
@@ -19,6 +20,15 @@ Notes:
 def record(message=REPORT, *, level=logging.WARNING, name="transformers.modeling_utils", **kwargs):
     return logging.LogRecord(name, level, __file__, 1, message, (), kwargs.get("exc_info"),
                              sinfo=kwargs.get("stack_info"))
+
+
+def loading_info(loading, key, *, errors=None):
+    fields = {"missing_keys": set(), "unexpected_keys": {key}, "mismatched_keys": set(),
+              "error_msgs": errors or [], "conversion_errors": {}}
+    # Newer Transformers adds pipeline-parallel diagnostics to this container.
+    if "skipped_pp_keys" in signature(loading.LoadStateDictInfo).parameters:
+        fields["skipped_pp_keys"] = set()
+    return loading.LoadStateDictInfo(**fields)
 
 
 @pytest.mark.parametrize("message", [
@@ -69,7 +79,7 @@ def test_actual_transformers_report_and_missing_weights(caplog, model_class, mod
     loading = pytest.importorskip("transformers.utils.loading_report")
     logger = logging.getLogger("transformers.modeling_utils")
     model = type(model_class, (), {})()
-    info = loading.LoadStateDictInfo(set(), {key}, set(), [], {})
+    info = loading_info(loading, key)
     # Transformers disables propagation to the root logger by default.
     logger.addHandler(caplog.handler)
     try:
@@ -87,8 +97,8 @@ def test_actual_transformers_report_and_missing_weights(caplog, model_class, mod
 
 def test_model_load_failures_still_raise():
     loading = pytest.importorskip("transformers.utils.loading_report")
-    info = loading.LoadStateDictInfo(set(), {"roberta.embeddings.position_ids"}, set(),
-                                    ["checkpoint could not be loaded"], {})
+    info = loading_info(loading, "roberta.embeddings.position_ids",
+                        errors=["checkpoint could not be loaded"])
     model = type("XLMRobertaForSequenceClassification", (), {})()
     with pytest.raises(RuntimeError, match="checkpoint could not be loaded"):
         loading.log_state_dict_report(model, "BAAI/bge-reranker-base", False, info)
