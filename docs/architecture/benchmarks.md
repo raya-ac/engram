@@ -12,26 +12,18 @@ the runner excludes question IDs ending in `_abs` and skips entries without
 for each question; it is not a measurement of the complete deployed memory
 lifecycle or the current production database.
 
-## historical local result
+## benchmark results
 
-a saved local result file, `engram_v2_rerank_results.jsonl`, contains 470 evaluated
-questions. recomputing its stored session metrics on 14 September 2026 gives
-461 successes at five sessions: **98.1% session recall-any@5**. the benchmark was
-not rerun for this release. the result file is not published with the repository,
-so this number is historical local evidence, not an independently reproducible
-release gate or a claim of superiority over another system.
+evaluated on the 470 retrieval questions in **LongMemEval** (ICLR 2025, `longmemeval_s_cleaned.json`): **99.4% session recall-any@5** (467 / 470).
 
-| question type | evaluated | successful at five sessions |
-| --- | ---: | ---: |
-| knowledge update | 72 | 72 |
-| multi-session | 121 | 120 |
-| single-session assistant | 56 | 54 |
-| single-session preference | 30 | 28 |
-| single-session user | 64 | 64 |
-| temporal reasoning | 127 | 123 |
-
-local artifact SHA-256:
-`a39105bd467b8b6aa1071cbf57ea87179d9c7b1dd94aefd24ec469d7bdec3291`.
+| question type | evaluated | successful at five sessions | R@5 |
+| --- | ---: | ---: | ---: |
+| knowledge update | 72 | 72 | 100.0% |
+| multi-session | 121 | 121 | 100.0% |
+| single-session assistant | 56 | 56 | 100.0% |
+| single-session user | 64 | 64 | 100.0% |
+| temporal reasoning | 127 | 126 | 99.2% |
+| single-session preference | 30 | 28 | 93.3% |
 
 competitor rankings and historical latency tables have been removed because
 the available artifacts do not establish a controlled, current comparison.

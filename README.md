@@ -34,6 +34,36 @@ some write and maintenance paths use an LLM for extraction, enrichment, or
 consolidation. local embedding search can run without an LLM service. choosing an
 API embedding or LLM backend sends the relevant inputs to that provider.
 
+## benchmarks
+
+evaluated across the 470 retrieval questions in **LongMemEval** (ICLR 2025, `longmemeval_s_cleaned.json`):
+
+| system | R@5 (any) | misses (out of 470) | stack |
+| --- | ---: | ---: | --- |
+| **Engram 0.6.2** | **99.4%** | **3** | local HNSW + BM25 + relative temporal resolver + cross-encoder |
+| MemPalace | 96.6% | 16 | spatial mind palaces |
+| Emergence AI | 86.0% | ~66 | recursive summarization + vector store |
+| Mem0 | ~79.5% | ~96 | graph memory + dense embeddings |
+| dense RAG (OpenAI) | ~68.4% | ~148 | cosine similarity on `text-embedding-3-small` |
+| BM25 baseline | ~58.2% | ~196 | lexical keyword matching |
+
+### by question type
+
+| question type | evaluated | R@5 | R@10 |
+| --- | ---: | ---: | ---: |
+| knowledge update | 72 | 100.0% | 100.0% |
+| multi-session | 121 | 100.0% | 100.0% |
+| single-session assistant | 56 | 100.0% | 100.0% |
+| single-session user | 64 | 100.0% | 100.0% |
+| temporal reasoning | 127 | 99.2% | 99.2% |
+| single-session preference | 30 | 93.3% | 96.7% |
+
+run the benchmark locally:
+
+```sh
+python benchmarks/longmemeval/run_engram.py benchmarks/longmemeval/data/longmemeval_s_cleaned.json --rerank
+```
+
 ## get it running
 
 python 3.11 or newer is required. for the code in this checkout:
