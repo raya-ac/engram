@@ -179,12 +179,28 @@ retrieval:
   bm25_multiplier: 3     # BM25 candidates = top_k * 3
 ```
 
-## debugging
-
-use `--debug` on CLI or `debug=true` on the API to see per-stage breakdown:
+## explain a result or a miss
 
 ```bash
-engram search "deployment strategy" --debug
+engram config show
+engram search "deployment strategy" --rerank --explain --json
 ```
 
-returns dense candidates, BM25 candidates, graph candidates, RRF scores, boosted scores, reranked scores, and total latency.
+`--explain` keeps the CLI's normal reranking choice: include `--rerank` to inspect
+the cross-encoder and confidence gate. `--debug` remains an alias. the JSON object
+contains `results` and `explanation`, even if every candidate is rejected.
+
+each observed candidate has an outcome and reason: returned, below the confidence
+cutoff, outside the result budget, or filtered before scoring. eligible candidates
+include their observed signals, raw local logits or hosted normalized scores,
+temporal adjustments and any excerpt retry. forgotten, inactive and
+profile-filtered candidates never include their content.
+
+diagnostics bypass the result cache and leave access history and dormant
+evaluations unchanged. MCP `recall_explain`, native `search_explain`, and
+`/api/search/explain` use the same report; the web search's **Explain retrieval**
+option displays it. MCP explanation also leaves session handoffs unchanged.
+
+an empty result can mean a relevant memory failed the confidence cutoff. inspect
+that reason before changing a threshold. a score is not a calibrated probability,
+and an explanation does not establish that the memory's claim is true.

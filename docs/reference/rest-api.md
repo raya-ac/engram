@@ -27,11 +27,24 @@ if `web.auth_token` is set in config, include `Authorization: Bearer <token>` he
 
 | method | endpoint | description |
 |--------|----------|-------------|
-| GET | `/api/search?q=...` | hybrid search, optional `&debug=true` |
-| GET | `/api/search/explain?q=...` | search with retrieval intent, expansions, cache status, and candidate counts |
+| GET | `/api/search?q=...` | hybrid search; optional `top_k`, or `debug=true` for a diagnostic run |
+| GET | `/api/search/explain?q=...` | returned and rejected candidates, scores, confidence decisions and settings; optional `top_k` |
 | GET | `/api/search/filtered?q=...` | search with layer, importance, date, source filters |
 | GET | `/api/search/hints?q=...` | truncated hints for cognitive scaffolding |
 | POST | `/api/remember` | store a memory with surprise scoring |
+
+both search routes use `retrieval.top_k` when `top_k` is omitted (package default
+10); an explicit limit must be 1–100. queries must contain 1–4,000 characters and
+cannot be whitespace-only. cross-encoder reranking is enabled on these routes.
+
+`/api/search/explain` and `/api/search?debug=true` return an `explanation` beside
+`results` and the existing `debug` summary. they bypass the result cache and
+leave access history, importance and dormant evaluations unchanged. models still
+run. candidate outcomes distinguish confidence rejection, budget/top-k exclusion
+and lifecycle/profile filtering; filtered candidates have no content exposed.
+the report only covers this search's bounded candidate set. use `final_ids` for
+rank order rather than sorting scores. see
+[the explanation fields](../architecture/retrieval.md#explanations).
 
 ## entities
 
@@ -61,10 +74,17 @@ if `web.auth_token` is set in config, include `Authorization: Bearer <token>` he
 | method | endpoint | description |
 |--------|----------|-------------|
 | GET | `/api/stats` | memory counts, entities, DB size |
+| GET | `/api/config` | effective loaded settings, their sources, warnings and version; credentials redacted |
 | GET | `/api/health` | cache, FTS, orphans, ANN index, embedding backend |
 | GET | `/api/memory-map` | per-layer top entities, date range |
 | GET | `/api/analytics` | layer distribution, top accessed, top entities |
 | GET | `/api/context?query=...` | L0-L3 graduated context with token counts |
+
+`/api/config` returns `config_file`, nested `values`, dotted-path `sources`,
+`warnings`, and `version` under the same authentication policy as other API
+routes. it reports the running process's configuration without reloading or
+changing it. use `engram config check|show|schema` for inspection before starting
+the web server. see [configuration](config.md) for redaction and precedence.
 
 ## advanced features
 

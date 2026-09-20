@@ -1,15 +1,47 @@
 # Configuration
 
-lives at `config.yaml` (project root), `~/.config/engram/config.yaml` (user), or any path passed with `--config`. env vars override everything with `ENGRAM_` prefix.
+inspect the settings Engram will use before starting a server or search:
+
+```sh
+engram --config /absolute/config.yaml config check
+engram --config /absolute/config.yaml config show --json
+engram config show --defaults
+engram config schema
+```
+
+`check` validates settings. `show` returns effective values and where each came
+from. both accept `--json` and `--defaults`; defaults bypass files and environment
+variables and cannot be combined with `--config`. `schema` always returns JSON
+with every field's default, type, bounds, environment name and help. it does not
+read or validate a config file. these commands do not open storage, load models,
+or rewrite configuration.
+
+`show --json` contains `config_file`, nested `values`, dotted-path `sources`, and
+`warnings`. sources distinguish `default`, `file`, `env:VARIABLE`, and
+`derived:reason`, including model-derived dimensions and runtime overrides.
+nonempty `hf_token`, `postgres_dsn`, `llm.api_key` and `web.auth_token` values are
+replaced with `<redacted>`; empty credentials remain empty. reports from a running
+server describe its loaded configuration, which stays in effect until restart.
+
+unknown fields, invalid sections or scalar types, unsupported backends,
+nonfinite numbers and out-of-range values fail validation. numeric fields need
+numbers, boolean fields need booleans, and postgres requires a nonempty DSN.
+errors identify the field or section and rule without quoting supplied values or
+YAML snippets. invalid file values are rejected even when an environment override
+exists. `check --json` returns `{"valid": false, "error": "..."}` and exits with
+status 2 on failure.
 
 ## full reference
+
+these values match the package defaults. a supplied `embedding_dim` is explicit;
+omit it to use the dimension registry when changing to a known model.
 
 ```yaml
 storage_backend: sqlite
 db_path: ~/.local/share/engram/memory.db
 postgres_dsn: ""
 
-# embedding model — auto-detects backend from model name
+# known hosted models select their provider from the model name
 # local:  BAAI/bge-small-en-v1.5 (384d), BAAI/bge-base-en-v1.5 (768d)
 # voyage: voyage-3.5 (1024d), voyage-3.5-lite (1024d), voyage-code-3 (1024d)
 # openai: text-embedding-3-small (1536d), text-embedding-3-large (3072d)
@@ -27,7 +59,7 @@ hf_token: ""
 # auto | mlx | sentence_transformers | voyage | openai | gemini
 embedding_backend: auto
 
-# auto-detected from model name if known
+# omit this field to derive it from a known model
 embedding_dim: 384
 
 retrieval:
@@ -41,6 +73,9 @@ retrieval:
   rerank_passage_floor: 0.001 # activation floor, independent of the final result gate
   dense_multiplier: 3      # dense candidates = top_k * multiplier
   bm25_multiplier: 3       # BM25 candidates = top_k * multiplier
+  enable_query_expansion: true
+  exact_match_boost: 1.22
+  search_cache_size: 128
 
 lifecycle:
   forgetting_half_life_days: 30
@@ -56,8 +91,8 @@ lifecycle:
   elastic_l1_ratio: 0.3
 
 llm:
-  backend: anthropic         # claude_cli | anthropic | openai | mlx
-  model: claude-haiku-4-5-20251001
+  backend: claude_cli        # claude_cli | anthropic | openai | mlx
+  model: claude-sonnet-4-20250514
   api_key: ""                # or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var
   mlx_model: mlx-community/Qwen2.5-3B-Instruct-4bit
 
@@ -143,7 +178,9 @@ postgres_dsn: postgresql://user:pass@localhost:5432/engram
 
 ## environment variables
 
-any config field can be overridden with `ENGRAM_` prefix:
+every field has an environment override: uppercase its dotted path, replace dots
+with underscores, and add `ENGRAM_`. for example, `retrieval.min_confidence`
+becomes `ENGRAM_RETRIEVAL_MIN_CONFIDENCE`:
 
 ```bash
 export ENGRAM_DB_PATH=/custom/path/memory.db
@@ -152,17 +189,34 @@ export ENGRAM_POSTGRES_DSN=postgresql://user:pass@localhost:5432/engram
 export ENGRAM_EMBEDDING_MODEL=voyage-3.5
 export ENGRAM_EMBEDDING_DIM=1024
 export ENGRAM_EMBEDDING_BACKEND=voyage
+export ENGRAM_RETRIEVAL_MIN_CONFIDENCE=0.7
+export ENGRAM_RETRIEVAL_RERANK_PASSAGE_FALLBACK=false
+export ENGRAM_ANN_EF_SEARCH=200
+export ENGRAM_WEB_PORT=9000
+export ENGRAM_DORMANT_RECALL_MODE=off
 ```
 
-API keys (env vars or `llm.api_key` in config):
+environment booleans accept `true`, `false`, `1` or `0` (case-insensitive).
+other strings such as `yes` are rejected. numeric overrides must parse as the
+required type and satisfy the same bounds as file values. an explicitly empty
+string overrides a file string; an empty numeric or boolean value is invalid.
+
+credential aliases and provider keys:
 
 ```bash
 export ANTHROPIC_API_KEY=your-key   # for llm.backend: anthropic
 export OPENAI_API_KEY=your-key      # for llm.backend: openai (or embedding)
 export VOYAGE_API_KEY=your-key      # for embedding backend
 export GEMINI_API_KEY=your-key      # for embedding backend
-export HF_TOKEN=your-token          # or ENGRAM_HF_TOKEN for Hugging Face downloads
+export HF_TOKEN=your-token         # or ENGRAM_HF_TOKEN / HUGGING_FACE_HUB_TOKEN
 ```
+
+`ENGRAM_HF_TOKEN` takes precedence over the nonempty `HF_TOKEN` and
+`HUGGING_FACE_HUB_TOKEN` aliases, in that order. for LLMs,
+`ENGRAM_LLM_API_KEY` overrides the file; when the effective `llm.api_key` is
+empty, the selected provider's `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is used.
+embedding providers read their own API-key variables; `llm.api_key` does not
+configure embeddings. Gemini also accepts `GOOGLE_API_KEY` as a fallback.
 
 ### LLM backends
 
@@ -184,8 +238,16 @@ pip install 'engram-memory-system[api]'         # all backends
 ## load priority
 
 1. environment variables (highest)
-2. config file (first found from: `--config` path, `./config.yaml`, project root, `~/.config/engram/config.yaml`)
+2. one config file
 3. defaults (lowest)
+
+an explicit `--config` path must be readable; a missing or unreadable file fails
+instead of falling back. without it, Engram uses the first existing file from
+`./config.yaml`, the package's project root, then
+`~/.config/engram/config.yaml`. files are not merged. if none exists, defaults and
+environment overrides apply. a known model supplies `embedding_dim` only when
+that field was omitted from both file and environment. unknown models keep the
+default dimension and produce a warning to set it explicitly.
 
 ## dormant recall
 

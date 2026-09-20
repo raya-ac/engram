@@ -2,6 +2,24 @@
 
 all commands available via `engram <command>`.
 
+## configuration
+
+```sh
+engram --config /absolute/config.yaml config check [--json]
+engram --config /absolute/config.yaml config show [--json]
+engram config show --defaults
+engram config check --defaults --json
+engram config schema
+```
+
+`check` validates the selected file, environment overrides and defaults. invalid
+settings exit with status 2; JSON failures contain `valid: false` and a safe
+`error`. `show` includes effective values and their sources, with credentials
+redacted. `--defaults` bypasses files and environment and cannot accompany
+`--config`. `schema` always emits JSON describing supported fields; it does not
+load configuration. none of these commands connects storage, loads models, or
+rewrites a file. see [configuration](config.md) for precedence and all overrides.
+
 ## memory operations
 
 ### ingest
@@ -12,9 +30,27 @@ ingest files or directories. supports markdown, plaintext, JSON (Claude Code, Ch
 
 ### search
 ```bash
-engram search <query> [-k TOP_K] [--debug] [--rerank] [--json]
+engram search <query> [-k TOP_K] [--explain] [--rerank] [--json]
 ```
-hybrid search across all layers. `--debug` shows per-stage breakdown. `--rerank` enables cross-encoder. `--json` for machine-readable output.
+hybrid search across all layers. omitting `-k` uses `retrieval.top_k` (package
+default 10). `--rerank` enables the cross-encoder; CLI search leaves it off unless
+requested. `--json` returns an array of results.
+
+```sh
+engram search "why did we change the storage backend?" --rerank --explain --json
+```
+
+`--explain` and its existing alias `--debug` explain the actual run, including
+returned and rejected candidates, observed scores, confidence decisions,
+passage retries and effective retrieval settings. they do not enable reranking
+themselves. JSON output becomes `{results, explanation}`. explanations require an
+initialized store and can load the configured models.
+
+this diagnostic search bypasses the result cache and leaves access history,
+importance and dormant evaluations unchanged. it explains the bounded candidates
+produced by the search, not every memory in storage. lifecycle/profile-filtered
+candidates have no content in the report. keep the returned order; coverage can
+change rank without changing scores. see [retrieval internals](../architecture/retrieval.md#explanations).
 
 ### remember
 ```bash

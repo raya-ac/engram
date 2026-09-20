@@ -6,7 +6,7 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 
 | tool | params | description |
 |------|--------|-------------|
-| `recall` | `query` (required), `top_k` (default: 10), `mode` (default: "full_context") | hybrid search — HNSW + BM25 + graph + Hopfield + RRF + cross-encoder. mode filters by memory type: `facts_only`, `facts_plus_rules`, `full_context` |
+| `recall` | `query` (required), `top_k` (default: `retrieval.top_k`), `mode` (default: "full_context") | hybrid search — HNSW + BM25 + graph + Hopfield + RRF + cross-encoder. mode filters by memory type: `facts_only`, `facts_plus_rules`, `full_context` |
 | `recall_by_type` | `memory_type` (required: fact/procedure/narrative), `limit` (default: 20) | get memories filtered by semantic type |
 | `recall_entity` | `name` (required) | everything about a person/project/tool — memories, relationships, timeline |
 | `recall_timeline` | `start` (required, YYYY-MM-DD or YYYY-MM), `end` | memories in a date range |
@@ -16,12 +16,27 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `recall_context` | `query` (required), `max_tokens` (default: 2000) | formatted context block ready for prompt injection |
 | `recall_code` | `query` (required), `project`, `top_k` (default: 10) | search the codebase layer for functions, classes, files |
 | `recall_hints` | `query` (required), `top_k` (default: 10), `hint_length` (default: 60) | truncated snippets + entity names for recognition without replacing cognition |
-| `recall_explain` | `query` (required), `top_k` (default: 10), `mode` (default: "full_context") | hybrid search with retrieval intent, expansions, cache status, candidate counts, and score breakdowns |
+| `recall_explain` | `query` (required), `top_k` (default: `retrieval.top_k`), `mode` (default: "full_context"), optional `reference_date` | returned and rejected candidates, scores, confidence decisions, passage retries and effective settings; no access reinforcement |
 | `find_similar` | `memory_id` (required), `top_k` (default: 5) | find memories most similar by embedding distance |
 | `find_duplicates` | `threshold` (default: 0.92), `limit` (default: 20) | preview near-duplicate pairs without merging |
 | `search_entities` | `query` (required), `limit` (default: 20) | fuzzy search for entities by partial name |
 | `compress` | `query` (required), `max_tokens` (default: 2000) | compressed version of retrieved memories |
 | `get_skills` | `query` (required), `max_skills` (default: 3), `format` (default: true) | task-aware skill selection — 2-3 focused procedural guides |
+
+### retrieval explanations
+
+`recall_explain` returns `results` and an `explanation`, alongside the existing
+query and debug summaries. it uses the configured reranker and confidence gate;
+an optional `reference_date`, such as `2026-09-20`, anchors relative-time phrases.
+omitting `top_k` uses the loaded `retrieval.top_k`, whose package default is 10.
+
+explanation calls bypass result-cache reads and writes, and leave access history,
+importance, dormant evaluations and session handoffs unchanged. they can load
+models. rejected candidates carry an outcome and reason; forgotten, inactive or
+profile-filtered candidates have no content exposed. the report covers only the
+bounded candidates retrieved for this query. its `final_ids` gives the returned
+order, which can differ from sorting scores. see
+[the explanation fields](../architecture/retrieval.md#explanations).
 
 ## store & organize
 
@@ -111,6 +126,7 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | tool | params | description |
 |------|--------|-------------|
 | `status` | — | memory counts, entities, DB size |
+| `config_show` | — | loaded effective configuration, source of each setting, warnings and version; credentials redacted |
 | `health` | — | cache, FTS index, orphaned entities, ANN status, embedding backend |
 | `layers` | `query`, `max_tokens` (default: 4000) | L0-L3 graduated context for prompt injection |
 | `access_patterns` | `limit` (default: 20) | most-recalled memories, hit rates |
@@ -118,6 +134,11 @@ all tools available via the engram MCP server (`engram serve --mcp`).
 | `count_by` | `group_by` (required: layer/source_type/entity/month) | group counts |
 | `consolidate` | — | run full dream cycle |
 | `export` | `format` (default: "markdown"), `layer`, `limit` (default: 100) | export as markdown or JSON |
+
+`config_show` returns `config_file`, nested `values`, dotted-path `sources`,
+`warnings`, and `version`. it does not reload or change settings. use
+`engram config check`, `show`, or `schema` to inspect configuration before server
+startup; see [configuration](config.md).
 
 ## diary
 
@@ -135,7 +156,9 @@ for resumable agent work, the default flow is:
 3. `recall_explain` when retrieval quality needs debugging or tuning
 4. `session_checkpoint` or `session_handoff` near a stop point if you want to explicitly persist the current packet
 
-the active MCP session also refreshes its handoff automatically after recalls, memory writes, diary writes, and memory edits.
+the active MCP session also refreshes its handoff automatically after ordinary
+recalls, memory writes, diary writes, and memory edits. `recall_explain` does not
+refresh it.
 
 ## dormant review
 

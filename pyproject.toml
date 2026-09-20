@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-memory-system"
-version = "0.6.2"
+version = "0.7.0"
 description = "Memory, hybrid retrieval, entity graphs, and project continuity for agents."
 license = { text = "Engram Public Use License 1.0" }
 requires-python = ">=3.11"
@@ -38,7 +38,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/raya-ac/engram"
+Homepage = "https://engram-memory.dev"
+Documentation = "https://engram-memory.dev/getting-started/quickstart/"
 Repository = "https://github.com/raya-ac/engram"
 Issues = "https://github.com/raya-ac/engram/issues"
 
@@ -62,3 +63,15 @@ filterwarnings = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["engram"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/.gitignore",
+    "/engram",
+    "/tests",
+    "/benchmarks/longmemeval/*.py",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/config.example.yaml",
+]

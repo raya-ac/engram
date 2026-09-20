@@ -6,10 +6,10 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1280">
   <meta property="og:image:height" content="640">
-  <meta property="og:title" content="engram">
-  <meta property="og:description" content="Persistent memory with hybrid retrieval, explicit lifecycle, and inspectable evidence.">
+  <meta property="og:title" content="{{ page.title | default(config.site_name, true) | e }}">
+  <meta property="og:description" content="Memory for work that continues. Keep decisions, retrieve their context, and inspect what comes back.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="engram">
-  <meta name="twitter:description" content="Persistent memory with hybrid retrieval, explicit lifecycle, and inspectable evidence.">
+  <meta name="twitter:title" content="{{ page.title | default(config.site_name, true) | e }}">
+  <meta name="twitter:description" content="Memory for work that continues. Keep decisions, retrieve their context, and inspect what comes back.">
   <meta name="twitter:image" content="https://engram-memory.dev/assets/social-preview.png">
 {% endblock %}

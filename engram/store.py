@@ -538,6 +538,8 @@ class Store:
         self._search_cache.clear()
 
     def get_search_cache(self, key: tuple) -> list[dict] | None:
+        if self.config.retrieval.search_cache_size == 0:
+            return None
         entry = self._search_cache.get(key)
         if not entry:
             return None
@@ -548,8 +550,11 @@ class Store:
         return payload
 
     def set_search_cache(self, key: tuple, payload: list[dict]):
+        limit = self.config.retrieval.search_cache_size
+        if limit == 0:
+            self._search_cache.clear()
+            return
         self._search_cache[key] = (self._search_cache_version, payload)
-        limit = max(1, self.config.retrieval.search_cache_size)
         while len(self._search_cache) > limit:
             oldest = next(iter(self._search_cache))
             self._search_cache.pop(oldest, None)

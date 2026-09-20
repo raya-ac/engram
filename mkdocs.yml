@@ -7,21 +7,13 @@ repo_name: raya-ac/engram
 theme:
   name: material
   custom_dir: docs/overrides
-  logo: assets/logo-192.png
+  font: false
+  logo: assets/logo.svg
   favicon: assets/favicon.png
   palette:
-    - scheme: slate
-      primary: teal
-      accent: amber
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
-    - scheme: default
-      primary: teal
-      accent: amber
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
+    scheme: slate
+    primary: custom
+    accent: custom
   features:
     - navigation.instant
     - navigation.tracking
@@ -34,6 +26,11 @@ theme:
     - content.tabs.link
   icon:
     repo: fontawesome/brands/github
+
+extra_css:
+  - assets/stylesheets/engram.css
+extra_javascript:
+  - assets/javascripts/engram.js
 
 markdown_extensions:
   - admonition

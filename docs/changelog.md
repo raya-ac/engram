@@ -1,7 +1,18 @@
 # Changelog
 
-## unreleased
+## 0.7.0 (September 20, 2026)
 
+- validate configuration before startup, reject unknown fields and malformed values, and support an environment override for every setting
+- add `engram config check`, `show` and `schema`, with redacted values and provenance; inspection does not initialize storage or load models
+- share effective settings through MCP `config_show`, native `config_show`, and the authenticated web configuration endpoint
+- show why retrieval candidates were returned, rejected by confidence, filtered or excluded by the result budget; include model scores and focused-excerpt traces
+- make explanation mode bypass result caching and leave access history, dormant evaluations and MCP session handoffs unchanged
+- expose the shared report through CLI `--explain` (`--debug` remains an alias), native `search_explain`, MCP `recall_explain`, and the web workspace
+- use the configured result limit when ordinary search or its explanation omits one, while retaining interface input limits
+- keep machine-readable CLI output clean when model libraries print diagnostics
+- honor a zero cache capacity as disabled, synchronize resolved Hugging Face credentials, and recheck memory eligibility after reranking
+- redesign the logo, public website and documentation around a dark copper identity, with responsive layouts, keyboard navigation and reduced-motion support
+- centralize interface version reporting and verify built package contents before publication
 - independently confirm 470/470 session recall-any@5 in a fresh full LongMemEval development run without saved-score reuse; publish text-free question rankings and provenance, with abstention, confidence and native API limitations
 - correct the comparison table: label external answer-accuracy and retrieval metrics separately, link primary reports and remove unsupported misses-out-of-470 claims
 - use `BAAI/bge-reranker-base` as the default local reranker; keep MiniLM available through config
@@ -18,6 +29,11 @@
 - record benchmark dataset/source hashes, model names, result window, passage fallback flag/floor and settings; support `--no-passage-fallback` and `--passage-floor`, and reject incompatible or duplicate resume records
 - preserve configured fusion and passage activation values unless the corresponding CLI option overrides them; document the activation floor as a benchmark development choice, not a calibrated probability or held-out accuracy claim
 - refuse existing output paths for fresh benchmark runs and claim the result file before writing new provenance
+
+the fresh benchmark above measured the retrieval candidate published in
+`c3b8cea`, before the configuration and explanation additions. the evidence
+keeps its original source fingerprints; the complete 0.7.0 package was not
+given a second full LongMemEval run.
 
 ## 0.6.2 (September 19, 2026)
 

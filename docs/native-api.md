@@ -8,7 +8,14 @@ Use the Python environment where Engram is installed. A client running another P
 /absolute/path/to/engram --config /absolute/path/to/config.yaml api
 ```
 
-The config file must exist and its path must be absolute. Normal Engram environment-variable overrides still apply. Use an already initialized store. API startup does not create a database, run legacy backfills, rebuild an index, or load models. Check `status` after launch; a running process alone does not prove storage is available. The process keeps its loaded config until restarted.
+The config file must exist and its path must be absolute. All supported
+`ENGRAM_` overrides apply, including nested names such as
+`ENGRAM_RETRIEVAL_MIN_CONFIDENCE`. Invalid configuration fails at startup;
+`engram --config /absolute/config.yaml config check` validates it beforehand.
+API startup does not create a database, run legacy backfills, rebuild an index,
+or load models. Storage operations require an initialized store. Check `status`
+after launch; a running process alone does not prove storage is available. The
+process keeps its loaded config until restarted.
 
 ## framing
 
@@ -37,10 +44,12 @@ Error codes are `invalid_json`, `invalid_request`, `invalid_params`, `request_to
 | --- | --- | --- |
 | `status` | none | Core memory/entity/relationship counts and database size, plus this process's PID, start time, storage backend, dormant mode and protocol version. No secret config. |
 | `operations` | none | Operation discovery and exact `inputSchema` definitions. |
+| `config_show` | none | Loaded settings, source of each setting, warnings and version, with credentials redacted. Available without storage. |
 | `recall` | `project_id`, optional `limit` (1–20, default 8) | Most recently created active memories explicitly owned by that canonical project. This is a context read, **not semantic search**. |
 | `session_resume` | `project_id`, optional exact `task`, optional `limit` | Project context plus saved native checkpoints. Without a task, returns up to three recent project checkpoints. |
 | `session_checkpoint` | `project_id`, `task`, optional `action`, `summary`, `decisions`, `next_steps`, `blockers` | Explicit save or clear. `action` defaults to `save`, which requires a nonempty summary. |
-| `search` | `query`, optional `top_k` (1–20, default 5) | Ordinary semantic/hybrid retrieval across the **whole configured store**. No project filter is supported. |
+| `search` | `query`, optional `top_k` (1–20, defaults to `retrieval.top_k`) | Ordinary semantic/hybrid retrieval across the **whole configured store**. No project filter is supported. |
+| `search_explain` | same as `search` | Results plus explanations of returned and rejected candidates; no access reinforcement or result-cache changes. |
 | `evidence_put` | scoped observation fields below | Store an immutable caller-supplied check observation. Does not execute a check. |
 | `evidence_get` | `project_id`, `id` | Read a stored observation and its current lifecycle/expiry state. |
 | `evidence_list` | `project_id`, optional `session_id`, `assumption_id`, `limit` (1–50, default 20) | List scoped observations, excluding forgotten/inactive records. |
@@ -49,6 +58,19 @@ Error codes are `invalid_json`, `invalid_request`, `invalid_params`, `request_to
 | `dormant_feedback` | `event_id`, `category` | Explicit `useful`, `irrelevant`, or `dismissed` feedback after inspection. |
 
 `checkpoint` and `resume` are aliases for `session_checkpoint` and `session_resume`. There is no native `remember`, arbitrary command execution, or general database operation in this version. Discover capabilities instead of assuming an operation exists.
+
+### configuration
+
+```json
+{"id":"config","operation":"config_show","params":{}}
+```
+
+The result has `config_file`, nested `values`, dotted-path `sources`, `warnings`,
+and `version`. Sources distinguish defaults, file values, environment variables
+and derived values. Nonempty `hf_token`, `postgres_dsn`, `llm.api_key` and
+`web.auth_token` values are `<redacted>`. This operation does not open storage,
+load models, rewrite files, or reload configuration. See the
+[configuration reference](reference/config.md) for validation and precedence.
 
 ### project context and checkpoints
 
@@ -72,7 +94,37 @@ A checkpoint summary is at most 4,000 characters; decisions, next steps and bloc
 
 The result is an array of `{id, content, score, layer, memory_type, importance}` rows. Scores are retrieval scores, not probabilities that a memory is true. Search uses the existing retrieval implementation, eligibility rules and configured models. It records ordinary accesses for returned results and may write bounded dormant shadow evaluations when enabled. It does not create an automatic session handoff.
 
-Search is deliberately store-wide. Passing `project_id` is rejected rather than pretending to filter after ranking. Use scoped `recall`/`session_resume` where a client must stay within one project. Only search loads model/retrieval code; later searches retain the warm model. Configured database and embedding backends retain their usual local or remote behavior—the JSONL interface itself does not open a listener.
+Both search operations enable cross-encoder reranking. Omitting `top_k` uses
+`retrieval.top_k` (package default 10). The native API accepts limits from 1 to
+20; if the configured default exceeds 20, send an explicit valid `top_k` or the
+request fails validation. Queries must contain 1–4,000 characters and cannot be
+whitespace-only.
+
+Search is store-wide. Passing `project_id` is rejected. Use scoped
+`recall`/`session_resume` where a client must stay within one project. Search and
+search explanations load models on demand; later requests retain the warm
+models. Configured database and embedding backends retain their usual local or
+remote behavior; the JSONL interface itself does not open a listener.
+
+### search explanations
+
+```json
+{"id":"why","operation":"search_explain","params":{"query":"How do we verify the downloaded client matches the release artifact?","top_k":5}}
+```
+
+The result is `{results, explanation}`. The explanation includes effective
+retrieval settings, observed stage scores and ranks, confidence decisions,
+passage retries, candidate outcomes and `final_ids`. Rejected candidates remain
+visible for diagnosis; forgotten, inactive or profile-filtered candidates expose
+no content. `eligible` describes lifecycle/profile availability, while confidence
+is a separate gate. The report covers the bounded candidates produced by this
+query, not every memory in the store.
+
+Explanation requests leave access history, importance and dormant evaluations
+unchanged and bypass result-cache reads and writes. They still run the configured
+models and require initialized storage. Keep the returned order; prior coverage
+can change rank without changing scores. See
+[retrieval internals](architecture/retrieval.md#explanations) for the report fields.
 
 ### check observations
 

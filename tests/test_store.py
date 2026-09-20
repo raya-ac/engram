@@ -187,6 +187,18 @@ class TestDiary:
 
         assert store.get_search_cache(key) is None
 
+    def test_zero_cache_capacity_disables_reads_and_writes(self, store):
+        key = ("query",)
+        payload = [{"memory_id": "cached", "score": 0.9, "sources": {}}]
+        store.set_search_cache(key, payload)
+        assert store.get_search_cache(key) == payload
+        store.config.retrieval.search_cache_size = 0
+        assert store.get_search_cache(key) is None
+        store.set_search_cache(key, payload)
+        assert store._search_cache == {}
+        store.config.retrieval.search_cache_size = 1
+        assert store.get_search_cache(key) is None
+
 
 class TestEvents:
     def test_events_logged(self, store):

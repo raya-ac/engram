@@ -8,6 +8,7 @@ import time
 import uuid
 from typing import Any
 
+from engram import __version__
 from engram.config import Config
 from engram.store import Store, Memory, MemoryLayer, MemoryType, MemoryStatus, SourceType
 from engram.embeddings import embed_documents
@@ -31,12 +32,13 @@ from engram.evidence import TOOLS as EVIDENCE_TOOLS, evidence_put, evidence_get,
 
 TOOLS = [
     *EVIDENCE_TOOLS,
+    {"name": "config_show", "description": "Inspect this process's effective configuration and setting sources with secrets redacted. Does not change settings or memory records.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": {"readOnlyHint": True}},
     {"name": "dormant_review", "description": "Explicitly review metadata-only dormant shadow evaluations; never inject into ordinary recall", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}}},
     {"name": "dormant_inspect", "description": "Explicitly inspect one dormant shadow candidate without reinforcing it; rechecks active/non-forgotten eligibility", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}}, "required": ["event_id"]}},
     {"name": "dormant_feedback", "description": "Record explicit feedback for an inspected dormant candidate. Useful means actually used; silence is never usefulness. Does not change memory importance or access fields.", "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}, "category": {"type": "string", "enum": ["useful", "irrelevant", "dismissed"]}}, "required": ["event_id", "category"]}},
     # Read tools
-    {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder). Use mode to filter by memory type: facts_only (structured knowledge), facts_plus_rules (+ procedures), full_context (everything).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context", "description": "Retrieval profile — facts_only for statuses/states, facts_plus_rules for methodology, full_context for exhaustive recall"}}, "required": ["query"]}},
-    {"name": "recall_explain", "description": "Search memories and include retrieval intent, expansions, cache status, candidate counts, and score breakdowns for debugging retrieval quality.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 10}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context"}}, "required": ["query"]}},
+    {"name": "recall", "description": "Search memories using hybrid retrieval (dense + BM25 + graph + cross-encoder). Use mode to filter by memory type: facts_only (structured knowledge), facts_plus_rules (+ procedures), full_context (everything).", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "minimum": 1, "description": "Defaults to retrieval.top_k"}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context", "description": "Retrieval profile — facts_only for statuses/states, facts_plus_rules for methodology, full_context for exhaustive recall"}}, "required": ["query"]}},
+    {"name": "recall_explain", "description": "Explain returned and rejected retrieval candidates, including confidence gates and effective settings. Bypasses result caching and leaves access history, dormant evaluations and session handoffs unchanged.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1}, "top_k": {"type": "integer", "minimum": 1, "description": "Defaults to retrieval.top_k"}, "mode": {"type": "string", "enum": ["facts_only", "facts_plus_rules", "full_context"], "default": "full_context"}, "reference_date": {"type": "string", "description": "Optional date for relative temporal expressions"}}, "required": ["query"]}, "annotations": {"readOnlyHint": True}},
     {"name": "recall_entity", "description": "Get everything about a specific entity — facts, relationships, timeline", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "recall_timeline", "description": "Query memories by date range", "inputSchema": {"type": "object", "properties": {"start": {"type": "string", "description": "Start date YYYY-MM-DD or YYYY-MM"}, "end": {"type": "string"}}, "required": ["start"]}},
     {"name": "recall_related", "description": "Multi-hop graph traversal from an entity", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "max_hops": {"type": "integer", "default": 2}}, "required": ["name"]}},
@@ -155,6 +157,7 @@ def _suggest_resume_queries(open_loops: list[str], touched_entities: set[str], r
 
 class MCPServer:
     def __init__(self, config: Config):
+        config.validate()
         self.config = config
         # set embedding backend + default model from config
         from engram.embeddings import set_backend, set_default_model
@@ -179,7 +182,7 @@ class MCPServer:
             return self._response(req_id, {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "engram", "version": "0.6.2"},
+                "serverInfo": {"name": "engram", "version": __version__},
             })
         elif method == "tools/list":
             return self._response(req_id, {"tools": TOOLS})
@@ -198,6 +201,7 @@ class MCPServer:
 
     def _call_tool(self, name: str, args: dict) -> Any:
         handlers = {
+            "config_show": lambda args: {"version": __version__, **self.config.describe()},
             "evidence_put": lambda args: evidence_put(self.store, **args),
             "evidence_get": lambda args: evidence_get(self.store, **args),
             "evidence_list": lambda args: evidence_list(self.store, **args),
@@ -300,7 +304,7 @@ class MCPServer:
     def _recall(self, args: dict):
         self._sweep_working()
         results = hybrid_search(args["query"], self.store, self.config,
-                                top_k=args.get("top_k", 10),
+                                top_k=args.get("top_k"),
                                 deep_reranker=self._reranker,
                                 mode=args.get("mode", "full_context"),
                                 reference_date=args.get("reference_date"))
@@ -311,19 +315,18 @@ class MCPServer:
                  "importance": r.memory.importance} for r in results]
 
     def _recall_explain(self, args: dict):
-        self._sweep_working()
         results, dbg = hybrid_search(
             args["query"],
             self.store,
             self.config,
-            top_k=args.get("top_k", 10),
+            top_k=args.get("top_k"),
             debug=True,
             deep_reranker=self._reranker,
             mode=args.get("mode", "full_context"),
             reference_date=args.get("reference_date"),
         )
-        self._refresh_session_handoff()
         return {
+            "explanation": dbg.to_dict(),
             "query": dbg.query,
             "intent": dbg.intent,
             "expanded_terms": dbg.expanded_terms,
@@ -1712,7 +1715,7 @@ def run_mcp_sse(config: Config, port: int = 8421):
 
     threading.Thread(target=_warmup, daemon=True).start()
 
-    app = FastAPI(title="Engram MCP (SSE)", version="0.6.2")
+    app = FastAPI(title="Engram MCP (SSE)", version=__version__)
 
     # SSE subscribers
     _sse_queues: list[asyncio.Queue] = []

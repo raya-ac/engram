@@ -9,17 +9,26 @@ import json
 import sys
 import time
 import uuid
+from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
 
-from engram.config import Config
-from engram.store import _json_loads_maybe
+from engram import __version__
+from engram.config import Config, ConfigError
 
 
 def main():
     parser = argparse.ArgumentParser(prog="engram", description="Cognitive memory system")
+    parser.add_argument("--version", action="version", version=f"engram {__version__}")
     parser.add_argument("--config", help="Path to config.yaml")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("api", help="Native persistent JSONL API for local harnesses (no network listener)")
+
+    p_config = sub.add_parser("config", help="Validate or inspect configuration without opening storage or loading models")
+    config_sub = p_config.add_subparsers(dest="action", required=True)
+    for action in ("check", "show", "schema"):
+        command = config_sub.add_parser(action)
+        command.add_argument("--json", action="store_true", dest="json_output")
+        command.add_argument("--defaults", action="store_true", help="Use package defaults, ignoring files and environment")
 
     # ingest
     p_ingest = sub.add_parser("ingest", help="Ingest files into memory")
@@ -30,8 +39,8 @@ def main():
     # search
     p_search = sub.add_parser("search", help="Search memories")
     p_search.add_argument("query", nargs="+", help="Search query")
-    p_search.add_argument("-k", "--top-k", type=int, default=10)
-    p_search.add_argument("--debug", action="store_true", help="Show retrieval debug info")
+    p_search.add_argument("-k", "--top-k", type=int, default=None, help="Result limit (default: retrieval.top_k)")
+    p_search.add_argument("--explain", "--debug", action="store_true", dest="debug", help="Explain returned and rejected candidates without recording access")
     p_search.add_argument("--rerank", action="store_true", help="Enable cross-encoder reranking (slower, better)")
     p_search.add_argument("--json", action="store_true", dest="json_output")
 
@@ -133,10 +142,18 @@ def main():
     p_serve.add_argument("--port", type=int, help="Port override")
 
     args = parser.parse_args()
+    if args.command == "search" and args.top_k is not None and args.top_k < 1:
+        parser.error("--top-k must be a positive integer")
+    if args.command == "config":
+        cmd_config(args, parser)
+        return
     if args.command == "api" and (not args.config or not Path(args.config).is_absolute()
                                   or not Path(args.config).is_file()):
         parser.error("api requires --config with an existing absolute config file")
-    config = Config.load(args.config)
+    try:
+        config = Config.load(args.config)
+    except ConfigError as exc:
+        parser.error(str(exc))
 
     if args.command == "api":
         from engram.service import run_stdio
@@ -152,7 +169,10 @@ def main():
     if args.command == "ingest":
         cmd_ingest(args, config)
     elif args.command == "search":
-        cmd_search(args, config)
+        try:
+            cmd_search(args, config)
+        except ValueError as exc:
+            parser.error(str(exc))
     elif args.command == "dormant":
         from engram.dormant import review, inspect_event, feedback
         if args.action == "review":
@@ -207,6 +227,50 @@ def main():
         cmd_serve(args, config)
     else:
         parser.print_help()
+
+
+def _flatten_settings(values, prefix=""):
+    for key, value in values.items():
+        name = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            yield from _flatten_settings(value, name)
+        else:
+            yield name, value
+
+
+def cmd_config(args, parser):
+    if args.defaults and args.config:
+        parser.error("--defaults cannot be combined with --config")
+    if args.action == "schema":
+        print(json.dumps(Config.schema(), indent=2))
+        return
+    try:
+        config = Config() if args.defaults else Config.load(args.config)
+        config.validate()
+        report = config.describe()
+    except ConfigError as exc:
+        if args.json_output:
+            print(json.dumps({"valid": False, "error": str(exc)}))
+            raise SystemExit(2) from None
+        parser.error(str(exc))
+    if args.action == "check":
+        result = {"valid": True, "config_file": report["config_file"], "warnings": report["warnings"]}
+        if args.json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            origin = report['config_file'] or ('package defaults' if args.defaults else 'package defaults and environment')
+            print(f"configuration valid: {origin}")
+            for warning in report["warnings"]:
+                print(f"warning: {warning}")
+    elif args.json_output:
+        print(json.dumps(report, indent=2))
+    else:
+        print(f"config file: {report['config_file'] or 'none'}")
+        print("secrets are redacted; values below include their source")
+        for name, value in _flatten_settings(report["values"]):
+            print(f"{name} = {json.dumps(value)}  [{report['sources'].get(name, 'default')}]")
+        for warning in report["warnings"]:
+            print(f"warning: {warning}")
 
 
 def cmd_ingest(args, config: Config):
@@ -308,51 +372,58 @@ def cmd_ingest(args, config: Config):
 
 
 def cmd_search(args, config: Config):
-    from engram.store import Store
-    from engram.retrieval import search
+    # Lazy model imports and inference may write progress to stdout. Keep the
+    # machine-readable channel reserved for the single result payload.
+    with redirect_stdout(sys.stderr) if args.json_output else nullcontext():
+        from engram.store import Store
+        from engram.retrieval import search
 
-    store = Store(config)
-    store.init_db()
-
-    query = " ".join(args.query)
-    results = search(query, store, config, top_k=args.top_k, debug=args.debug, rerank=args.rerank)
-
+        if args.debug and config.normalized_storage_backend == "sqlite" and not Path(config.db_path).expanduser().is_file():
+            raise ValueError("search --explain requires an initialized store")
+        store = Store(config)
+        try:
+            if args.debug:
+                store.conn.execute("SELECT id, status, forgotten FROM memories LIMIT 0")
+            else:
+                store.init_db()
+            query = " ".join(args.query)
+            result = search(query, store, config, top_k=args.top_k, debug=args.debug, rerank=args.rerank)
+        finally:
+            store.close()
+    explanation = None
     if args.debug:
-        results, debug = results
-        print(f"\n[Debug] Latency: {debug.latency_ms:.0f}ms")
-        print(f"[Debug] Dense candidates: {len(debug.dense_candidates)}")
-        print(f"[Debug] BM25 candidates: {len(debug.bm25_candidates)}")
-        print(f"[Debug] Graph candidates: {len(debug.graph_candidates)}")
-        print(f"[Debug] RRF merged: {len(debug.rrf_scores)}")
-        print()
-
+        results, debug = result
+        explanation = debug.to_dict()
+    else:
+        results = result
+    out = []
+    for r in results:
+        out.append({
+            "id": r.memory.id,
+            "content": r.memory.content,
+            "score": round(r.score, 4),
+            "layer": r.memory.layer,
+            "importance": r.memory.importance,
+            "fact_date": r.memory.fact_date,
+            "sources": r.sources,
+        })
+    if args.json_output:
+        payload = {"results": out, "explanation": explanation} if args.debug else out
+        print(json.dumps(payload, indent=2, allow_nan=False))
+        return
+    if explanation is not None:
+        print("retrieval explanation (access history and dormant evaluations unchanged)")
+        print(f"reranker: {config.cross_encoder_model if args.rerank else 'off'}")
+        print(f"confidence cutoff: {config.retrieval.min_confidence if args.rerank else 'not applied'}")
+        for candidate in explanation["candidates"]:
+            print(f"{candidate['memory_id']}: {candidate['outcome']} — {candidate['reason']}")
     if not results:
         print("No memories found.")
-        store.close()
-        return
-
-    if args.json_output:
-        out = []
-        for r in results:
-            out.append({
-                "id": r.memory.id,
-                "content": r.memory.content,
-                "score": round(r.score, 4),
-                "layer": r.memory.layer,
-                "importance": r.memory.importance,
-                "fact_date": r.memory.fact_date,
-                "sources": {k: round(v, 4) for k, v in r.sources.items()},
-            })
-        print(json.dumps(out, indent=2))
-    else:
-        for i, r in enumerate(results):
-            print(f"\n{'='*60}")
-            print(f"[{i+1}] score={r.score:.3f} layer={r.memory.layer} importance={r.memory.importance:.2f}")
-            if r.memory.fact_date:
-                print(f"    date={r.memory.fact_date}")
-            print(f"    {r.memory.content[:200]}")
-
-    store.close()
+    for i, r in enumerate(results):
+        print(f"\n[{i+1}] score={r.score:.3f} layer={r.memory.layer} importance={r.memory.importance:.2f}")
+        if r.memory.fact_date:
+            print(f"    date={r.memory.fact_date}")
+        print(f"    {r.memory.content[:200]}")
 
 
 def cmd_remember(args, config: Config):
@@ -459,7 +530,7 @@ def cmd_status(args, config: Config):
     print(f"{'='*40}")
     if config.normalized_storage_backend == "postgres":
         print(f"Database: postgres")
-        print(f"DSN: {config.postgres_dsn}")
+        print(f"DSN: {'configured (redacted)' if config.postgres_dsn else 'not configured'}")
     else:
         print(f"Database: {config.resolved_db_path}")
     print(f"Size: {stats['db_size_mb']} MB")
@@ -776,7 +847,7 @@ def cmd_watch(args, config: Config):
 
 def cmd_export(args, config: Config):
     import base64
-    from engram.store import Store
+    from engram.store import Store, _json_loads_maybe
 
     store = Store(config)
     store.init_db()

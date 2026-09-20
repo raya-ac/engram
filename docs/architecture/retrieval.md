@@ -34,7 +34,8 @@ reciprocal rank fusion from [Cormack et al. 2009](https://cormack.uwaterloo.ca/c
 score(doc) = Σ weight / (k + rank + 1)
 ```
 
-k=60 is the standard constant. each channel contributes independently — a document ranked #1 in dense and #5 in BM25 gets a higher fused score than a document ranked #2 in both.
+k defaults to `retrieval.rrf_k`, which is 60. each channel contributes
+independently, weighted by the query intent.
 
 ## temporal boost
 
@@ -146,9 +147,56 @@ return results calculated under the earlier policy.
 given the same candidates, model scores and settings, the rerank scoring step is
 deterministic.
 
+## explanations
+
+diagnostic searches explain the decisions made during one retrieval run:
+
+| interface | request |
+| --- | --- |
+| CLI | `engram search "query" --rerank --explain --json` (`--debug` is an alias) |
+| MCP | `recall_explain` with `query`, optional `top_k`, `mode`, `reference_date` |
+| native JSONL | `search_explain` with `query` and optional `top_k` |
+| REST | `GET /api/search/explain?q=...`, or `/api/search?q=...&debug=true` |
+
+omitted result limits use `retrieval.top_k` (default 10), subject to interface
+bounds. CLI explanations do not enable reranking themselves; include `--rerank`
+to inspect cross-encoder scores and confidence decisions. other interfaces use
+their ordinary reranked search path.
+
+the `explanation` object has `schema_version: 1` and includes:
+
+- `query`, `settings`, `counts` and `latency_ms`: the query forms, effective
+  retrieval policy and observed candidate counts.
+- `candidates`: memory IDs, available stage scores and one-based ranks,
+  confidence decisions, outcome and reason. passage retries include source
+  offsets and full/excerpt raw scores. missing scores mean that stage did not
+  score the candidate.
+- `final_ids`: authoritative result order. coverage and the optional deep
+  reranker can change order without changing score values.
+- `cache`, `side_effects` and `score_semantics`: the diagnostic execution
+  boundary and meaning of scores.
+
+candidate outcomes include `returned`, `below_confidence`, `outside_top_k`,
+`outside_rerank_candidates`, `not_scored`, `deep_reranker_excluded`, and
+lifecycle/profile exclusions. `eligible` means a memory passed the lifecycle
+and profile checks; it does not mean it passed confidence. forgotten, inactive,
+unavailable or profile-filtered rows expose no memory content. the bounded union
+of channel candidates is explained; absence from this report does not establish
+absence from storage.
+
+explanations bypass result-cache reads and writes, do not record memory accesses,
+and do not run dormant evaluations. MCP explanations also leave session handoffs
+unchanged. models still run, and searches with reranking off retain ordinary
+score noise; the realized adjustment is included in each affected row.
+
+inspect complete effective configuration separately through `engram config show`,
+MCP/native `config_show`, or `GET /api/config`. these reports redact credentials
+and identify each setting's source. see [configuration](../reference/config.md).
+
 ## key files
 
 - `engram/retrieval.py` — the full pipeline
+- `engram/retrieval_explain.py` — observed candidate decisions and safe explanation serialization
 - `engram/embeddings.py` — dense search + cross-encoder
 - `engram/rerank_scoring.py` — shared score conversion and optional prior blend
 - `engram/rerank_passages.py` — bounded local excerpt selection and retry traces

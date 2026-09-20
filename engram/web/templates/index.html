@@ -656,6 +656,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   text-transform:uppercase;
   letter-spacing:.08em;
 }
+.retrieval-decisions { margin-top:18px; }
+.retrieval-decisions summary { cursor:pointer; font-weight:600; padding:8px 0; }
+.retrieval-decision { border-top:1px solid var(--border); padding:12px 0; }
+.retrieval-decision p { margin:5px 0; overflow-wrap:anywhere; }
+.retrieval-decision code { font:11px var(--mono); color:var(--muted); }
+.retrieval-decision-state { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; font:11px var(--mono); }
+.retrieval-decision-state span { color:var(--muted); }
 .token-row,.followups {
   display:flex;
   flex-wrap:wrap;
@@ -3396,6 +3403,11 @@ async function doSearch() {
 
   let url, data;
 
+  if (debug && (hints || layers || minImp > 0)) {
+    document.getElementById('search-results').innerHTML = '<div class="empty">Turn off hints and clear the layer and importance filters to explain the full retrieval pipeline.</div>';
+    return;
+  }
+
   if (hints) {
     // Hint mode
     data = await fetchJSON(`/api/search/hints?q=${encodeURIComponent(q)}&top_k=10`);
@@ -3422,7 +3434,7 @@ async function doSearch() {
       <div><b>Latency:</b> ${data.debug.latency_ms}ms</div>
       <div class="debug-grid">
         <div class="debug-pill"><b>Intent</b>${escapeHtml(data.debug.intent || 'what')}</div>
-        <div class="debug-pill"><b>Cache</b>${data.debug.cache_hit ? 'hit' : 'miss'}</div>
+        <div class="debug-pill"><b>Cache</b>${data.explanation ? 'bypassed for explanation' : (data.debug.cache_hit ? 'hit' : 'miss')}</div>
         <div class="debug-pill"><b>Dense</b>${data.debug.dense_count}</div>
         <div class="debug-pill"><b>BM25</b>${data.debug.bm25_count}</div>
         <div class="debug-pill"><b>Graph</b>${data.debug.graph_count}</div>
@@ -3430,6 +3442,7 @@ async function doSearch() {
       </div>
       ${(data.debug.expanded_terms || []).length ? `<div class="token-row">${data.debug.expanded_terms.map(term => `<span class="token">${escapeHtml(term)}</span>`).join('')}</div>` : ''}
       ${(data.debug.phrase_terms || []).length ? `<div class="token-row">${data.debug.phrase_terms.map(term => `<span class="token">"${escapeHtml(term)}"</span>`).join('')}</div>` : ''}
+      ${data.explanation ? renderRetrievalDecisions(data.explanation) : ''}
     </div>`;
   }
   const results = data.results || [];
@@ -3446,6 +3459,22 @@ async function doSearch() {
   } else {
     q.split(/\s+/).forEach(w => fireNeuronByName(w));
   }
+}
+
+function renderRetrievalDecisions(explanation) {
+  const candidates = explanation.candidates || [];
+  const rejected = candidates.filter(item => item.outcome !== 'returned').length;
+  return `<p>Explanation leaves memory access history and dormant evaluations unchanged. Scores are ranking signals, not probabilities.</p>
+    <details class="retrieval-decisions" open>
+      <summary>${candidates.length} candidates · ${rejected} not returned</summary>
+      ${candidates.map(item => `<div class="retrieval-decision">
+        <div class="retrieval-decision-state"><b>${escapeHtml(String(item.outcome || '').replaceAll('_', ' '))}</b>
+          <span>${Number.isFinite(item.scores?.final) ? `score ${item.scores.final.toFixed(4)}` : 'not scored'}${item.confidence?.applied ? ` · cutoff ${Number(item.confidence.threshold).toFixed(4)}` : ''}</span></div>
+        <p>${escapeHtml(item.reason || '')}</p>
+        ${item.content ? `<p>${escapeHtml(item.content.slice(0, 320))}${item.content.length > 320 ? '…' : ''}</p>` : ''}
+        <code>${escapeHtml(item.memory_id || '')}</code>
+      </div>`).join('')}
+    </details>`;
 }
 
 async function loadFocusBrief() {

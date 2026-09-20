@@ -10,6 +10,7 @@ import math
 import random
 import re
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -20,6 +21,7 @@ from engram.embeddings import RERANKER_BACKENDS, cosine_similarity_search, cross
 from engram.rerank_scoring import rerank_score
 from engram.rerank_selection import preserve_prior_leader
 from engram.rerank_passages import rerank_with_passages
+from engram.retrieval_explain import ExplanationTrace, build_explanation, eligibility_reason
 from engram.hopfield import hopfield_retrieve
 from engram.store import Memory, MemoryType, Store
 from engram.temporal import _parse_date, _resolve_temporal_window, _temporal_content_query
@@ -133,6 +135,12 @@ class RetrievalDebug:
     reranked: list[tuple[str, float]]
     final_results: list[RetrievalResult]
     latency_ms: float
+    hopfield_candidates: list[tuple[str, float]] = field(default_factory=list)
+    explanation: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Return a JSON-friendly report without serializing Memory internals."""
+        return deepcopy(self.explanation)
 
 
 def search(
@@ -150,12 +158,22 @@ def search(
         config = Config.load()
 
     rc = config.retrieval
-    k = top_k or rc.top_k
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be a nonempty string")
+    k = rc.top_k if top_k is None else top_k
+    if isinstance(k, bool) or not isinstance(k, int) or k < 1:
+        raise ValueError("top_k must be a positive integer")
+    if not isinstance(mode, str) or mode not in RETRIEVAL_PROFILES:
+        raise ValueError("mode must be facts_only, facts_plus_rules, or full_context")
     t0 = time.time()
-    allowed_types = RETRIEVAL_PROFILES.get(mode, RETRIEVAL_PROFILES["full_context"])
+    allowed_types = RETRIEVAL_PROFILES[mode]
     features = _build_query_features(query, config)
     weights = INTENT_WEIGHTS.get(features.intent, INTENT_WEIGHTS["what"])
+    if isinstance(reference_date, bool):
+        raise ValueError("reference_date must be a valid date or timestamp")
     ref_d = _parse_date(reference_date) if reference_date is not None else None
+    if reference_date is not None and ref_d is None:
+        raise ValueError("reference_date must be a valid date or timestamp")
 
     if ref_d:
         cache_key = (
@@ -184,11 +202,13 @@ def search(
     dense_candidates: list[tuple[str, float]] = []
     bm25_candidates: list[tuple[str, float]] = []
     graph_candidates: list[tuple[str, float]] = []
+    hopfield_candidates: list[tuple[str, float]] = []
     rrf_scores: dict[str, float] = {}
     boosted: list[tuple[str, float]] = []
     reranked: list[tuple[int, float]] = []
     boosted_reranked: list[tuple[str, float, float, float]] = []
     valid_ids: list[str] = []
+    trace = ExplanationTrace() if debug else None
 
     cached_payload = None if debug else store.get_search_cache(cache_key)
     if cached_payload:
@@ -206,13 +226,15 @@ def search(
             signal_weights=[weights["dense"], weights["bm25"], weights["graph"], weights.get("hopfield", 0.6)],
         )
         rrf_top = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[: rc.rerank_candidates]
+        if trace is not None:
+            trace.rrf_selected_ids = [mid for mid, _ in rrf_top]
         boosted = _apply_boosts(features, rrf_top, store, config, reference_date=ref_d)
 
         candidate_ids = [mid for mid, _ in boosted[: rc.rerank_candidates]]
         candidate_memories: dict[str, Memory] = {}
         for mid in candidate_ids:
             mem = store.get_memory(mid)
-            if mem and mem.memory_type in allowed_types and mem.status in ("active", None):
+            if eligibility_reason(mem, allowed_types) is None:
                 candidate_memories[mid] = mem
 
         if not candidate_memories:
@@ -229,7 +251,10 @@ def search(
             else:
                 reranked = cross_encoder_rerank(features.dense_query, docs, config.cross_encoder_model)
                 passage_details = {}
-            passage_by_id = {valid_ids[index]: trace for index, trace in passage_details.items()}
+            passage_by_id = {valid_ids[index]: detail for index, detail in passage_details.items()}
+            if trace is not None:
+                trace.prior_ids = list(valid_ids)
+                trace.passages = passage_by_id
 
             # post-rerank temporal boost — cross-encoder scores text semantics only,
             # so we condition final scores on temporal window proximity when a date is resolved
@@ -256,14 +281,20 @@ def search(
                 boosted_reranked.append((mid, final_score, ce_score, t_boost))
 
             boosted_reranked.sort(key=lambda x: x[1], reverse=True)
+            if trace is not None:
+                trace.scored = list(boosted_reranked)
             # Confidence is a separate eligibility gate. Reserve only a
             # candidate that would otherwise be allowed in the result set.
             if rc.min_confidence > 0:
                 boosted_reranked = [row for row in boosted_reranked if row[1] >= rc.min_confidence]
+            if trace is not None:
+                trace.before_coverage = [row[0] for row in boosted_reranked]
             if rc.preserve_prior_candidate:
                 by_id = {row[0]: row for row in boosted_reranked}
                 order = preserve_prior_leader(list(by_id), valid_ids, result_limit=k)
                 boosted_reranked = [by_id[mid] for mid in order]
+            if trace is not None:
+                trace.after_coverage = [row[0] for row in boosted_reranked]
 
             results = []
             for mid, final_score, ce_score, t_boost in boosted_reranked[:k]:
@@ -309,6 +340,9 @@ def search(
                     )
 
         if deep_reranker and deep_reranker.is_trained and results:
+            if trace is not None:
+                trace.deep_applied = True
+                trace.deep_input_ids = [result.memory.id for result in results]
             query_vec = embed_query(features.dense_query, config.embedding_model)
             candidates = []
             emb_map = {}
@@ -327,6 +361,9 @@ def search(
                     emb_map[r.memory.id] = r.memory.embedding
 
             reranked_candidates = deep_reranker.rerank(candidates, query_vec, emb_map)
+            if trace is not None:
+                trace.deep_scores = {row["id"]: row["deep_score"] for row in reranked_candidates
+                                     if "deep_score" in row}
             mem_map = {r.memory.id: r for r in results}
             new_results = []
             for c in reranked_candidates[:k]:
@@ -338,7 +375,11 @@ def search(
         if results and not rerank and RETRIEVAL_NOISE_SCALE > 0:
             for r in results:
                 noise = random.gauss(0, RETRIEVAL_NOISE_SCALE)
+                before_noise = r.score
                 r.score = max(0.0, r.score + noise)
+                if trace is not None:
+                    trace.noise[r.memory.id] = {"sample": float(noise), "before": float(before_noise),
+                                                "after": float(r.score), "scale": RETRIEVAL_NOISE_SCALE}
             results.sort(key=lambda r: r.score, reverse=True)
 
         if rerank and results:
@@ -346,13 +387,21 @@ def search(
             if min_threshold > 0:
                 results = [r for r in results if r.score >= min_threshold]
 
-        if not debug:
-            store.set_search_cache(cache_key, _serialize_results(results))
+    # A model call can take long enough for another request to edit or forget
+    # a candidate. Recheck immediately before caching or returning content.
+    # Diagnostics use one snapshot for both results and their explanation.
+    if trace is not None:
+        trace.memories = {mid: store.get_memory(mid) for mid in rrf_scores}
+    results = _refresh_results(results, store, allowed_types,
+                               memories=trace.memories if trace is not None else None)
 
-    if results:
+    if not debug and not cache_hit:
+        store.set_search_cache(cache_key, _serialize_results(results))
+
+    if results and not debug:
         store.record_search([r.memory.id for r in results], query)
 
-    if config.dormant_recall.mode == "shadow":
+    if not debug and config.dormant_recall.mode == "shadow":
         from engram.dormant import evaluate_shadow
         evaluate_shadow(query, store, config, {r.memory.id for r in results}, allowed_types)
 
@@ -367,11 +416,17 @@ def search(
             dense_candidates=dense_candidates,
             bm25_candidates=bm25_candidates,
             graph_candidates=graph_candidates,
+            hopfield_candidates=hopfield_candidates,
             rrf_scores=list(rrf_scores.items()),
             boosted_scores=boosted,
             reranked=[(mid, s) for mid, s, _, _ in boosted_reranked[:k]] if boosted_reranked else ([(valid_ids[i], s) for i, s in reranked[:k]] if valid_ids and reranked else []),
             final_results=results,
             latency_ms=latency,
+        )
+        dbg.explanation = build_explanation(
+            dbg, trace=trace, config=config, features=features,
+            mode=mode, allowed_types=allowed_types, top_k=k, rerank=rerank,
+            reference_date=ref_d, weights=weights,
         )
         return results, dbg
     return results
@@ -407,6 +462,18 @@ def _build_query_features(query: str, config: Config) -> QueryFeatures:
 
 def _serialize_results(results: list[RetrievalResult]) -> list[dict]:
     return [{"memory_id": r.memory.id, "score": r.score, "sources": dict(r.sources)} for r in results]
+
+
+def _refresh_results(results: list[RetrievalResult], store: Store, allowed_types,
+                     *, memories: dict | None = None) -> list[RetrievalResult]:
+    """Preserve scores/order while checking the latest lifecycle and profile."""
+    refreshed = []
+    for result in results:
+        memory = (memories.get(result.memory.id) if memories is not None
+                  else store.get_memory(result.memory.id))
+        if eligibility_reason(memory, allowed_types) is None:
+            refreshed.append(RetrievalResult(memory=memory, score=result.score, sources=result.sources))
+    return refreshed
 
 
 def _deserialize_results(payload: list[dict], store: Store) -> list[RetrievalResult]:

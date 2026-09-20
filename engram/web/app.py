@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from engram import __version__
 from engram.config import Config
 from engram.store import Store
 
@@ -16,8 +17,9 @@ from engram.store import Store
 def create_app(config: Config | None = None) -> FastAPI:
     if config is None:
         config = Config.load()
+    config.validate()
 
-    app = FastAPI(title="Engram", version="0.6.2")
+    app = FastAPI(title="Engram", version=__version__)
 
     # set embedding backend + default model from config
     from engram.embeddings import set_backend, set_default_model

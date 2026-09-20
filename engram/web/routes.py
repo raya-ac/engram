@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+from engram import __version__
 from engram.store import Store, Memory, MemoryLayer, SourceType
 from engram.retrieval import search as hybrid_search, RetrievalResult
 from engram.embeddings import embed_documents
@@ -101,6 +102,25 @@ async def stream(request: Request):
 
 # --- API: Read ---
 
+@router.get("/api/config")
+async def effective_config(request: Request):
+    """Read this process's settings through the common redaction boundary."""
+    return {"version": __version__, **_config(request).describe()}
+
+
+def _debug_summary(dbg):
+    return {
+        "intent": dbg.intent,
+        "expanded_terms": dbg.expanded_terms,
+        "phrase_terms": dbg.phrase_terms,
+        "cache_hit": dbg.cache_hit,
+        "latency_ms": round(dbg.latency_ms, 1),
+        "dense_count": len(dbg.dense_candidates),
+        "bm25_count": len(dbg.bm25_candidates),
+        "graph_count": len(dbg.graph_candidates),
+        "rrf_count": len(dbg.rrf_scores),
+    }
+
 @router.get("/api/memories")
 async def list_memories(request: Request, layer: str | None = None,
                         limit: int = 50, offset: int = 0):
@@ -140,12 +160,17 @@ async def get_memory(request: Request, memory_id: str):
 
 
 @router.get("/api/search")
-async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool = False):
+async def search_memories(request: Request, q: str = Query(..., min_length=1, max_length=4000),
+                          top_k: int | None = Query(None, ge=1, le=100), debug: bool = False):
     store = _store(request)
     config = _config(request)
-    result = hybrid_search(q, store, config, top_k=top_k, debug=debug)
-
-    push_event("search", {"query": q, "results": len(result) if not debug else len(result[0])})
+    top_k = config.retrieval.top_k if top_k is None else top_k
+    if not 1 <= top_k <= 100:
+        return JSONResponse({"error": "top_k must be from 1 to 100"}, status_code=400)
+    try:
+        result = hybrid_search(q, store, config, top_k=top_k, debug=debug)
+    except ValueError:
+        return JSONResponse({"error": "query and retrieval parameters must be valid"}, status_code=400)
 
     if debug:
         results, dbg = result
@@ -153,42 +178,32 @@ async def search_memories(request: Request, q: str, top_k: int = 10, debug: bool
         return {
             "results": [_result_dict(r) for r in results],
             "entity_ids": entity_ids,
-            "debug": {
-                "intent": dbg.intent,
-                "expanded_terms": dbg.expanded_terms,
-                "phrase_terms": dbg.phrase_terms,
-                "cache_hit": dbg.cache_hit,
-                "latency_ms": round(dbg.latency_ms, 1),
-                "dense_count": len(dbg.dense_candidates),
-                "bm25_count": len(dbg.bm25_candidates),
-                "graph_count": len(dbg.graph_candidates),
-                "rrf_count": len(dbg.rrf_scores),
-            },
+            "debug": _debug_summary(dbg),
+            "explanation": dbg.to_dict(),
         }
     results = result
+    push_event("search", {"query": q, "results": len(results)})
     entity_ids = _collect_entity_ids(store, [r.memory.id for r in results])
     return {"results": [_result_dict(r) for r in results], "entity_ids": entity_ids}
 
 
 @router.get("/api/search/explain")
-async def explain_search(request: Request, q: str, top_k: int = 10):
+async def explain_search(request: Request, q: str = Query(..., min_length=1, max_length=4000),
+                         top_k: int | None = Query(None, ge=1, le=100)):
     store = _store(request)
     config = _config(request)
-    results, dbg = hybrid_search(q, store, config, top_k=top_k, debug=True)
+    top_k = config.retrieval.top_k if top_k is None else top_k
+    if not 1 <= top_k <= 100:
+        return JSONResponse({"error": "top_k must be from 1 to 100"}, status_code=400)
+    try:
+        results, dbg = hybrid_search(q, store, config, top_k=top_k, debug=True)
+    except ValueError:
+        return JSONResponse({"error": "query and retrieval parameters must be valid"}, status_code=400)
     return {
         "query": q,
         "results": [_result_dict(r) for r in results],
-        "debug": {
-            "intent": dbg.intent,
-            "expanded_terms": dbg.expanded_terms,
-            "phrase_terms": dbg.phrase_terms,
-            "cache_hit": dbg.cache_hit,
-            "latency_ms": round(dbg.latency_ms, 1),
-            "dense_count": len(dbg.dense_candidates),
-            "bm25_count": len(dbg.bm25_candidates),
-            "graph_count": len(dbg.graph_candidates),
-            "rrf_count": len(dbg.rrf_scores),
-        },
+        "debug": _debug_summary(dbg),
+        "explanation": dbg.to_dict(),
     }
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import time
 
+from engram import __version__
 from engram.config import Config
 
 VERSION = 1
@@ -38,11 +39,15 @@ def operations():
     result = [
         _operation("operations", "Discover this native API's operations and argument schemas."),
         _operation("status", "Read core storage counts and this process's non-secret runtime status."),
+        _operation("config_show", "Inspect effective settings and their sources, with secrets redacted. Does not open storage or load models."),
         _operation("recall", "Read the most recently created active memories explicitly owned by a project. No semantic query or access reinforcement.",
                    {"project_id": _PROJECT, "limit": _LIMIT}, ["project_id"]),
         _operation("search", "Run ordinary semantic/hybrid Engram retrieval across the whole configured store. NOT project scoped; records ordinary accesses and configured shadow evaluations. Models load lazily.",
                    {"query": {"type": "string", "minLength": 1, "maxLength": 4000},
-                    "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5}}, ["query"], True),
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Defaults to retrieval.top_k (must be at most 20)"}}, ["query"], True),
+        _operation("search_explain", "Explain returned and rejected retrieval candidates across the whole configured store. NOT project scoped. Models load lazily; access history, result cache and dormant evaluations are unchanged.",
+                   {"query": {"type": "string", "minLength": 1, "maxLength": 4000},
+                    "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Defaults to retrieval.top_k (must be at most 20)"}}, ["query"]),
         _operation("dormant_review", "List metadata-only dormant evaluations across the whole configured store. NOT project scoped; listing does not expose candidate content.",
                    {"limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}}),
         _operation("dormant_inspect", "Explicitly open a store-wide dormant candidate after rechecking active eligibility. Records separate exposure, never ordinary reinforcement.",
@@ -68,12 +73,13 @@ def operations():
                    "inputSchema": item["inputSchema"],
                    "writes": not item["annotations"]["readOnlyHint"]}
                   for item in evidence_schemas)
-    return {"protocol": "engram-jsonl", "version": VERSION,
+    return {"protocol": "engram-jsonl", "version": VERSION, "engram_version": __version__,
             "max_request_bytes": MAX_REQUEST_BYTES, "operations": copy.deepcopy(result)}
 
 
 class NativeService:
     def __init__(self, config: Config):
+        config.validate()
         self.config = config
         self.started_at = time.time()
         self._store = None
@@ -104,11 +110,15 @@ class NativeService:
 
     def status(self):
         return {**self.store.get_stats(), "protocol": "engram-jsonl", "version": VERSION,
+                "engram_version": __version__,
                 "pid": os.getpid(), "started_at": self.started_at,
                 "storage_backend": self.config.normalized_storage_backend,
                 "dormant_mode": self.config.dormant_recall.mode,
                 "automatic_capture": False,
                 "connection_scope": "this local process only"}
+
+    def config_show(self):
+        return {"version": __version__, **self.config.describe()}
 
     def _context(self, project_id, task=None, limit=8):
         self.store  # validate initialized schema before ProjectContext opens it
@@ -136,23 +146,37 @@ class NativeService:
         finally:
             context.close()
 
-    def search(self, query, top_k=5):
+    def search(self, query, top_k=None):
+        return self._search(query, top_k)
+
+    def search_explain(self, query, top_k=None):
+        return self._search(query, top_k, explain=True)
+
+    def _search(self, query, top_k, explain=False):
         if not isinstance(query, str) or not query.strip() or len(query) > 4000:
             raise ValueError("query must be nonempty text of at most 4000 characters")
+        if top_k is None:
+            top_k = self.config.retrieval.top_k
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 20:
             raise ValueError("top_k must be an integer from 1 to 20")
         store = self.store
-        # This is the only native operation which loads retrieval/model code.
+        # Search and its explicit diagnostic counterpart load models lazily.
         from engram.embeddings import set_backend, set_default_model
         from engram.retrieval import search
         if not self._search_configured:
             set_backend(self.config.embedding_backend)
             set_default_model(self.config.embedding_model)
             self._search_configured = True
-        results = search(query, store, self.config, top_k=top_k)
-        return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
+        result = (search(query, store, self.config, top_k=top_k, debug=True) if explain
+                  else search(query, store, self.config, top_k=top_k))
+        if explain:
+            results, debug = result
+        else:
+            results = result
+        memories = [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
                  "layer": r.memory.layer, "memory_type": r.memory.memory_type,
                  "importance": r.memory.importance} for r in results]
+        return {"results": memories, "explanation": debug.to_dict()} if explain else memories
 
     def dormant_review(self, limit=20):
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -187,7 +211,8 @@ class NativeService:
             return _error(ident, "invalid_request", "Expected {id, operation, params}; params must be an object")
         name, params = request["operation"], request.get("params", {})
         handlers = {"operations": operations, "status": self.status, "recall": self.recall,
-                    "search": self.search, "session_resume": self.session_resume,
+                    "config_show": self.config_show,
+                    "search": self.search, "search_explain": self.search_explain, "session_resume": self.session_resume,
                     "session_checkpoint": self.session_checkpoint,
                     "checkpoint": self.session_checkpoint, "resume": self.session_resume,
                     "dormant_review": self.dormant_review, "dormant_inspect": self.dormant_inspect,

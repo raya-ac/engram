@@ -1,0 +1,64 @@
+{% extends "main.html" %}
+{% block container %}
+<div class="eg-home" data-md-component="content">
+  <section class="eg-hero" aria-labelledby="engram">
+    <div class="eg-hero__art" aria-hidden="true"><img src="{{ 'assets/hero-trace.svg' | url }}" alt="" width="800" height="800" fetchpriority="high"></div>
+    <div class="eg-hero__inner">
+      <div class="eg-eyebrow eg-hero__eyebrow"><span>persistent memory for your agents</span><a href="{{ 'changelog/' | url }}">the 0.7.0 update <span aria-hidden="true">↗</span></a></div>
+      <h1 id="engram" class="eg-wordmark">engram<span class="eg-wordmark__dot">.</span></h1>
+      <div class="eg-hero__copy">
+        <p class="eg-hero__promise">good work deserves<br> a longer memory.</p>
+        <p class="eg-body">keep the decisions, context, and connections.<br class="eg-desktop-break"> pick up where you left off.</p>
+        <div class="eg-actions"><a class="eg-button" href="{{ 'getting-started/installation/' | url }}">start remembering <span aria-hidden="true">↗</span></a><a class="eg-text-link" href="{{ 'getting-started/quickstart/' | url }}">read the docs <span aria-hidden="true">↗</span></a></div>
+      </div>
+      <div class="eg-hero__foot eg-eyebrow"><span>your store. your models. your context.</span><a href="#the-trace">follow the trace <span aria-hidden="true">↓</span></a></div>
+    </div>
+  </section>
+
+  <section class="eg-section eg-intro" id="the-trace" aria-labelledby="trace-title">
+    <div class="eg-section__label"><span class="eg-eyebrow">01 / continuity</span><span class="eg-small">the next conversation starts here</span></div>
+    <div class="eg-intro__heading eg-reveal"><h2 id="trace-title">a conversation ends.<br><span>the context stays.</span></h2><p>engram keeps what matters in a store you control. decisions, notes, and procedures stay connected to their sources, ready for the next piece of work.</p></div>
+    <div class="eg-trace" aria-label="Illustrative memory workflow">
+      <div class="eg-trace__line" aria-hidden="true"><svg viewBox="0 0 1000 80" preserveAspectRatio="none"><path class="eg-trace__path" d="M0 40H295Q320 40 335 20T375 20Q390 40 415 40H625Q650 40 665 60T705 60Q720 40 745 40H1000"/></svg></div>
+      <ol class="eg-trace__steps">
+        <li class="eg-reveal"><span class="eg-trace__number">01</span><h3>leave a trace.</h3><p>save a decision or bring in your notes. keep where it came from, when it mattered, and the project it belongs to.</p><div class="eg-trace__example"><span class="eg-eyebrow">a decision</span><q>use sqlite for the local install.</q></div></li>
+        <li class="eg-reveal"><span class="eg-trace__number">02</span><h3>find the thread.</h3><p>ask in your own words. semantic search, keywords, and connected entities work together to find relevant context.</p><div class="eg-trace__example"><span class="eg-eyebrow">a later question</span><q>what did we choose for storage?</q></div></li>
+        <li class="eg-reveal"><span class="eg-trace__number">03</span><h3>see why it returned.</h3><p>inspect the ranking and relevance gates. understand why a memory was returned or rejected before relying on it.</p><div class="eg-trace__example"><span class="eg-eyebrow">an inspectable result</span><span>the decision, its source, and its retrieval trail.</span></div></li>
+      </ol>
+      <p class="eg-fineprint">an illustrative workflow. a recalled memory is context, not proof that its claim is still current.</p>
+    </div>
+  </section>
+
+  <section class="eg-proof" aria-labelledby="proof-title">
+    <div class="eg-proof__inner">
+      <div class="eg-proof__title"><span class="eg-eyebrow">02 / measured retrieval</span><h2 id="proof-title">the right session.<br>in the first five.</h2><a class="eg-text-link" href="{{ 'architecture/benchmarks/' | url }}">read the evidence <span aria-hidden="true">↗</span></a></div>
+      <div class="eg-proof__result eg-reveal"><p class="eg-proof__number">470<span>/470</span></p><p class="eg-proof__metric">100.0% session recall-any@5</p><p class="eg-proof__scope">a fresh LongMemEval run on the development set used during tuning. 30 abstention questions excluded; production confidence gate not applied. this measures session retrieval, not answer accuracy.</p></div>
+    </div>
+  </section>
+
+  <section class="eg-section eg-control" aria-labelledby="control-title">
+    <div class="eg-section__label"><span class="eg-eyebrow">03 / clear by design</span><span class="eg-small">built to be understood</span></div>
+    <div class="eg-control__intro eg-reveal"><h2 id="control-title">your memory.<br>your settings.<br><span>no guesswork.</span></h2><p>start locally with sqlite and local models. choose postgres or hosted models when your work calls for them. keep the controls visible.</p></div>
+    <div class="eg-control__rows">
+      <a class="eg-control__row eg-reveal" href="{{ 'reference/config/' | url }}"><span class="eg-eyebrow">01</span><h3>one configuration.</h3><p>validated settings, clear defaults, and a safe view of what is actually in effect.</p><span class="eg-arrow" aria-hidden="true">↗</span></a>
+      <a class="eg-control__row eg-reveal" href="{{ 'guides/retrieval-pipeline/' | url }}"><span class="eg-eyebrow">02</span><h3>a retrieval trail.</h3><p>see the candidates, ranking signals, and reasons a memory passes or misses a gate.</p><span class="eg-arrow" aria-hidden="true">↗</span></a>
+      <a class="eg-control__row eg-reveal" href="{{ 'guides/memory-lifecycle/' | url }}"><span class="eg-eyebrow">03</span><h3>room to change.</h3><p>edit, challenge, supersede, or forget a memory as the work moves on.</p><span class="eg-arrow" aria-hidden="true">↗</span></a>
+      <a class="eg-control__row eg-reveal" href="{{ 'guides/client-configs/' | url }}"><span class="eg-eyebrow">04</span><h3>meet your tools.</h3><p>connect through MCP, use the CLI or local API, and inspect the store in the web workspace.</p><span class="eg-arrow" aria-hidden="true">↗</span></a>
+    </div>
+  </section>
+
+  <section class="eg-start" aria-labelledby="start-title">
+    <div class="eg-start__inner">
+      <span class="eg-eyebrow">04 / pick up the thread</span>
+      <h2 id="start-title" class="eg-reveal">make the next<br>conversation <em>count.</em></h2>
+      <div class="eg-install"><code id="eg-install-command">pip install engram-memory-system</code><button type="button" class="eg-copy" data-eg-copy="eg-install-command" aria-label="Copy installation command"><span data-eg-copy-label>copy</span><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M7 7h10v10H7zM3 13V3h10"/></svg></button></div>
+      <p class="eg-copy-status" role="status" aria-live="polite"></p>
+      <div class="eg-start__links"><a class="eg-text-link" href="{{ 'getting-started/installation/' | url }}">installation guide <span aria-hidden="true">↗</span></a><a class="eg-text-link" href="{{ 'guides/client-configs/' | url }}">connect your agent <span aria-hidden="true">↗</span></a><a class="eg-text-link" href="https://github.com/raya-ac/engram">explore the source <span aria-hidden="true">↗</span></a></div>
+      <p class="eg-fineprint">python 3.11+ · sqlite by default · local models download on first use</p>
+    </div>
+    <img class="eg-start__mark" src="{{ 'assets/logo.svg' | url }}" alt="" width="512" height="512" loading="lazy" aria-hidden="true">
+  </section>
+  <footer class="eg-footer"><a class="eg-footer__brand" href="{{ '.' | url }}"><img src="{{ 'assets/logo.svg' | url }}" alt="" width="30" height="30">engram</a><p>memory for work that continues.</p><nav aria-label="Footer"><a href="{{ 'getting-started/quickstart/' | url }}">docs</a><a href="https://github.com/raya-ac/engram">github</a><a href="{{ 'changelog/' | url }}">changelog</a><a href="{{ 'build.json' | url }}">build</a></nav></footer>
+</div>
+{% endblock %}
+{% block footer %}{% endblock %}

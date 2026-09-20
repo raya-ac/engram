@@ -1,10 +1,12 @@
 <p align="center">
-  <img src="assets/logo-512.png" alt="engram" width="160">
+  <img src="https://engram-memory.dev/assets/logo-192.png" alt="engram" width="160">
 </p>
 
 # engram
 
 memory for work that continues after the conversation ends.
+
+[website](https://engram-memory.dev) · [documentation](https://engram-memory.dev/getting-started/quickstart/) · [0.7.0 changelog](docs/changelog.md)
 
 i built engram to keep the things an agent should be able to return to: decisions,
 errors, project context, procedures, and the connections between them. it stores
@@ -34,6 +36,22 @@ some write and maintenance paths use an LLM for extraction, enrichment, or
 consolidation. local embedding search can run without an LLM service. choosing an
 API embedding or LLM backend sends the relevant inputs to that provider.
 
+## what's new in 0.7.0
+
+configuration is now checked before startup: misspelled fields, invalid values,
+and missing explicit files fail clearly. every setting has an environment
+override, and `engram config show` explains where its value came from while
+redacting credentials. `config check` and `config schema` work without opening
+storage or loading models.
+
+retrieval explanations show the candidates that were returned **and rejected**,
+including confidence cutoffs, ranking signals, and excerpt retries. inspection
+does not reinforce memories or trigger dormant evaluations. the CLI, MCP,
+native JSONL API and web workspace share the same explanation format.
+
+the release also includes the BGE reranking fixes and fresh retrieval result
+below, plus a new engraved mark and dark website.
+
 ## benchmarks
 
 **100.0% session recall-any@5 (470/470)** on LongMemEval-S cleaned,
@@ -46,7 +64,10 @@ this is a development-set measurement: the dataset was also used for tuning.
 the evaluation skips 30 abstention questions and disables the production
 confidence cutoff. it measures whether at least one labelled answer session
 appears in the first five results. generated-answer accuracy is not measured.
-the code is an unreleased development candidate.
+the measured retrieval candidate was published in commit `c3b8cea`, before the
+configuration, explanation and website changes in 0.7.0. the linked evidence
+retains that run's exact source hashes; this is not a second full benchmark of
+the release package.
 
 [method and limitations](docs/architecture/benchmarks.md) ·
 [verified result and provenance](docs/assets/benchmarks/2026-09-20-fresh.json) ·
@@ -60,7 +81,7 @@ the table is a reference comparison, not a shared ranking.
 
 | system | reported result | metric and evaluation scope |
 | --- | ---: | --- |
-| **Engram — current development candidate** | **100.0% (470/470)** | **session recall-any@5; fresh local run, 470 answerable questions** |
+| **Engram — September 20 retrieval candidate** | **100.0% (470/470)** | **session recall-any@5; fresh local run, 470 answerable questions** |
 | Engram 0.6.2 — historical | 99.4% (467/470) | previously published session recall-any@5; not rerun here |
 | [MemPalace — raw](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 96.6% | reported retrieval R@5; 500 evaluated questions in its report |
 | [MemPalace — hybrid v4 + Haiku](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 100% | reported retrieval R@5 on 500 questions; explicitly tuned using failure cases |
@@ -97,7 +118,16 @@ source hashes, model revisions, package versions, settings and all question IDs.
 
 ## get it running
 
-python 3.11 or newer is required. for the code in this checkout:
+python 3.11 or newer is required:
+
+```sh
+pip install engram-memory-system
+engram --version
+engram config check
+engram config show
+```
+
+for the code in this checkout:
 
 ```sh
 git clone https://github.com/raya-ac/engram.git
@@ -115,20 +145,26 @@ backend selects an available local implementation. set
 `embedding_backend: sentence_transformers` for an explicit CPU setup.
 
 check `config.yaml` before storing anything. it controls the database, models,
-LLM backend, web binding, and optional experiments. the example uses an API LLM
-backend for write-time processing; configure it for your environment.
+LLM backend, web binding, and optional experiments. the default write-time LLM
+backend uses the Claude CLI; choose and configure a backend before using paths
+that need extraction or enrichment.
 
 ```sh
-engram --config config.yaml status
+engram --config config.yaml config check
+engram --config config.yaml config show --json
+engram config schema --json
 engram --config config.yaml remember "the release requires a restore drill before activation"
 engram --config config.yaml search "release preparation" -k 5 --json
-engram --config config.yaml search "release preparation" --rerank --debug
+engram --config config.yaml search "release preparation" --rerank --explain --json
 ```
 
 `--config` comes before the command. without it, engram checks the current
 working directory, the source checkout, then `~/.config/engram/config.yaml`.
-explicitly supported `ENGRAM_*` environment settings take precedence over the
-file; see [config.py](engram/config.py) and [the example](config.example.yaml).
+every field supports an `ENGRAM_*` environment override, such as
+`ENGRAM_RETRIEVAL_TOP_K=5`. environment values take precedence over the file;
+see [configuration](docs/reference/config.md) and [the example](config.example.yaml).
+`engram config show --defaults` inspects package defaults without reading local
+files or environment overrides. existing configuration files are never rewritten.
 
 ## storage and models
 
@@ -200,6 +236,10 @@ interface; [mcp_server.py](engram/mcp_server.py) defines it.
 `recall` supports `facts_only`, `facts_plus_rules`, and `full_context` profiles.
 ordinary search records returned results as accesses. that is a retrieval signal,
 not explicit evidence that someone used the result.
+use `recall_explain` to inspect retrieval without recording those accesses, or
+`config_show` to inspect redacted effective settings. rejected candidates remain
+visible even when no memory passes the confidence gate; forgotten, inactive and
+profile-filtered memory content stays hidden.
 
 ## native application integration
 

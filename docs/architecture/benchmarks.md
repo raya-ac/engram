@@ -27,7 +27,10 @@ all embeddings and cross-encoder scores were recomputed in a new process;
 the run did not use saved inference scores or resume earlier result rows.
 independent recomputation checked every expected question ID, all recorded
 recall and NDCG metrics, dataset integrity, and unchanged source hashes.
-the published source matches those hashes.
+those hashes identify the measured retrieval candidate published in commit
+`c3b8cea`. 0.7.0 subsequently adds configuration validation, retrieval
+explanations and the website redesign. the artifact is preserved unchanged;
+it is not a claim that the full release package was benchmarked again.
 
 | metric | fresh result |
 | --- | ---: |
@@ -78,7 +81,7 @@ different metrics and evaluation populations prevent a head-to-head ranking.
 
 | system | reported result | metric and evaluation scope |
 | --- | ---: | --- |
-| **Engram — current development candidate** | **100.0% (470/470)** | **session recall-any@5; fresh local run, 470 answerable questions** |
+| **Engram — September 20 retrieval candidate** | **100.0% (470/470)** | **session recall-any@5; fresh local run, 470 answerable questions** |
 | Engram 0.6.2 — historical | 99.4% (467/470) | previously published session recall-any@5; not rerun here |
 | [MemPalace — raw](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 96.6% | reported retrieval R@5; 500 evaluated questions in its report |
 | [MemPalace — hybrid v4 + Haiku](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | 100% | reported retrieval R@5 on 500 questions; explicitly tuned using failure cases |
