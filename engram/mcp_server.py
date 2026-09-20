@@ -302,7 +302,8 @@ class MCPServer:
         results = hybrid_search(args["query"], self.store, self.config,
                                 top_k=args.get("top_k", 10),
                                 deep_reranker=self._reranker,
-                                mode=args.get("mode", "full_context"))
+                                mode=args.get("mode", "full_context"),
+                                reference_date=args.get("reference_date"))
         self._refresh_session_handoff()
         return [{"id": r.memory.id, "content": r.memory.content, "score": round(r.score, 4),
                  "layer": r.memory.layer, "memory_type": r.memory.memory_type,
@@ -319,6 +320,7 @@ class MCPServer:
             debug=True,
             deep_reranker=self._reranker,
             mode=args.get("mode", "full_context"),
+            reference_date=args.get("reference_date"),
         )
         self._refresh_session_handoff()
         return {

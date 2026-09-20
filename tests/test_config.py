@@ -119,16 +119,21 @@ class TestHfToken:
             yaml.dump({"hf_token": "hf_test_token_123"}, f)
             f.flush()
             # Clean env to test purely yaml
-            old = os.environ.pop("HF_TOKEN", None)
+            old_hf = os.environ.pop("HF_TOKEN", None)
+            old_hub = os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
             try:
                 cfg = Config.load(f.name)
                 assert cfg.hf_token == "hf_test_token_123"
                 assert os.environ.get("HF_TOKEN") == "hf_test_token_123"
             finally:
-                if old:
-                    os.environ["HF_TOKEN"] = old
+                if old_hf:
+                    os.environ["HF_TOKEN"] = old_hf
                 else:
                     os.environ.pop("HF_TOKEN", None)
+                if old_hub:
+                    os.environ["HUGGING_FACE_HUB_TOKEN"] = old_hub
+                else:
+                    os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
                 os.unlink(f.name)
 
     def test_hf_token_from_env(self):

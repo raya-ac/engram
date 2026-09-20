@@ -11,6 +11,7 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 
 import numpy as np
 
@@ -106,6 +107,7 @@ def search(
     rerank: bool = True,
     deep_reranker=None,
     mode: str = "full_context",
+    reference_date: str | datetime | date | float | int | None = None,
 ) -> list[RetrievalResult] | tuple[list[RetrievalResult], RetrievalDebug]:
     if config is None:
         config = Config.load()
@@ -116,15 +118,27 @@ def search(
     allowed_types = RETRIEVAL_PROFILES.get(mode, RETRIEVAL_PROFILES["full_context"])
     features = _build_query_features(query, config)
     weights = INTENT_WEIGHTS.get(features.intent, INTENT_WEIGHTS["what"])
+    ref_d = _parse_date(reference_date) if reference_date is not None else None
 
-    cache_key = (
-        features.original.lower(),
-        mode,
-        int(k),
-        bool(rerank),
-        config.embedding_model,
-        config.cross_encoder_model,
-    )
+    if ref_d:
+        cache_key = (
+            features.original.lower(),
+            mode,
+            int(k),
+            bool(rerank),
+            config.embedding_model,
+            config.cross_encoder_model,
+            str(ref_d),
+        )
+    else:
+        cache_key = (
+            features.original.lower(),
+            mode,
+            int(k),
+            bool(rerank),
+            config.embedding_model,
+            config.cross_encoder_model,
+        )
     cache_hit = False
     dense_candidates: list[tuple[str, float]] = []
     bm25_candidates: list[tuple[str, float]] = []
@@ -132,6 +146,7 @@ def search(
     rrf_scores: dict[str, float] = {}
     boosted: list[tuple[str, float]] = []
     reranked: list[tuple[int, float]] = []
+    boosted_reranked: list[tuple[str, float, float, bool]] = []
     valid_ids: list[str] = []
 
     cached_payload = None if debug else store.get_search_cache(cache_key)
@@ -150,7 +165,7 @@ def search(
             signal_weights=[weights["dense"], weights["bm25"], weights["graph"], weights.get("hopfield", 0.6)],
         )
         rrf_top = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[: rc.rerank_candidates]
-        boosted = _apply_boosts(features, rrf_top, store, config)
+        boosted = _apply_boosts(features, rrf_top, store, config, reference_date=ref_d)
 
         candidate_ids = [mid for mid, _ in boosted[: rc.rerank_candidates]]
         candidate_memories: dict[str, Memory] = {}
@@ -165,14 +180,33 @@ def search(
             docs = [candidate_memories[mid].content for mid in candidate_ids if mid in candidate_memories]
             valid_ids = [mid for mid in candidate_ids if mid in candidate_memories]
             reranked = cross_encoder_rerank(features.dense_query, docs, config.cross_encoder_model)
-            results = []
-            for idx, ce_score in reranked[:k]:
+
+            # post-rerank temporal boost — cross-encoder scores text semantics only,
+            # so we condition final scores on temporal window proximity when a date is resolved
+            window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
+            boosted_reranked = []
+            for idx, ce_score in reranked:
                 mid = valid_ids[idx]
+                mem = candidate_memories[mid]
+                d_date = _get_memory_date(mem)
+                b_score = ce_score
+                in_window = False
+                if window and d_date:
+                    center, margin = window
+                    if abs((d_date - center).days) <= margin:
+                        b_score += 5.0
+                        in_window = True
+                boosted_reranked.append((mid, b_score, ce_score, in_window))
+
+            boosted_reranked.sort(key=lambda x: x[1], reverse=True)
+
+            results = []
+            for mid, b_score, ce_score, in_window in boosted_reranked[:k]:
                 mem = candidate_memories[mid]
                 results.append(
                     RetrievalResult(
                         memory=mem,
-                        score=ce_score,
+                        score=b_score,
                         sources={
                             "dense": dict(dense_candidates).get(mid, 0),
                             "bm25": dict(bm25_candidates).get(mid, 0),
@@ -181,6 +215,7 @@ def search(
                             "boosted": dict(boosted).get(mid, 0),
                             "exact_match": _exact_match_signal(features, mem),
                             "cross_encoder": ce_score,
+                            "temporal_boost": 5.0 if in_window else 0.0,
                         },
                     )
                 )
@@ -264,7 +299,7 @@ def search(
             graph_candidates=graph_candidates,
             rrf_scores=list(rrf_scores.items()),
             boosted_scores=boosted,
-            reranked=[(valid_ids[i], s) for i, s in reranked[:k]] if valid_ids and reranked else [],
+            reranked=[(mid, s) for mid, s, _, _ in boosted_reranked[:k]] if boosted_reranked else ([(valid_ids[i], s) for i, s in reranked[:k]] if valid_ids and reranked else []),
             final_results=results,
             latency_ms=latency,
         )
@@ -382,14 +417,46 @@ def _rrf_fuse(rankings: list[list[tuple[str, float]]], k: int = 60, signal_weigh
     return scores
 
 
-def _apply_boosts(features: QueryFeatures, candidates: list[tuple[str, float]], store: Store, config: Config) -> list[tuple[str, float]]:
+def _apply_boosts(
+    features: QueryFeatures,
+    candidates: list[tuple[str, float]],
+    store: Store,
+    config: Config,
+    reference_date: str | datetime | date | float | int | None = None,
+) -> list[tuple[str, float]]:
     temporal_signal = _detect_temporal(features.original)
+    ref_d = _parse_date(reference_date) if reference_date is not None else datetime.now().date()
+    window = _resolve_temporal_window(features.original, ref_d) if ref_d else None
+
     boosted = []
+    seen_ids = set()
     for mid, rrf_score in candidates:
+        if mid in seen_ids:
+            continue
+        seen_ids.add(mid)
         mem = store.get_memory(mid)
         if not mem:
             continue
         score = rrf_score
+
+        mem_d = _get_memory_date(mem)
+        if ref_d and mem_d:
+            diff_days = (ref_d - mem_d).days
+            if window:
+                center, margin = window
+                dist = abs((mem_d - center).days)
+                if dist <= margin:
+                    score *= 2.5
+                elif diff_days < 0:
+                    score *= 0.90
+            else:
+                if diff_days < 0:
+                    score *= 0.95
+                elif diff_days <= 7:
+                    score *= 1.15
+                elif diff_days <= 30:
+                    score *= 1.05
+
         if temporal_signal and mem.fact_date and temporal_signal in (mem.fact_date or ""):
             score *= 2.0
         score *= (0.8 + 0.4 * mem.importance)
@@ -397,7 +464,10 @@ def _apply_boosts(features: QueryFeatures, candidates: list[tuple[str, float]], 
         if exact_signal > 0:
             score *= (1.0 + exact_signal * (config.retrieval.exact_match_boost - 1.0))
         if mem.layer == "episodic":
-            age_days = (time.time() - mem.created_at) / 86400
+            if ref_d and mem_d:
+                age_days = max(0.0, float((ref_d - mem_d).days))
+            else:
+                age_days = max(0.0, (time.time() - mem.created_at) / 86400)
             half_life = config.lifecycle.forgetting_half_life_days
             decay = math.exp(-0.693 * age_days / half_life)
             score *= (0.5 + 0.5 * decay)
@@ -462,3 +532,128 @@ def _month_num(name: str) -> str:
         "december": "12",
     }
     return months.get(name.lower(), "01")
+
+
+_DATE_RE = re.compile(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})")
+
+_WORD_TO_NUM = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12,
+}
+
+_DAY_NAMES = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+_RELATIVE_PATTERNS = [
+    # "N days ago" / "ten days ago"
+    (re.compile(r"(\d+)\s+days?\s+ago", re.I), "days"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago", re.I), "days_word"),
+    # "N weeks ago" / "four weeks ago"
+    (re.compile(r"(\d+)\s+weeks?\s+ago", re.I), "weeks"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\s+ago", re.I), "weeks_word"),
+    # "a week ago"
+    (re.compile(r"\ba\s+week\s+ago\b", re.I), "a_week"),
+    # "N months ago"
+    (re.compile(r"(\d+)\s+months?\s+ago", re.I), "months"),
+    (re.compile(r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\s+ago", re.I), "months_word"),
+    # "a month ago"
+    (re.compile(r"\ba\s+month\s+ago\b", re.I), "a_month"),
+    # "last Saturday" / "last Monday"
+    (re.compile(r"last\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.I), "last_day"),
+    # "yesterday"
+    (re.compile(r"\byesterday\b", re.I), "yesterday"),
+]
+
+
+def _parse_date(date_val: str | datetime | date | float | int | None) -> date | None:
+    if date_val is None:
+        return None
+    if isinstance(date_val, datetime):
+        return date_val.date()
+    if isinstance(date_val, date):
+        return date_val
+    if isinstance(date_val, (int, float)):
+        try:
+            return datetime.fromtimestamp(date_val).date()
+        except Exception:
+            return None
+    if isinstance(date_val, str):
+        s = date_val.strip()
+        m = _DATE_RE.search(s)
+        if m:
+            try:
+                return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                pass
+        try:
+            return datetime.fromisoformat(s).date()
+        except Exception:
+            pass
+    return None
+
+
+def _resolve_temporal_window(query: str, reference_date: str | datetime | date | float | int | None = None) -> tuple[date, int] | None:
+    """Parse relative time expressions and return (center_date, margin_days) or None."""
+    ref_d = _parse_date(reference_date) if reference_date is not None else datetime.now().date()
+    if not ref_d:
+        return None
+
+    for pattern, kind in _RELATIVE_PATTERNS:
+        m = pattern.search(query)
+        if not m:
+            continue
+
+        if kind == "days":
+            n = int(m.group(1))
+            return (ref_d - timedelta(days=n), 2)
+        elif kind == "days_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (ref_d - timedelta(days=n), 2)
+        elif kind == "weeks":
+            n = int(m.group(1))
+            return (ref_d - timedelta(weeks=n), 4)
+        elif kind == "weeks_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (ref_d - timedelta(weeks=n), 4)
+        elif kind == "a_week":
+            return (ref_d - timedelta(weeks=1), 4)
+        elif kind == "months":
+            n = int(m.group(1))
+            return (ref_d - timedelta(days=n * 30), 7)
+        elif kind == "months_word":
+            n = _WORD_TO_NUM.get(m.group(1).lower(), 0)
+            if n:
+                return (ref_d - timedelta(days=n * 30), 7)
+        elif kind == "a_month":
+            return (ref_d - timedelta(days=30), 7)
+        elif kind == "last_day":
+            day_name = m.group(1).lower()
+            target_dow = _DAY_NAMES[day_name]
+            diff = (ref_d.weekday() - target_dow) % 7
+            if diff == 0:
+                diff = 7
+            return (ref_d - timedelta(days=diff), 2)
+        elif kind == "yesterday":
+            return (ref_d - timedelta(days=1), 1)
+
+    return None
+
+
+def _get_memory_date(mem: Memory) -> date | None:
+    if mem.fact_date:
+        d = _parse_date(mem.fact_date)
+        if d:
+            return d
+    for key in ("timestamp", "date", "created_at_str"):
+        if key in mem.metadata:
+            d = _parse_date(mem.metadata[key])
+            if d:
+                return d
+    if mem.created_at:
+        return _parse_date(mem.created_at)
+    return None
