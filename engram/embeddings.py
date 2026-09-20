@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore", message=".*LOAD REPORT.*")
 warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
 
 _bi_encoder = None
-_cross_encoder = None
+_cross_encoders: dict[str, Any] = {}
 _mlx_model = None
 _mlx_tokenizer = None
 _backend = None
@@ -346,7 +346,7 @@ RERANKER_BACKENDS = {
 
 
 def cross_encoder_rerank(query: str, documents: list[str],
-                          model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list[tuple[int, float]]:
+                          model_name: str = "BAAI/bge-reranker-base") -> list[tuple[int, float]]:
     """Rerank documents by relevance to query.
 
     Supports local cross-encoders (ms-marco-MiniLM) and cloud rerankers
@@ -361,7 +361,18 @@ def cross_encoder_rerank(query: str, documents: list[str],
     # local cross-encoder
     model = _get_cross_encoder(model_name)
     pairs = [(query, doc) for doc in documents]
-    scores = model.predict(pairs, show_progress_bar=False)
+    try:
+        scores = model.predict(pairs, batch_size=16, show_progress_bar=False)
+    except Exception as e:
+        if "out of memory" in str(e).lower() or "mps" in str(e).lower():
+            import torch
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                torch.mps.empty_cache()
+            if hasattr(model, "model") and hasattr(model.model, "to"):
+                model.model.to("cpu")
+            scores = model.predict(pairs, batch_size=8, show_progress_bar=False)
+        else:
+            raise
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
     return [(int(i), float(s)) for i, s in ranked]
 
@@ -385,11 +396,16 @@ def _rerank_voyage(query: str, documents: list[str], model_name: str) -> list[tu
     return [(int(i), float(s)) for i, s in ranked]
 
 
-def _get_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
-    global _cross_encoder
-    if _cross_encoder is None:
+def _get_cross_encoder(model_name: str = "BAAI/bge-reranker-base"):
+    global _cross_encoders
+    if model_name not in _cross_encoders:
         from sentence_transformers.cross_encoder import CrossEncoder
+        import torch
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            _cross_encoder = CrossEncoder(model_name)
-    return _cross_encoder
+            try:
+                _cross_encoders[model_name] = CrossEncoder(model_name, device=device)
+            except Exception:
+                _cross_encoders[model_name] = CrossEncoder(model_name, device="cpu")
+    return _cross_encoders[model_name]

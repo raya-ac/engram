@@ -109,7 +109,7 @@ class Config:
     db_path: str = "~/.local/share/engram/memory.db"
     postgres_dsn: str = ""
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    cross_encoder_model: str = "BAAI/bge-reranker-base"
     embedding_backend: str = "auto"  # auto | mlx | sentence_transformers | voyage | openai | gemini
     embedding_dim: int = 384
     hf_token: str = ""
